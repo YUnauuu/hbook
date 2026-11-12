@@ -1,0 +1,85 @@
+# Weekly, grouped. The CI run is ~18 minutes and the test tier is serial on purpose, so one grouped pull
+# request per ecosystem per week is the right cadence -- thirty single-package PRs would each cost that.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /bff
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # @types/node follows the RUNTIME's major -- node:24 in the Dockerfiles, `engines: >=24` -- and types for a
+      # newer Node describe APIs that do not exist at runtime, which TypeScript would then let code call. A move
+      # to the next Node LTS bumps the runtime and these types together, on purpose (#62, #77 proposed 26).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      bff-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # @types/node follows the RUNTIME's major -- node:24 in the Dockerfiles, `engines: >=24` -- and types for a
+      # newer Node describe APIs that do not exist at runtime, which TypeScript would then let code call. A move
+      # to the next Node LTS bumps the runtime and these types together, on purpose (#62, #77 proposed 26).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      web-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 3
+  # The desktop app (Electron, electron-builder, electron-updater). Electron majors arrive as their own pull
+  # requests, not in the group: each is a new Chromium and Node, and only the three newest get security fixes,
+  # so they are wanted -- but they are exactly the update the desktop build on real Windows and macOS runners
+  # (.github/workflows/desktop.yml) has to prove before a release, not something to merge on a green Tests job
+  # that never starts the app.
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # @types/node follows the RUNTIME's major -- node:24 in the Dockerfiles, `engines: >=24` -- and types for a
+      # newer Node describe APIs that do not exist at runtime, which TypeScript would then let code call. A move
+      # to the next Node LTS bumps the runtime and these types together, on purpose (#62, #77 proposed 26).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      desktop-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+  # The base images in the three Dockerfiles (node:24-alpine, nginx:1.31-alpine).
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # A Node major is a deliberate step onto the next even-numbered LTS, not a weekly pull request. Odd majors
+      # (25, 27) never become LTS and reach end of life within months; #73-#75 proposed node:25-alpine after it
+      # already had. Minor and patch updates of the current major still arrive here as before.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /bff
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # A Node major is a deliberate step onto the next even-numbered LTS, not a weekly pull request. Odd majors
+      # (25, 27) never become LTS and reach end of life within months; #73-#75 proposed node:25-alpine after it
+      # already had. Minor and patch updates of the current major still arrive here as before.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /web
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      # A Node major is a deliberate step onto the next even-numbered LTS, not a weekly pull request. Odd majors
+      # (25, 27) never become LTS and reach end of life within months; #73-#75 proposed node:25-alpine after it
+      # already had. Minor and patch updates of the current major still arrive here as before.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /services/title-extractor
+    schedule: { interval: weekly, day: monday }
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major"]

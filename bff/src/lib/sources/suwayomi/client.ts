@@ -1,0 +1,256 @@
+// GraphQL client for a Suwayomi server acting as hbook's extension engine.
+//
+// Suwayomi is the only project that runs Mihon/Tachiyomi's Kotlin extensions outside Android: it converts the
+// extension APKs to JVM bytecode and supplies a fake Android runtime for them. We use it for exactly one job --
+// turning an installed extension into search/chapters/pages over an API -- and keep owning everything else.
+//
+// The endpoint is `/api/graphql`, NOT `/graphql`; the published docs say otherwise and the server 404s on it.
+// Verified against Suwayomi-Server v2.2.2100, v2.3.2243 and v2.4.2366. Every document sent is in operations.ts.
+import { env } from '../../../env';
+import { isRefusalMessage } from './enginePin';
+import { OPS, opOf } from './operations';
+
+export interface GqlError extends Error {
+  status?: number;
+}
+
+/**
+ * The operator's engine base, normalised ONCE for everything that builds a URL on it: scheme + host + port +
+ * path, trailing slashes collapsed, no query, no fragment (userinfo dropped too -- fetch refuses a URL that
+ * carries credentials, and the engine's are SUWAYOMI_USERNAME / SUWAYOMI_PASSWORD).
+ *
+ * Two readers build URLs on `SUWAYOMI_URL`: `suwayomiUrl` here, which turns the engine's server-relative
+ * thumbnail and page paths into the absolute URLs that get STORED, and routes/images.ts `engineCoverUrl`,
+ * which rebuilds the one thumbnail URL the cover proxy may fetch un-guarded and accepts a stored cover only if
+ * it round-trips to exactly that. ⚠️ Both used to strip one trailing slash from the raw env string and call
+ * it a base, so any value that was not already clean made them disagree: `http://engine:4567//` stored
+ * `//api/v1/manga/1/thumbnail` (an empty path segment the shape check cannot match), and `...:4567/?q` or
+ * `...:4567#f` put the query or fragment in front of the path. Every extension cover then fell through to the
+ * SSRF guard, resolved private, and came back as the grey placeholder with nothing logged (R1's v0.37.0
+ * review). Reading the same normalised base from one place is what keeps the two in agreement.
+ *
+ * A value `new URL` cannot parse, or that is not http(s), is handed back with only its trailing slashes
+ * removed: normalising it would invent something (a scheme-less `engine:4567` parses with origin "null"), and
+ * `suwayomiConfigured` / `isEngineOrigin` already treat such a value as no engine. `raw` is a parameter, not
+ * read from `env` inside, because env is parsed once at module load and a test could not vary it otherwise.
+ */
+export function suwayomiBase(raw: string | undefined = env.SUWAYOMI_URL): string {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  let u: URL;
+  try { u = new URL(s); } catch { return s.replace(/\/+$/, ''); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return s.replace(/\/+$/, '');
+  return u.origin + u.pathname.replace(/\/+$/, '');
+}
+
+/** Absolute URL for a path Suwayomi returned (thumbnails and pages come back server-relative). */
+export function suwayomiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${suwayomiBase()}/${path.replace(/^\//, '')}`;
+}
+
+/**
+ * Is this URL on the configured engine's own origin (scheme, host and port, compared whole)? The engine's Basic
+ * credentials go to that origin and nowhere else, and only an engine source's first hop there skips the public-host
+ * rule (lib/safeFetch.ts). An unconfigured engine owns nothing.
+ */
+export function onEngineOrigin(u: string | URL, engine: string | undefined = env.SUWAYOMI_URL): boolean {
+  if (!engine) return false;
+  try { return new URL(String(u)).origin === new URL(engine).origin; } catch { return false; }
+}
+
+/** Headers for fetching an image back off Suwayomi (it proxies covers and pages through itself). */
+export function suwayomiImageHeaders(): Record<string, string> {
+  return env.SUWAYOMI_USERNAME
+    ? { authorization: 'Basic ' + Buffer.from(`${env.SUWAYOMI_USERNAME}:${env.SUWAYOMI_PASSWORD}`).toString('base64') }
+    : {};
+}
+
+/**
+ * The engine's service name in the shipped compose files: `hbook-suwayomi` in deploy/, `hbook-suwayomi` in the
+ * development stack. EXTENSION_ENGINE only removes THAT container, so only an address naming it goes with it.
+ */
+export const BUNDLED_ENGINE_HOSTS: ReadonlySet<string> = new Set(['hbook-suwayomi', 'hbook-suwayomi']);
+
+/**
+ * EXTENSION_ENGINE=0 while SUWAYOMI_URL still names the bundled container (#72).
+ *
+ * One variable has to turn off both the container and the feature: compose scales the engine to zero replicas,
+ * and without this the app would go on calling a host that no longer exists and report an engine it was told
+ * to drop as "unreachable". But the switch only speaks for the bundled container. Someone who dropped it and
+ * points SUWAYOMI_URL at a Suwayomi of their own, with the line still in .env, keeps extensions -- hence the
+ * host check rather than the flag alone.
+ *
+ * Both inputs are parameters, like suwayomiBase's: env is parsed once at load, and a test could not vary it.
+ */
+export function engineSwitchedOff(raw: string | undefined = env.SUWAYOMI_URL, on: boolean = env.EXTENSION_ENGINE): boolean {
+  if (on) return false;
+  const base = suwayomiBase(raw);
+  if (!base) return false;
+  try {
+    return BUNDLED_ENGINE_HOSTS.has(new URL(base).hostname.toLowerCase());
+  } catch {
+    return false; // not a URL at all: nothing that could be the bundled container
+  }
+}
+
+/**
+ * Is there an extension engine to talk to: an address, and not one switched off with EXTENSION_ENGINE. Every
+ * caller -- registration, the routes, Health, the scheduled checks, `gql` itself -- reads the switch through here.
+ */
+export function suwayomiConfigured(): boolean {
+  return !!env.SUWAYOMI_URL && !engineSwitchedOff();
+}
+
+let answered = false;
+
+/**
+ * Has the engine answered this process at least once: any GraphQL request that came back 200. Background
+ * housekeeping that talks to the engine unasked (cache.ts) waits for it, so a JVM that is still starting --
+ * or a desktop whose engine was never downloaded, where SUWAYOMI_URL is always set -- gets no request and
+ * puts no warning in the log. Never reset: an engine that answered once and then went away is worth saying so.
+ */
+export const engineAnswered = (): boolean => answered;
+
+/**
+ * Who failed, in words `diagnose` can tell apart (#115). A transport failure used to surface as undici's bare
+ * "fetch failed" and an abort as "The operation was aborted due to timeout": neither said it was the ENGINE that
+ * did not answer, and the one rule that did mention the engine matched every `suwayomi: ` message -- which is the
+ * opposite case, the engine answering with the extension's own exception. So "Manga Ball (EN)", whose extension
+ * threw on the site, was reported as "The extension server did not answer. Check that container."
+ *
+ * The four shapes, and only these:
+ *   `suwayomi unreachable: fetch failed (<code>)`  no answer at all (refused, reset, DNS)
+ *   `suwayomi timeout after <n>ms`                 no answer in time
+ *   `suwayomi <status>`                            the engine's HTTP layer refused (auth, 5xx)
+ *   `suwayomi: <message>`                          the engine ran the query and the extension failed -- or, as an
+ *                                                  EngineRefusedError, the engine refused the query itself
+ * classify() still reads the first two as 'down' ("fetch failed", "timeout"), so cooldowns do not change.
+ * `cause` is kept, so a caller that reads `e.cause.code` (the fake engine's own test does) still can.
+ */
+function transportError(e: any, timeoutMs: number): Error {
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+    return new Error(`suwayomi timeout after ${timeoutMs}ms`, { cause: e });
+  }
+  const code = e?.cause?.code || e?.code || e?.cause?.name || e?.name || 'error';
+  return new Error(`suwayomi unreachable: fetch failed (${code})`, { cause: e?.cause ?? e });
+}
+
+/**
+ * The engine refused a query: it answered, and what it answered is that hbook asked something its schema does not
+ * have -- an engine older or newer than this hbook was built for. Not the engine being down (a restart changes
+ * nothing) and not an extension failing (the site is never asked). The message keeps the engine's own words after the
+ * usual `suwayomi: `, so everything that reads messages (diagnosis, source health) still can.
+ */
+export class EngineRefusedError extends Error {
+  constructor(message: string, readonly op?: string) {
+    super(message);
+    this.name = 'EngineRefusedError';
+  }
+}
+
+/** One operation (operations.ts) the engine refused, in its own words, and when it last did. */
+export interface EngineRefusal {
+  op: string;
+  message: string;
+  at: string;
+}
+
+/**
+ * The operations the engine refused, by name, until each succeeds again: what Health's Extension engine row and the
+ * status route quote. An `optional` operation is never recorded -- its refusal is an answer (engineSolver.ts) -- and
+ * neither is a document the registry does not hold (a test's own query).
+ */
+const refusals = new Map<string, EngineRefusal>();
+export const engineRefusals = (): EngineRefusal[] => [...refusals.values()].sort((a, b) => a.op.localeCompare(b.op));
+/** For tests, and for an engine that turned out to be another version (aboutServer). */
+export function forgetEngineRefusals(): void {
+  refusals.clear();
+}
+
+/**
+ * Is this answer the engine refusing the query? graphql-java's validation, parse and variable errors come back with
+ * status 200, NO `data` key at all and one of the openings in enginePin.ts REFUSAL_HEAD (measured on v2.3.2243 and
+ * v2.4.2366). An extension's exception always has `data` (its field null, or -- fetchMangaAndChapters -- the stored
+ * rows), and its message opens "Exception while fetching data", or is the extension's own.
+ */
+function refused(j: { data?: unknown; errors?: Array<{ message?: string }> }): boolean {
+  return !Object.prototype.hasOwnProperty.call(j, 'data') && isRefusalMessage(j.errors?.[0]?.message);
+}
+
+/**
+ * Run one GraphQL operation. Errors carry the HTTP status in their message on purpose: lib/sourceHealth.ts
+ * `classify()` reads the message to decide blocked vs rate-limited vs down, so a failing extension server
+ * lands in the existing source-health machinery with no special casing. Every error starts with "suwayomi"
+ * (see transportError for the four shapes).
+ *
+ * ⚠️ Any `errors` throws, whether or not `data` came too. `fetchMangaAndChapters` answers a failed update with the
+ * STORED series and chapters and the error beside them (measured): taking that data would read a failing extension's
+ * old chapter list as a fresh one, and nothing would ever record the failure.
+ */
+export async function gql<T = unknown>(query: string, variables: Record<string, unknown> = {}, timeoutMs = 30000): Promise<T> {
+  if (!suwayomiConfigured()) throw new Error('suwayomi is not configured');
+  let r: Response;
+  try {
+    r = await fetch(suwayomiUrl('/api/graphql'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', ...suwayomiImageHeaders() },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    throw transportError(e, timeoutMs);
+  }
+  if (!r.ok) {
+    const e: GqlError = new Error(`suwayomi ${r.status}`);
+    e.status = r.status;
+    throw e;
+  }
+  answered = true;
+  let j: { data?: T; errors?: Array<{ message?: string }> };
+  try {
+    j = (await r.json()) as typeof j;
+  } catch (e: any) {
+    // The body is read under the same signal, so a slow or dropped body is still the engine not answering; a
+    // body that is not JSON at all (a proxy's HTML page) is an answer with nothing in it.
+    if (e?.name === 'SyntaxError') throw new Error('suwayomi returned no data', { cause: e });
+    throw transportError(e, timeoutMs);
+  }
+  const op = opOf(query);
+  if (j && typeof j === 'object' && j.errors?.length) {
+    const message = j.errors[0]?.message || 'graphql error';
+    if (refused(j)) {
+      // Reintroduce by recording an optional operation too: "an engine without the Cloudflare setting is not an
+      // incompatible engine" in suwayomiClient.test.ts finds solverSettings in engineRefusals().
+      if (op && !op.optional) refusals.set(op.name, { op: op.name, message: message.slice(0, 500), at: new Date().toISOString() });
+      throw new EngineRefusedError(`suwayomi: ${message}`, op?.name);
+    }
+    throw new Error(`suwayomi: ${message}`);
+  }
+  if (j?.data === undefined || j?.data === null) throw new Error('suwayomi returned no data');
+  // The engine ran it: whatever it refused before, it takes now (an engine updated, or put back).
+  if (op) refusals.delete(op.name);
+  return j.data;
+}
+
+/** The dependency the adapters take, so tests can drive them from fixtures without a server. */
+export type Gql = typeof gql;
+
+export interface ServerInfo {
+  name: string;
+  version: string;
+  /** "Stable" or "Preview". `revision` it replaced is in the version already, as its patch number. */
+  buildType: string;
+}
+
+/** The version the engine last said it is, to notice it becoming another one. */
+let knownVersion: string | null = null;
+
+export async function aboutServer(run: Gql = gql): Promise<ServerInfo> {
+  const d = await run<{ aboutServer: ServerInfo }>(OPS.aboutServer.doc, {}, 8000);
+  const v = d?.aboutServer?.version ?? null;
+  // Another engine answers now (updated, or put back): what the last one refused says nothing about this one.
+  if (v && knownVersion && v !== knownVersion) forgetEngineRefusals();
+  if (v) knownVersion = v;
+  return d.aboutServer;
+}

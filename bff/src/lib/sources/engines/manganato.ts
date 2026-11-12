@@ -1,0 +1,367 @@
+// Generic engine for the Manganato/Mangakakalot family of manga sites (same markup engine). No specific site
+// is hardcoded — `makeManganato` takes a base URL supplied by the user. Pages are behind Cloudflare → the
+// core's FlareSolverr client. Series ids are the manga page URL.
+import { SourceAdapter, SourceSeries, SourceChapter } from '../types';
+import { cfGet } from '../flaresolverr';
+import { parseWhen } from '../dates';
+import { plainText } from '../../htmlText';
+import { seriesSlug, isOwnChapterUrl, rebase } from '../slug';
+import { offlineNotice, siteOffline, throwIfOffline } from '../offline';
+import { cleanGenres } from '../../genres';
+
+/**
+ * Anything of the family's own markup (v0.49.1, lib/sources/offline.ts; the Madara engine's MADARA_MARKUP is the
+ * same idea): listing cards, a story page's panels, a chapter list, a reader, a link to a series. A page carrying
+ * any of it is the site working; only a small page with none of it whose title says so is the site offline.
+ */
+export const MANGANATO_MARKUP = /list-comic-item-wrap|story_item|story_name|item-title|genres-item|panel-story-info|story-info|chapter-list|row-content-chapter|container-chapter-reader|\/manga\//i;
+
+const strip = plainText;
+const norm = (u: string) => u.replace(/^\/\//, 'https://').replace(/&amp;/g, '&').trim();
+
+/** The element whose class list holds `name` exactly: `genres` is not `genres-item`. */
+const classed = (tag: string, name: string) => new RegExp(`<${tag}[^>]*\\sclass="(?:[^"]*\\s)?${name}(?:\\s[^"]*)?"[^>]*>([\\s\\S]*?)</${tag}>`, 'i');
+
+/**
+ * A series page's own genres (v0.55.5): its info panel's "Genres" row, else the genre box beside it, else an older
+ * Manganato page's "Genres" table cell -- never every genre link on the page. Natomanga's pages carry the site's whole
+ * genre menu at their foot (All, Completed, Ongoing, Action, Adaptation, Adult, ... 59 links), and reading the page
+ * whole gave twelve series on the owner's library all 69 genres, Hentai and Smut among them. cleanGenres drops a menu's
+ * run all the same, for a layout none of these blocks matches. Reintroduce the page-wide read: "a series page's own
+ * genres, not the site's menu" in manganatoSeries.test.ts reads them twice, then the menu.
+ */
+export function seriesGenres(h: string): string[] {
+  const block = (h.match(classed('li', 'genres')) || h.match(classed('div', 'genre-list'))
+    || h.match(/info-genres[\s\S]*?<td[^>]*class="[^"]*table-value[^"]*"[^>]*>([\s\S]*?)<\/td>/i) || [])[1] || '';
+  return cleanGenres([...block.matchAll(/<a[^>]*>([^<]+)<\/a>/gi)].map((x) => strip(x[1])));
+}
+/** The solver returns JSON inside an HTML <pre>, so the payload arrives entity-escaped. */
+const unescapeHtml = (s: string) => s
+  .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/**
+ * Series cards from a Manganato-family listing page, whichever markup it happens to be serving.
+ *
+ * Patterns are tried in order and the first that yields anything wins. The `title`-attribute form is the
+ * most precise on current markup; the two below it are older layouts. Note the alt-text fallback already
+ * handled the rebranded pages on its own -- these are belt and braces for a template pointed at whatever
+ * Manganato-family site an operator names, not a fix for a specific site.
+ */
+/**
+ * Is this a link to a SERIES, or to a chapter of one?
+ *
+ * Both live under `/manga/`: a series is `/manga/some-slug`, a chapter is `/manga/some-slug/chapter-12`.
+ * Matching on `/manga/` alone therefore harvests every chapter link on the page as if it were a series, and
+ * a listing page is full of them -- it shows the latest chapters beside each title. On natomanga that turned
+ * twenty-four results into twelve real series and twelve entries called "Chapter 2", "Chapter 156", each
+ * with no cover, because a chapter page has no cover to find.
+ *
+ * So: exactly one path segment after `/manga/`, and nothing that looks like a chapter.
+ */
+const isSeriesUrl = (u: string): boolean => /\/manga\/[^/?#]+\/?(?:[?#]|$)/.test(u) && !/\/chapter/i.test(u);
+
+export function parseListing(h: string, sourceId: string): SourceSeries[] {
+  if (!h) return [];
+  const covers = new Map<string, string>();
+  for (const m of h.matchAll(/<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>\s*<img[^>]+src="([^"]+)"/gi)) {
+    if (isSeriesUrl(m[1])) covers.set(norm(m[1]), norm(m[2]));
+  }
+
+  const patterns: Array<[RegExp, 1 | 2]> = [
+    // current: <a href=".../manga/slug" title="Name"><img ...>, inside .list-comic-item-wrap
+    [/<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*\stitle="([^"]+)"/gi, 2],
+    // older Manganato: the name is the anchor's text under .genres-item-name / .item-title
+    [/(?:genres-item-name|item-title)[^>]*>\s*<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, 2],
+    // last resort: take it off the thumbnail's alt text
+    [/<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>\s*<img[^>]+alt="([^"]*?)"/gi, 2],
+  ];
+
+  // Parse the CARDS, not the page. A listing also carries sidebar and "popular" widgets whose links have a
+  // `title` attribute but no thumbnail beside them, and they sit early in the document -- so they crowded
+  // out real results and arrived without covers. On natomanga that was thirteen of twenty-four entries with
+  // no artwork. Splitting on the card wrapper first keeps the budget for actual listing entries; when a
+  // theme has no such wrapper, the whole document is used exactly as before.
+  const cards = h.split(/(?=class="[^"]*list-comic-item-wrap[^"]*")/i);
+  const scope = cards.length > 1 ? cards.slice(1) : [h];
+
+  for (const [re] of patterns) {
+    const out: SourceSeries[] = [];
+    const seen = new Set<string>();
+    for (const m of scope.join('').matchAll(re)) {
+      const url = norm(m[1]);
+      const title = strip(m[2]).replace(/\s+class=.*$/i, '');
+      // A listing page also links series from its sidebar and its "hot" carousel. Those are real series, so
+      // they cannot be filtered by shape -- but they are few, and de-duplicating by url keeps them from
+      // appearing twice. Order still follows the document, which is the listing itself.
+      if (!title || seen.has(url) || !isSeriesUrl(url)) continue;
+      seen.add(url);
+      out.push({ sourceId: url, source: sourceId, title, url, coverUrl: covers.get(url) });
+    }
+    if (out.length) return out;
+  }
+  return [];
+}
+
+/**
+ * A chapter's pages as the site's own reader builds them: `var cdns = [...]` (its image servers) and
+ * `var chapterImages = [...]` (each page's path), joined as its server keys join them (`cdns[n] + path`). Empty when
+ * the page does not carry them.
+ *
+ * Why it comes before the <img> tags: the tags can name a server that does not have the files. On natomanga and
+ * mangakakalot in October 2026 some chapters' tags all pointed at imgs-2.2xstorage.com, which answers 404 "File with such
+ * name does not exist" (and 429 among them, so the failure read as rate limiting), while the page's own list named
+ * img-r2.2xstorage.com. Every night's check asked the dead server again, twelve times over, and nothing ever changed.
+ * Where both agree -- the chapters that downloaded -- this changes nothing. The first server is the one the reader
+ * shows first. Reintroduce by reading only the tags: "the page's own image list wins over tags that name another
+ * server" in manganatoPages.test.ts reads the dead server.
+ */
+export function scriptPages(h: string): string[] {
+  const array = (name: string): unknown[] | null => {
+    const m = h.match(new RegExp(`var\\s+${name}\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*;`));
+    if (!m) return null;
+    try { const v = JSON.parse(m[1]); return Array.isArray(v) ? v : null; } catch { return null; }
+  };
+  const cdn = (array('cdns') ?? []).find((c): c is string => typeof c === 'string' && /^https?:\/\//i.test(c.trim()));
+  const paths = (array('chapterImages') ?? []).filter((p): p is string => typeof p === 'string' && !!p.trim());
+  if (!cdn || !paths.length) return [];
+  const root = cdn.trim().replace(/\/+$/, '');
+  return paths.map((p) => `${root}/${p.trim().replace(/^\/+/, '')}`);
+}
+
+export function makeManganato(cfg: { id: string; name: string; base: string; order?: number; lang?: string }): SourceAdapter {
+  const base = cfg.base.replace(/\/$/, '');
+  const mangaUrl = (id: string) => (id.startsWith('http') ? rebase(id, base) : `${base}/manga/${id}`);
+
+  /**
+   * The chapter list as JSON, paged.
+   *
+   * `/api/manga/<slug>/chapters` answers `{data:{chapters:[…],pagination:{total,limit,offset,has_more}}}`.
+   * It caps at fifty per call whatever you ask for by default, so this walks `offset` until the server says
+   * there is no more, rather than trusting one large `limit` that a future cap could quietly shrink.
+   *
+   * Returns [] rather than throwing when the site is not one of the ones that serves this, so the caller
+   * falls back to scraping the page. Older Manganato-family sites do not have it.
+   */
+  const CHAPTER_PAGE = 200;   // asked for; the server may return fewer, which `has_more` then tells us
+  const MAX_PAGES = 40;       // 8,000 chapters, far past the longest thing anyone reads. A stop, not a limit.
+
+  async function apiChapters(seriesUrl: string): Promise<SourceChapter[]> {
+    const slug = seriesSlug(seriesUrl);
+    if (!slug) return [];
+    const out: SourceChapter[] = [];
+    const seen = new Set<number>();
+    for (let page = 0, offset = 0; page < MAX_PAGES; page++) {
+      const raw = await cfGet(`${base}/api/manga/${slug}/chapters?limit=${CHAPTER_PAGE}&offset=${offset}`);
+      // The solver hands back a browser's rendering of the JSON, so the body arrives inside <pre>.
+      const body = (raw.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i) || [, raw])[1] || '';
+      const data = JSON.parse(unescapeHtml(body).trim())?.data;
+      const rows: any[] = data?.chapters || [];
+      if (!rows.length) break;
+      for (const r of rows) {
+        const number = typeof r.chapter_num === 'number' ? r.chapter_num : parseFloat(r.chapter_num);
+        if (!Number.isFinite(number) || seen.has(number)) continue;
+        seen.add(number);
+        const cslug = String(r.chapter_slug || '').replace(/^\/+/, '');
+        if (!cslug) continue;
+        out.push({
+          sourceId: `${base}/manga/${slug}/${cslug}`,
+          number,
+          title: strip(String(r.chapter_name || `Chapter ${number}`)),
+          publishedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+        });
+      }
+      const pg = data?.pagination;
+      if (!pg?.has_more) break;
+      offset += rows.length;
+    }
+    return out.sort((a, b) => a.number - b.number);
+  }
+
+  return {
+    id: cfg.id,
+    name: cfg.name,
+    // The site's own language (v0.62.0, customSites.ts Site.lang); absent, the unstated one.
+    ...(cfg.lang ? { lang: cfg.lang } : {}),
+    base,
+    imageReferer: `${base}/`, // covers/images often live on a separate hotlink-protected CDN that wants the SITE origin as Referer
+    requiresCloudflare: true, // Manganato-engine sites sit behind Cloudflare
+    preferredOrder: cfg.order,
+
+    async search(query) {
+      const slug = query.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const h = await cfGet(`${base}/search/story/${slug}`);
+      // map each manga url → its thumbnail (the source's img alt is malformed, so titles come from story_name)
+      const covers = new Map<string, string>();
+      for (const m of h.matchAll(/<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>\s*<img[^>]+src="([^"]+)"/gi)) covers.set(norm(m[1]), norm(m[2]));
+      const out: SourceSeries[] = [];
+      const seen = new Set<string>();
+      for (const m of h.matchAll(/(?:story_name|item-title)[^>]*>\s*<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+        const url = norm(m[1]);
+        if (seen.has(url)) continue;
+        seen.add(url);
+        out.push({ sourceId: url, source: cfg.id, title: strip(m[2]), url, coverUrl: covers.get(url) });
+      }
+      if (!out.length) {
+        for (const m of h.matchAll(/<a[^>]+href="([^"]+\/manga\/[^"]+)"[^>]*>\s*<img[^>]+alt="([^"]*?)"/gi)) {
+          const url = norm(m[1]);
+          if (seen.has(url)) continue;
+          seen.add(url);
+          out.push({ sourceId: url, source: cfg.id, title: strip(m[2]).replace(/\s+class=.*$/i, ''), url, coverUrl: covers.get(url) });
+        }
+      }
+      // Nothing found is an empty answer -- or the site's own offline notice, which says so and throws.
+      if (!out.length) throwIfOffline(h, MANGANATO_MARKUP);
+      return out;
+    },
+
+    /**
+     * Browse the site's most recently updated series.
+     *
+     * Two listing layouts and two URL shapes, tried in order, because this engine template is pointed at
+     * whatever Manganato-family site the operator names and they do not all move at once.
+     *
+     * THE PATH is what broke, not the parsing. `/genre-all` was the only path here, and both sites on this
+     * install stopped serving it: it now answers 200 with a 20 KB stub carrying no series links at all.
+     * Because an empty parse throws nothing, the sources reported no error and simply went quiet -- the
+     * silent failure `reportLatest` exists to make visible. Mangakakalot and Natomanga had been returning
+     * nothing for weeks and months respectively while still reporting healthy.
+     *
+     * Worth stating plainly, because it was mis-diagnosed once already: the current markup parses fine
+     * under the pre-existing fallback. Nothing had to change about reading the page, only about which page
+     * is asked for.
+     */
+    async latest(page = 1) {
+      const p = Math.max(1, page);
+      const paths = [
+        `/manga-list/latest-manga${p > 1 ? `?page=${p}` : ''}`,
+        `/genre-all${p > 1 ? `/${p}` : ''}`,
+      ];
+      // A path that parses to nothing is a wrong guess, quietly -- unless the page is the site's offline notice,
+      // which is the site answering every path the same way (v0.49.1): then the source is down, and says so.
+      let said: string | null = null;
+      for (const path of paths) {
+        const h = await cfGet(`${base}${path}`).catch(() => '');
+        const out = parseListing(h, cfg.id);
+        if (out.length) return out;
+        said ??= offlineNotice(h, MANGANATO_MARKUP);
+      }
+      if (said) throw siteOffline(said);
+      return [];
+    },
+
+    /**
+     * The site's own popularity listing.
+     *
+     * This family is the awkward one: the sort is a PATH SEGMENT, not a query parameter, so there is no
+     * single URL that works everywhere and a wrong guess is indistinguishable from an empty page. Hence the
+     * same candidate list `latest` uses -- try each, take the first that parses, give up quietly. Giving up
+     * quietly is the right failure here: the source simply drops out of Popular rather than throwing, and a
+     * listing that returns nothing is now recorded rather than silent.
+     */
+    async popular(page = 1) {
+      const p = Math.max(1, page);
+      const paths = [
+        `/manga-list/hot-manga${p > 1 ? `?page=${p}` : ''}`,
+        `/genre-all${p > 1 ? `/${p}` : ''}?type=topview`,
+      ];
+      let said: string | null = null;
+      for (const path of paths) {
+        const h = await cfGet(`${base}${path}`).catch(() => '');
+        const out = parseListing(h, cfg.id);
+        if (out.length) return out;
+        said ??= offlineNotice(h, MANGANATO_MARKUP); // as in latest()
+      }
+      if (said) throw siteOffline(said);
+      return [];
+    },
+
+    async getSeries(id) {
+      const url = mangaUrl(id);
+      const h = await cfGet(url);
+      // Before anything is read off it: an offline notice's own <h1> would otherwise become the series' title.
+      throwIfOffline(h, MANGANATO_MARKUP);
+      const title = strip((h.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || h.match(/property="og:title" content="([^"]+)"/i) || [])[1] || '');
+      const summary = strip(
+        (h.match(/(?:id|class)="[^"]*(?:panel-story-info-description|story-info-description)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+          h.match(/property="og:description" content="([^"]+)"/i) ||
+          h.match(/<meta name="description" content="([^"]+)"/i) ||
+          [])[1] || '',
+      ).replace(/^Description\s*:?\s*/i, '');
+      const cover = (h.match(/class="[^"]*info-image[^"]*"[\s\S]{0,120}?<img[^>]+src="([^"]+)"/i) || h.match(/property="og:image" content="([^"]+)"/i) || [])[1];
+      return { sourceId: url, source: cfg.id, title, summary, genres: seriesGenres(h), coverUrl: cover ? norm(cover) : undefined, url };
+    },
+
+    async listChapters(seriesId) {
+      const url = mangaUrl(seriesId);
+      // The JSON list first. The HTML below only ever carried the newest FIFTY chapters, and nothing on the
+      // page said so: no pagination control, no "load more", just a list that stopped. Every series added
+      // from a site on this engine therefore arrived truncated, silently, and the updater could not repair it
+      // because it only ever asked the same page. On this install that was 7 of the 10 series from the two
+      // manganato-family sources, about 528 chapters, and it took a reader hitting "chapter 93 is the first
+      // one" to notice.
+      //
+      // The page itself names the endpoint that has the rest, in `data-api-url` on #chapter-list-container.
+      // It also answers with a real `chapter_num` and a real `updated_at`, so this path is more accurate than
+      // the scrape as well as more complete: no number parsed out of a URL, and a release date we otherwise
+      // do not get from these sites at all.
+      const viaApi = await apiChapters(url).catch(() => null);
+      if (viaApi && viaApi.length) return viaApi;
+      // Only accept chapters under THIS manga's slug — sidebar widgets link to other titles' chapters and would
+      // otherwise be scraped as phantom chapters (e.g. a stray "2021"). See lib/sources/slug.ts.
+      const slug = seriesSlug(url);
+      const mine = (u: string) => isOwnChapterUrl(u, slug);
+      const h = await cfGet(url);
+      const out: SourceChapter[] = [];
+      const seen = new Set<string>();
+      // chapter rows carry a release date in the sibling <span class="chapter-time" title="Jul 01,2026 12:00">
+      const dates = new Map<string, string>();
+      for (const li of h.matchAll(/<li[^>]*class="[^"]*a-h[^"]*"[^>]*>([\s\S]*?)<\/li>/gi)) {
+        const href = (li[1].match(/href="([^"]+\/chapter[^"]*)"/i) || [])[1];
+        const when = parseWhen((li[1].match(/chapter-time[^>]*title="([^"]+)"/i) || li[1].match(/class="[^"]*chapter-time[^"]*"[^>]*>([^<]+)/i) || [])[1]);
+        if (href && when) dates.set(norm(href), when);
+      }
+      for (const m of h.matchAll(/href="([^"]+\/manga\/[^"]+\/chapter[^"]*)"/gi)) {
+        const cu = norm(m[1]);
+        if (seen.has(cu) || !mine(cu)) continue;
+        seen.add(cu);
+        const num = parseFloat(((cu.match(/chapter[-_]([0-9]+(?:[.-][0-9]+)?)/i) || [])[1] || '').replace('-', '.'));
+        if (!Number.isNaN(num)) out.push({ sourceId: cu, number: num, title: `Chapter ${num}`, publishedAt: dates.get(cu) });
+      }
+      if (!out.length) throwIfOffline(h, MANGANATO_MARKUP);
+      return out.sort((a, b) => a.number - b.number);
+    },
+
+    /**
+     * The images of one chapter, and nothing else on the page.
+     *
+     * The reader block is matched first, but the `|| h` fallback made a failed match silently mean "the
+     * whole page", and these sites carry a sidebar of other series. Live, chapter 35 of one series came back
+     * as 96 "pages" whose last entry was `/thumb/the-proper-way-to-perform-a-sacrifice.webp` -- a cover for
+     * an unrelated title. Those junk entries inflate the expected page count, so a chapter that fetched
+     * every real page still reads as incomplete and gets refused.
+     *
+     * So two filters that hold whether or not the block matched: covers live under `/thumb/` and are never
+     * chapter pages, and a chapter's pages all sit in ONE directory. Keeping the largest directory group
+     * discards a handful of sidebar images without needing the block match to be right.
+     */
+    async getPageUrls(chapterId) {
+      const h = await cfGet(chapterId);
+      // The site's own list first (scriptPages): what its reader and its image-server keys build pages from.
+      const listed = scriptPages(h);
+      if (listed.length) return listed;
+      const block = (h.match(/class="[^"]*container-chapter-reader[^"]*"[^>]*>([\s\S]*?)(?:<div class="container|<\/body)/i) || [])[1] || h;
+      const urls: string[] = [];
+      for (const m of block.matchAll(/<img[^>]+src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"?]*)/gi)) urls.push(norm(m[1]));
+      const pages = urls.filter((u) => /^https?:/.test(u) && !/\/thumb(?:s)?\//i.test(u));
+      if (!pages.length) throwIfOffline(h, MANGANATO_MARKUP);
+      if (pages.length < 2) return pages;
+      const dirOf = (u: string) => u.slice(0, u.lastIndexOf('/'));
+      const tally = new Map<string, number>();
+      for (const u of pages) tally.set(dirOf(u), (tally.get(dirOf(u)) || 0) + 1);
+      let best = '';
+      for (const [dir, n] of tally) if (n > (tally.get(best) || 0)) best = dir;
+      return pages.filter((u) => dirOf(u) === best); // document order preserved
+    },
+  };
+}

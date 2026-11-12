@@ -1,0 +1,79 @@
+// Reading-progress writes.
+//
+// Extracted from the route so the completion rules can be tested directly — they are subtle, and getting them
+// wrong is invisible: chapters silently stop counting, which starved streaks and the household leaderboard
+// for weeks before anyone noticed the numbers looked low.
+//
+// The rules:
+//  * Organic reading pings may only UPGRADE a chapter to completed. Re-opening something you've finished
+//    must not mark it unread again.
+//  * Explicit user intent (mark read / mark unread, sent with `silent`) writes exactly what it says, and is
+//    kept out of reading_events so bulk-marking a backlog doesn't inflate this week's stats.
+import { q } from './db';
+import { pushSeriesProgressAsync } from './trackers';
+import { eventTime } from './progressRules';
+import { incognitoOn } from './incognito';
+
+export interface ProgressWrite {
+  userId: string;
+  bookId: string;
+  seriesId: string;
+  page: number;
+  completed: boolean;
+  /** explicit user action (mark read/unread): write verbatim, don't log a reading event */
+  silent?: boolean;
+  deviceId?: string | null;
+  /** When the event happened, in client ms. Absent means now, which is every live ping. */
+  at?: number;
+  /**
+   * v0.61.0: read under Incognito reading, by the request's own word -- a chapter read offline while the switch was on
+   * and sent after it went off. The account's switch is read here as well, so a client that does not send it is covered.
+   */
+  incognito?: boolean;
+}
+
+export { reachedEnd } from './progressRules';
+
+export async function writeProgress(w: ProgressWrite): Promise<void> {
+  // `at` is when the event happened, not when it arrived. The offline outbox replays events minutes or days
+  // later, and `page = EXCLUDED.page` applied them unconditionally -- so a queued page 12 landing after the
+  // reader had gone on to page 60 on another device rewound the bookmark, and the reader resumed 48 pages
+  // back. Only a page at least as recent as the stored one may move it.
+  //
+  // Note this is NOT `GREATEST(page)`: turning back a page is a real thing readers do and must still persist.
+  // The rule is "the newest event wins", not "the furthest page wins".
+  // Clamped (progressRules.ts eventTime): never in the future, and a dead clock's 1970 is not believed.
+  const at = eventTime(w.at);
+  // Incognito reading (v0.61.0, lib/incognito.ts): the request's flag OR the account's switch now. Decided before the
+  // place is written, because the place itself carries it since v0.69.1 (read_progress.incognito): other members'
+  // rails that read places -- Hidden gems -- must not count a private one. A place read in the open stays open.
+  const incognito = w.incognito === true || (await incognitoOn(w.userId));
+  // A first row takes the event's time too (v0.61.0): a chapter first opened offline was inserted at SYNC time, every
+  // later replayed page was then older than that and moved nothing, and the reader resumed at the first page read
+  // offline rather than the last. Reintroduce by letting the INSERT take updated_at's default: "a chapter first read
+  // offline resumes where the reader stopped" in offlineDates.int.test.ts finds page 3, not 25.
+  await q(
+    `INSERT INTO read_progress (user_id, book_id, series_id, page, completed, updated_at, incognito)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($7::timestamptz, now()), $8)
+     ON CONFLICT (user_id, book_id)
+     DO UPDATE SET page = CASE WHEN $7::timestamptz IS NULL OR $7 >= read_progress.updated_at
+                               THEN EXCLUDED.page ELSE read_progress.page END,
+       completed = CASE WHEN $6 THEN EXCLUDED.completed ELSE (read_progress.completed OR EXCLUDED.completed) END,
+       updated_at = GREATEST(read_progress.updated_at, COALESCE($7::timestamptz, now())),
+       incognito = read_progress.incognito AND EXCLUDED.incognito`,
+    [w.userId, w.bookId, w.seriesId, w.page, w.completed, !!w.silent, at, incognito],
+  );
+  // Incognito reading: the place above is kept, and nothing else -- no event, so history, streaks, Wrapped, the boards
+  // and Top 10 never see it, and no tracker push. Reintroduce by writing the event regardless: "an incognito chapter
+  // keeps its place and leaves no trace" in incognito.int.test.ts finds the event.
+  if (!w.silent && !incognito) {
+    await q(
+      `INSERT INTO reading_events (user_id, series_id, book_id, page, completed, device_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, now()))`,
+      [w.userId, w.seriesId, w.bookId, w.page, w.completed, w.deviceId ?? null, at],
+    );
+  }
+  // Finishing a chapter is the only thing worth telling an external tracker about. Fire-and-forget on
+  // purpose: a tracker being slow or down must never delay a page turn or fail the write above.
+  if (w.completed && w.seriesId && w.seriesId !== 'unknown' && !incognito) pushSeriesProgressAsync(w.userId, w.seriesId);
+}

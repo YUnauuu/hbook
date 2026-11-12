@@ -1,0 +1,141 @@
+// Every "Profile → X" / "Admin → X" the docs tell a reader to open must be a place the app actually has.
+//
+// The profile's "Security" section became the "Account" tab on 2026-08-24 and the docs kept saying
+// "Profile → Security" for three weeks; the wording was then copied into the Mihon extension's own settings
+// screen and a GitHub reply, and the first person to follow it could not find where to create a token.
+// Nothing had failed, because nothing compared the docs against the UI. This does: it collects the tab,
+// group and card names from the console pages and checks each documented path segment against them.
+//
+// Reintroduce by writing `**Profile → Security**` anywhere in docs/USAGE.md: the test names the line.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+
+const REPO = join(__dirname, '..', '..');
+const read = (p: string) => readFileSync(join(REPO, p), 'utf8');
+
+/**
+ * Lower-case, `&` as "and", no parenthetical, no glyph prefix or trailing colon -- so "External readers"
+ * matches "External readers (OPDS)", "Backup database & config" matches its task name, and "↻ Reload sources"
+ * is just "reload sources".
+ */
+const norm = (s: string) => s.toLowerCase().replace(/&/g, 'and').replace(/\s*\(.*?\)\s*/g, ' ')
+  .replace(/^[^a-z0-9]+/, '').replace(/[:…]+$/, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Names a person can see on the two consoles: pages and groups (`keys('A', 'B')`, `label: 'X'`), card titles and
+ * any other translated string (`tr('X')`), static button/heading text (`>Run now<`), the untranslated ternary
+ * labels the admin console still has (`? 'Reloading…' : '↻ Reload sources'`), and the task names the server
+ * hands Maintenance's tasks (`name: '…'` in routes/admin.ts).
+ */
+function consoleNames(): Set<string> {
+  const files = [
+    'web/app/profile/page.tsx',
+    'web/app/admin/page.tsx',
+    'bff/src/routes/admin.ts',
+    // v0.86.0: the settings pages' categories, groups and rows are named in the settings registry; v0.88.0 every page.
+    'web/lib/settingsIndex.profile.ts',
+    'web/lib/settingsIndex.admin.ts',
+    ...readdirSync(join(REPO, 'web/components')).filter((f) => f.endsWith('.tsx')).map((f) => `web/components/${f}`),
+  ];
+  const names = new Set<string>();
+  for (const f of files) {
+    const src = read(f);
+    for (const m of src.matchAll(/keys\(([^)]*)\)/g)) for (const s of m[1].matchAll(/'([^']+)'/g)) names.add(norm(s[1]));
+    for (const m of src.matchAll(/\b(?:label|name): '([^']+)'/g)) names.add(norm(m[1]));
+    for (const m of src.matchAll(/tr\('([^']+)'\)/g)) names.add(norm(m[1]));
+    for (const m of src.matchAll(/>\s*([A-Z][^<>{}]{1,60}?)\s*</g)) names.add(norm(m[1]));
+    for (const m of src.matchAll(/\?\s*'[^']*'\s*:\s*'([^']+)'/g)) names.add(norm(m[1]));
+  }
+  for (const alias of tabAliases(names)) names.add(alias);
+  for (const alias of settingsAliases(names)) names.add(alias);
+  return names;
+}
+
+/**
+ * The names an Admin → Settings section had before v0.86.0 made the page five categories: "Updates & schedules" is
+ * Downloads now, "Library housekeeping" Maintenance, "Scanlators" the Scanlation groups row
+ * (web/lib/settingsIndex.admin.ts SETTINGS_NAME_ALIASES, which the settings search and the palette read too). An older
+ * CHANGELOG entry keeps its words and still leads somewhere -- but only while the name it went to is on screen.
+ * Reintroduce by emptying the map: the CHANGELOG's "Admin → Settings → Updates & schedules" is named as leading nowhere.
+ */
+function settingsAliases(names: Set<string>): string[] {
+  const src = read('web/lib/settingsIndex.admin.ts');
+  const map = /export const SETTINGS_NAME_ALIASES[^=]*= \{([^}]*)\}/.exec(src)?.[1] ?? '';
+  const out: string[] = [];
+  for (const [, a, b, to] of map.matchAll(/(?:'([^']+)'|(\w+)): '([^']+)'/g)) if (names.has(norm(to))) out.push(norm(a ?? b));
+  return out;
+}
+
+/**
+ * The names an admin page went by before a redesign, which still land on it: v0.54.0 made Providers and Extensions one
+ * Sources tab, and v0.88.0 made Tasks part of Maintenance and the Settings tab the group of settings pages, each console
+ * one list. `?tab=Providers`, `?tab=Tasks` and `?tab=Settings` open those pages (web/lib/settingsIndex.ts readPage, with
+ * each registry's `tabAliases`). So an older CHANGELOG entry's "Admin → Providers" still leads somewhere and keeps its
+ * historical words. An alias counts only while readPage reads the maps and the page it lands on is itself on screen: a
+ * map nothing reads, or one pointing at a page that is gone, is no place.
+ *
+ * Reintroduce by dropping `index.tabAliases` from readPage: "Admin → Providers and Admin → Extensions no longer land on
+ * Sources", and past that line the CHANGELOG's seven "Admin → Providers" are named as leading nowhere.
+ */
+function tabAliases(names: Set<string>): string[] {
+  if (!/Object\.entries\(index\.tabAliases \?\? \{\}\)/.test(read('web/lib/settingsIndex.ts'))) return [];
+  const out: string[] = [];
+  for (const f of ['web/lib/settingsIndex.admin.ts', 'web/lib/settingsIndex.profile.ts']) {
+    const map = /tabAliases: \{([^}]*)\}/.exec(read(f))?.[1] ?? '';
+    for (const [, from, to] of map.matchAll(/(\w+): '([^']+)'/g)) if (names.has(norm(to))) out.push(norm(from));
+  }
+  return out;
+}
+
+/**
+ * `**Profile → Account → API tokens**` → ['profile', 'account', 'api tokens']; both arrow spellings.
+ *
+ * ⚠️ The bold span is matched with `[^*]*` and the arrows are handled by `split`, deliberately in two steps.
+ * The first version did both in one regex, `(?:\s*(?:→|->)\s*[^*→>]+)+`, and that is exponential: `[^*→>]+`
+ * also matches spaces and `-`, so it overlaps the `\s*` and the `->` around it, and a line like `**Admin→ a) →
+ * a) → …` with no closing `**` makes the engine try every split of every space run before failing -- 9 s at
+ * 28 arrows, measured (CodeQL js/redos #26). Only repo docs are scanned, so nobody could feed it that line,
+ * but a test that can hang the suite on an unlucky edit is still wrong. `[^*]*` cannot overlap `\*\*`, so the
+ * match is linear; "at least one arrow, no empty segment" restores the old meaning (plain `**Admin panel**` is
+ * skipped, as before). Reintroduce the backtracking by putting `\s*` on both sides of the arrow inside a
+ * repeated group again -- the same 44 paths are found either way, so only the timing shows it.
+ */
+function documentedPaths(): Array<{ file: string; line: number; text: string; segments: string[] }> {
+  const out: Array<{ file: string; line: number; text: string; segments: string[] }> = [];
+  const files = ['README.md', 'CHANGELOG.md', 'bff/openapi.yaml', ...readdirSync(join(REPO, 'docs')).filter((f) => f.endsWith('.md')).map((f) => `docs/${f}`)];
+  for (const f of files) {
+    read(f).split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/\*\*((?:Profile|Admin)[^*]*)\*\*/g)) {
+        const segs = m[1].split(/\s*(?:→|->)\s*/);
+        if (segs.length < 2 || segs.some((s) => !s.trim())) continue;
+        out.push({ file: f, line: i + 1, text: m[1], segments: segs.map(norm) });
+      }
+    });
+  }
+  return out;
+}
+
+test('every console path the docs name exists in the UI', () => {
+  const names = consoleNames();
+  assert.ok(names.has('account') && names.has('api tokens') && names.has('sources'), 'the name scan lost the console itself');
+  // v0.54.0: the tab's old names are places only because they still land on it (tabAliases above); v0.88.0 the same for
+  // the Tasks tab, which is Maintenance's.
+  assert.ok(names.has('providers') && names.has('extensions'), 'Admin → Providers and Admin → Extensions no longer land on Sources');
+  assert.ok(names.has('tasks'), 'Admin → Tasks no longer lands on Maintenance');
+  assert.ok(!names.has('security'), 'the profile has no Security tab; if it grew one, the docs may say so again');
+
+  const paths = documentedPaths();
+  assert.ok(paths.length >= 10, `expected the docs to name console paths, found ${paths.length}`);
+
+  const bad: string[] = [];
+  for (const p of paths) {
+    // the first segment is the console; every later one must be (a prefix of) something on screen
+    for (const seg of p.segments.slice(1)) {
+      const found = [...names].some((n) => n === seg || n.startsWith(seg + ' ') || n.startsWith(seg));
+      if (!found) bad.push(`${p.file}:${p.line}: "${p.text}" -- no tab, group or card called "${seg}"`);
+    }
+  }
+  assert.deepEqual(bad, [], `documented paths that lead nowhere:\n${bad.join('\n')}`);
+});

@@ -1,0 +1,199 @@
+// Discover search that answers in seconds and fills in (v0.40.0).
+//
+// It was one `await api('/api/sources/search-all?q=')` behind eighteen skeletons until EVERY source had
+// answered, and a Cloudflare source has a ninety-second budget, so "takes forever" was the accurate
+// description. The server now answers within `wait=` with whatever has landed and says who is still being
+// asked; the page polls while `pending` is non-zero and the wall fills in. Read from source, like
+// wall.test.ts: whether the search is keyed on the SUBMITTED term, whether the poll reads `pending`, whether
+// only the first request waits the long wait, whether an abandoned request is aborted, and whether the
+// skeletons make way for the first answer. Each guard names the edit that fails it.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+
+const ROOT = join(__dirname, '..');
+const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+/** The file with its comments removed -- several comments below quote the code they forbid. */
+const code = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+/**
+ * Every English string a file asks `tr()` for, plus labels declared through `keys(...)` (lib/i18n.ts). The
+ * literal's escapes are undone (`\'` and `\u2192`): the key is the STRING, and the Discover page writes its
+ * arrow as an escape.
+ */
+const unescape = (s: string): string =>
+  s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\'/g, "'");
+const trKeys = (files: string[]): Set<string> => {
+  const keys = new Set<string>();
+  for (const f of files) {
+    const src = read(f);
+    for (const m of src.matchAll(/\btr\(\s*'((?:[^'\\]|\\.)*)'/g)) keys.add(unescape(m[1]));
+    for (const m of src.matchAll(/\btr\(\s*"((?:[^"\\]|\\.)*)"/g)) keys.add(unescape(m[1]));
+    for (const decl of src.matchAll(/\bkeys\(([^)]*)\)/g)) {
+      for (const m of decl[1].matchAll(/'((?:[^'\\]|\\.)*)'/g)) keys.add(unescape(m[1]));
+    }
+  }
+  return keys;
+};
+
+const PAGE = 'app/discover/page.tsx';
+
+test('the search is a query keyed on the submitted term, not on the field', () => {
+  // `q` is whatever is in the field; `term` is what was submitted. Keyed on `q`, every keystroke would be a
+  // fan-out to every source, and keyed on a constant, a new term would paint under the old term's answer
+  // until its own landed. The chosen source is part of the key too: a search narrowed to one source is a
+  // different question (it sends `&source=`), and answering it from the unfiltered search's cache, or the
+  // other way round, would show one under the other. Reintroduce by writing `queryKey: ['search-all', q]`:
+  // "keyed on the field" fails; by dropping `selected` from the key: the same assertion fails; by dropping
+  // `&source=` from the request: "the chosen source is not sent" fails; by bringing back `setSearchHits`:
+  // "the imperative search is back" fails. (Since v0.55.4 the 18+ filter is in the key too: see its own test.)
+  const src = code(read(PAGE));
+  assert.match(src, /queryKey: \['search-all', term, selected, ratingAsked, adultOn, searchKind\]/, 'the search is not keyed on the submitted term and the chosen source (or is keyed on the field)');
+  assert.match(src, /const creator = searchKind === 'title' \? '' : `&creator=\$\{searchKind\}`;/, 'the selected creator role is not sent');
+  assert.match(src, /const only = selected \? `&source=\$\{encodeURIComponent\(selected\)\}` : '';/, 'the chosen source is not sent');
+  assert.match(src, /SEARCH_POLL_WAIT_MS\}\$\{only\}\$\{rated\}\$\{creator\}`, \{ signal \}\)/, 'the chosen source is not sent');
+  // v0.61.0: the submitted term starts as the arrival's `?q=` (empty without one, so the field and the submitted term
+  // still start apart from any typing). Updated deliberately from `useState('')`, which this pinned before Discover read
+  // the address; v610Related.test.ts pins how the arrival is read.
+  assert.match(src, /const \[term, setTerm\] = useState\(arrivedQ\)/, 'there is no separate submitted term');
+  assert.match(src, /enabled: mode === 'search' && !!term/, 'the search runs outside search mode or with an empty term');
+  assert.doesNotMatch(src, /setSearchHits|setSearching|useState<SourceItem\[\]>\(\[\]\)/, 'the imperative search is back');
+  assert.doesNotMatch(src, /await api<\{ content: SearchGroup\[\] \}>/, 'the search is awaited in a handler again');
+});
+
+test('the poll runs only while the server says sources are still pending', () => {
+  // `refetchInterval` reads the answer's own `pending`: a constant interval would poll a finished search
+  // every 1.5 s for as long as the page is open, and `false` would never fill the wall in. Reintroduce by
+  // returning `SEARCH_POLL_MS` unconditionally: "does not read pending" fails.
+  const src = code(read(PAGE));
+  assert.match(src, /refetchInterval: \(qy\) => \(qy\.state\.data\?\.pending \? SEARCH_POLL_MS : false\)/, 'the poll does not read pending from the answer');
+  assert.match(src, /const SEARCH_POLL_MS = 1500;/, 'the poll interval moved');
+  // Leaving search mode disables the query, which is what stops the interval; a poll that ignored the mode
+  // would keep asking the server about a search nobody is looking at.
+  assert.match(src, /refetchOnWindowFocus: false/, 'a window focus re-runs the search');
+});
+
+test('only the first request waits the long wait; every poll asks for a short one', () => {
+  // The first request may hold for six seconds while the sources answer. A poll that also held for six
+  // seconds would sit on the server until its grace expired, so every fill-in would arrive six seconds late.
+  // `first` is read from the query's own `dataUpdateCount`, which is zero until an answer has landed.
+  // Reintroduce by dropping `&wait=` from the URL: "no wait= on the request" fails; by writing
+  // `wait=${SEARCH_FIRST_WAIT_MS}` for every request: "every request waits the long wait" fails.
+  const src = code(read(PAGE));
+  assert.match(src, /search-all\?q=\$\{encodeURIComponent\(term\)\}&wait=\$\{first \? SEARCH_FIRST_WAIT_MS : SEARCH_POLL_WAIT_MS\}/, 'no wait= on the request, or every request waits the long wait');
+  assert.match(src, /const first = \(client\.getQueryState\(queryKey\)\?\.dataUpdateCount \?\? 0\) === 0;/, 'first is not read from dataUpdateCount');
+  assert.match(src, /const SEARCH_FIRST_WAIT_MS = 6000;/, 'the first wait is not six seconds');
+  assert.match(src, /const SEARCH_POLL_WAIT_MS = 1500;/, 'the poll wait moved');
+});
+
+test('an abandoned search is aborted, never retried, and stays fresh for five minutes', () => {
+  // The query's `signal` goes to `api()`, so a term replaced mid-flight is cancelled in the browser and the
+  // old answer can never land on the new key. `retry: false`: a failed search is shown as failed -- a retry
+  // is another fan-out to every source. Reintroduce by dropping `{ signal }` from the api call: "the
+  // request ignores the signal" fails.
+  const src = code(read(PAGE));
+  assert.match(src, /queryFn: \(\{ signal, queryKey, client \}\) =>/, 'the queryFn does not take the signal');
+  assert.match(src, /api<SearchAnswer>\(`\/api\/sources\/search-all\?q=[^`]*`, \{ signal \}\)/, 'the request ignores the signal');
+  assert.match(src, /retry: false/, 'a failed search is retried');
+  assert.match(src, /staleTime: 5 \* 60_000/, 'the same term again is not answered from the cache for five minutes');
+});
+
+test('skeletons make way for the first answer; "no results" waits for the last', () => {
+  // Skeletons only until the first answer (or a failure): after that the wall shows what has landed and a
+  // skeleton beside real tiles reads as a stuck load. And the "No results" sentence is a verdict, so it
+  // waits until nothing is pending -- the first answer often has nothing yet. Reintroduce by gating the
+  // skeletons on `searchQ.isFetching`: "skeletons are not gated on the answer" fails; by dropping
+  // `!stillAsking` from the empty state: "no results is shown while sources are pending" fails.
+  const src = code(read(PAGE));
+  assert.match(src, /const pending = mode === 'newest' \? Math\.max\(0, budget\.length - settled\) : \(!searchQ\.data && !searchQ\.isError \? 3 : 0\);/, 'skeletons are not gated on the answer');
+  assert.match(src, /const stillAsking = mode === 'search' \? \(searchQ\.data\?\.pending \?\? 0\) : 0;/, 'stillAsking does not read pending');
+  assert.match(src, /\{!wall\.items\.length && !pending && !stillAsking && \(/, 'no results is shown while sources are pending');
+  // A failed search says so in the same card and gets the same Try again button; a toast vanished with the
+  // reason and left an empty wall.
+  assert.match(src, /searchQ\.isError \? tr\('Search failed'\) : tr\('No results across your sources — try another title\.'\)/, 'a failed search is not told apart from an empty one');
+  assert.match(src, /\(mode === 'newest' \|\| searchQ\.isError\) && \(/, 'a failed search has no Try again');
+});
+
+test('the progress line names who is still being asked, three names then a count', () => {
+  // "3 of 8 sources answered · still asking MangaDex, Aqua Manga, Bato and 2 more" -- from the answer's
+  // `sources[]`, the pending ones, the first three by name, then "and N more"; one name gets the singular
+  // sentence. Reintroduce by dropping the slice and naming every pending source: "names are not capped"
+  // fails, and a fifteen-source install wraps the line to three at 390 px.
+  const src = code(read(PAGE));
+  assert.match(src, /const SEARCH_NAMES_SHOWN = 3;/, 'the name cap moved');
+  assert.match(src, /waiting\.slice\(0, SEARCH_NAMES_SHOWN\)\.join\(', '\)/, 'names are not capped');
+  assert.match(src, /d\.sources\.filter\(\(s\) => s\.state === 'pending'\)\.map\(\(s\) => s\.name\)/, 'the names are not the pending sources');
+  assert.match(src, /tr\('\{n\} of \{m\} sources answered · still asking \{names\}', \{ n, m, names \}\)/, 'the plural sentence is gone');
+  assert.match(src, /tr\('\{n\} of \{m\} sources answered · still asking \{name\}', \{ n, m, name: waiting\[0\] \}\)/, 'the singular sentence is gone');
+  assert.match(src, /more > 1 \? `\$\{shown\} \$\{tr\('and \{n\} more', \{ n: more \}\)\}` : more === 1 \? `\$\{shown\} \$\{tr\('and 1 more'\)\}` : shown/, '"and N more" is gone, or one more is not the singular key');
+  // Rendered on its own row under the heading, and announced: the wall it describes changes under a screen
+  // reader without a focus change.
+  assert.match(src, /\{mode === 'search' && progress && \(/, 'the progress line is not gated on search mode');
+  assert.match(src, /className="basis-full text-xs tabular-nums text-fog-500" aria-live="polite" data-search-progress/, 'the progress line lost its own row or its announcement');
+});
+
+test('the wall pins still hold, and the hits are derived from the answer', () => {
+  // wall.test.ts pins `return foldByWork(out, nameOf, rankOf, wallAdded);` and `const providers =
+  // wall.groups[key];` byte for byte, and the hits and their providers are DERIVED from the answer (memos on
+  // `searchQ.data`, through `searchGroups`) rather than set by a handler, so a poll's answer replaces the rows
+  // without anything being cleared first. With a source chosen, a hit keeps only if that source is among its
+  // providers, and that provider is the card's own, so tapping it opens the source being browsed rather than
+  // whichever one the fold ranked first. The providers were a ref an effect filled until v0.56.0, keyed by title;
+  // they are a memo keyed by work now, since every card's icons read them while rendering and a ref is one answer
+  // behind there. Reintroduce by deriving the hits from `searchQ.data?.content` directly (skipping the merge):
+  // "the hits are not derived from the merged groups" fails; by going back to `providers[0]` regardless of the
+  // filter: "a hit's provider ignores the chosen source" fails; by keying the providers on normTitle(g.title):
+  // "providers are not keyed by work" fails.
+  const src = read(PAGE);
+  assert.match(src, /return foldByWork\(out, nameOf, rankOf, wallAdded\);/, 'the wall is not folded');
+  assert.match(src, /const providers = wall\.groups\[key\];/, "open() does not read the wall's groups");
+  assert.match(code(src), /const searchHits = useMemo<SourceItem\[\]>\(\(\) => searchGroups\.flatMap\(/, 'the hits are not derived from the merged groups');
+  assert.match(code(src), /const pick = selected \? g\.providers\.find\(\(p\) => p\.source === selected\) : g\.providers\[0\];/, "a hit's provider ignores the chosen source");
+  assert.match(code(src), /\}\), \[searchGroups, selected\]\);/, 'the hits are not re-derived when the chosen source changes');
+  assert.match(code(src), /const searchProviders = useMemo\(\(\) => \{\s*const by: Record<string, WallProvider\[\]> = \{\};\s*for \(const g of searchGroups\) \{ const k = workKey\(g\); if \(k\) by\[k\] = g\.providers; \}\s*return by;\s*\}, \[searchGroups\]\);/,
+    'providers are not keyed by work, or not derived from the latest answer');
+  assert.doesNotMatch(code(src), /groupsRef/, 'a ref of search providers is back: the icons would read it one answer behind');
+});
+
+test('the 18+ filter: three chips in search mode, sent and keyed, and an 18+ mark on what is 18+ (v0.55.4)', () => {
+  // DannyDynamite39 (#158): "when searching a series in the Discover tab, such filtering options should be visible".
+  // The rating is asked of the server (it filters before its thirty-card cap, which a client-side filter could not), so
+  // it is part of the key -- a Hide 18+ answer must never be shown under All -- and so is Show 18+: an answer from before
+  // the switch flipped says nothing about the account's age limit after it. Reintroduce by dropping `ratingAsked` from
+  // the key: "the rating is not in the key" fails; by dropping `&rating=`: "the rating is not sent" fails; by
+  // rendering the chips outside search mode: "the chips are not gated" fails; by dropping the mark: "no 18+ mark" fails.
+  const src = code(read(PAGE));
+  assert.match(src, /queryKey: \['search-all', term, selected, ratingAsked, adultOn, searchKind\]/, 'the rating is not in the key');
+  assert.match(src, /const rated = ratingAsked === 'all' \? '' : `&rating=\$\{ratingAsked\}`;/, 'the rating is not sent');
+  assert.match(src, /\{mode === 'search' && offerRating && \(/, 'the chips are not gated on search mode and offerRating');
+  assert.match(src, /\(\[\['all', tr\('All'\)\], \['safe', tr\('Hide 18\+'\)\], \['adult', tr\('18\+ only'\)\]\] as const\)\.map/, 'the three chips are gone');
+  assert.match(src, /aria-pressed=\{rating === key\}/, 'the chips do not say which is on');
+  assert.match(src, /\.\.\.\(g\.rating === 'adult' \? \{ rating: 'adult' as const \} : \{\}\)/, 'a card does not carry its rating to the wall');
+  const card = code(read('components/cards.tsx'));
+  assert.match(card, /\{item\.rating === 'adult' && \(/, 'no 18+ mark on an 18+ result');
+  assert.match(card, /data-rating-mark/, 'no 18+ mark on an 18+ result');
+  // The direction on the text, never on the positioned box: dir="ltr" there turned its `end-1.5` to the right in an Arabic
+  // page, under the "{n} sources" box (seen in the v0.55.4 shots). Reintroduce by moving dir="ltr" onto the span: "the
+  // positioned box takes its own direction" fails.
+  assert.doesNotMatch(card, /dir="ltr" data-rating-mark/, 'the positioned box takes its own direction: in Arabic it sits in the wrong corner');
+  assert.match(card, /<bdi dir="ltr">\{tr\('18\+'\)\}<\/bdi>/, 'the mark lost its direction: "+18" reads backwards in an Arabic line');
+});
+
+test('every string the search renders is in all eight locale files', () => {
+  // The parity test (library.test.ts) only compares the eight files with each other, so a string that
+  // reaches none of them falls back to English in every language without anything failing. This reads the
+  // page instead. Reintroduce by deleting any one of the four v0.40.0 keys from public/locales/ar.json.
+  const keys = trKeys([PAGE]);
+  for (const k of ['{n} of {m} sources answered · still asking {names}', '{n} of {m} sources answered · still asking {name}', 'and {n} more', 'and 1 more',
+    'Hide 18+', '18+ only', '18+ filter']) {
+    assert.ok(keys.has(k), `"${k}" is no longer rendered by the page -- the scan or the page changed`);
+  }
+  const locales = readdirSync(join(ROOT, 'public/locales')).filter((f) => f.endsWith('.json'));
+  assert.equal(locales.length, 8, `expected eight locale files, found ${locales.join(', ')}`);
+  for (const f of locales) {
+    const d = JSON.parse(read(`public/locales/${f}`));
+    const missing = [...keys].filter((k) => !(k in d) || !String(d[k]).trim());
+    assert.deepEqual(missing, [], `${missing.length} of the page's strings are missing from ${f}: ${missing.slice(0, 12).join(' | ')}`);
+  }
+});

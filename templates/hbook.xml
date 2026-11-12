@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Community Applications template. One container: the database runs inside it (DATABASE_URL unset),
+  in the Data path below. Submit to a CA template repository, or install it by hand: copy this file to
+  /boot/config/plugins/dockerMan/templates-user/ on the server, then Docker -> Add Container and pick
+  hbook under "User templates".
+
+  NOT by adding a template repository URL. Unraid deleted that field in 6.10, and since 7.3 the file it
+  wrote (/boot/config/plugins/dockerMan/template-repos) is never read - - downloadTemplates() returns
+  before it gets there, so appending to it is a no-op. getTemplates() scans templates-user, which is
+  why dropping the file there is what works.
+-->
+<Container version="2">
+  <Name>hbook</Name>
+  <Repository>ghcr.io/yunauuu/hbook</Repository>
+  <Registry>https://github.com/YUnauuu/hbook/pkgs/container/hbook</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/YUnauuu/hbook/issues</Support>
+  <Project>https://hbook.com</Project>
+  <Overview>A self-hosted manga server that downloads too: it serves your manga, manhwa and webtoons like a library server and fetches new chapters like a source app, so discover, grab, monitor, serve and read all happen in one container. Point it at a folder of CBZ/CBR files and read them on any device through a true-black OLED interface built webtoon-first. Installs as a PWA, works offline. Mihon/Tachiyomi extensions, MangaDex, AniList/MyAnimeList/Kitsu sync, OPDS, per-user progress and favourites, age ratings, two-factor auth, single sign-on, nightly backups. No account and no cloud; the update check can be turned off and the anonymous install count is off unless you turn it on. The database runs inside the container; there is nothing else to install.</Overview>
+  <Category>MediaServer:Books MediaApp:Books</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/YUnauuu/hbook/main/templates/hbook.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/YUnauuu/hbook/main/web/public/icons/icon-512.png</Icon>
+  <!-- The app finishes the chapter it is writing on stop, then Postgres checkpoints; Docker's default 10 s would cut that short. -->
+  <ExtraParams>--stop-timeout 40</ExtraParams>
+  <DonateText>Support development</DonateText>
+  <DonateLink>https://ko-fi.com/angeloshaheen</DonateLink>
+  <Config Name="Web UI port" Target="3000" Default="8080" Mode="tcp" Description="The port you open in a browser." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Library" Target="/library" Default="/mnt/user/media/comics" Mode="rw" Description="Your existing CBZ/CBR library. Any folder layout works. Set PUID/PGID to the owner of these files for renames and deletes; otherwise it is read-only." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media/comics</Config>
+  <Config Name="Data (embedded database)" Target="/data" Default="/mnt/user/appdata/hbook/data" Mode="rw" Description="Postgres lives here. Back it up like any appdata, or rely on the nightly dump in Backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/hbook/data</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/hbook/config" Mode="rw" Description="Secrets, custom sites, art overrides." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/hbook/config</Config>
+  <Config Name="Downloads" Target="/library-dl" Default="/mnt/user/appdata/hbook/downloads" Mode="rw" Description="Chapters hbook fetches from sources." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/hbook/downloads</Config>
+  <Config Name="Image cache" Target="/cache" Default="/mnt/user/appdata/hbook/cache" Mode="rw" Description="Safe to delete." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/hbook/cache</Config>
+  <Config Name="Backups" Target="/backups" Default="/mnt/user/appdata/hbook/backups" Mode="rw" Description="Nightly database and config dumps. Ideally a different disk from Data." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/hbook/backups</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Run as this user id (Unraid's nobody is 99). Use the owner of your library to allow renames and deletes." Type="Variable" Display="always" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Run as this group id (Unraid's users is 100)." Type="Variable" Display="always" Required="false" Mask="false">100</Config>
+  <Config Name="PUBLIC_ORIGIN" Target="PUBLIC_ORIGIN" Default="" Mode="" Description="How you reach it, e.g. http://192.168.1.10:8080 or https://manga.example.com. Must match, or logins and cookies break." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="FLARESOLVERR_URL" Target="FLARESOLVERR_URL" Default="" Mode="" Description="A FlareSolverr instance for Cloudflare-protected sources, e.g. http://192.168.1.10:8191. Optional." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SUWAYOMI_URL" Target="SUWAYOMI_URL" Default="" Mode="" Description="Optional: Mihon/Tachiyomi extensions. Install hbook-suwayomi from Apps (the extension engine, set up the way hbook needs it), then put http://YOUR-SERVER-IP:4567 here, and its user name and password in SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD. A Suwayomi you already run works too: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on it, or extension sources behind Cloudflare fail. Empty = no extensions; MangaDex and sites you add by address work without it." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SUWAYOMI_USERNAME" Target="SUWAYOMI_USERNAME" Default="hbook" Mode="" Description="The engine's user name: AUTH_USERNAME on hbook-suwayomi, which is hbook unless you changed it. Sent only to SUWAYOMI_URL." Type="Variable" Display="advanced" Required="false" Mask="false">hbook</Config>
+  <Config Name="SUWAYOMI_PASSWORD" Target="SUWAYOMI_PASSWORD" Default="" Mode="" Description="The password you gave hbook-suwayomi (its AUTH_PASSWORD)." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="HBOOK_PLATFORM" Target="HBOOK_PLATFORM" Default="unraid" Mode="" Description="Tells Admin, Sources which setup steps to show. Leave it." Type="Variable" Display="advanced-hide" Required="false" Mask="false">unraid</Config>
+  <Config Name="BACKUP_KEEP" Target="BACKUP_KEEP" Default="14" Mode="" Description="How many backups to keep, until you save a number under Admin, Settings, Backups to keep." Type="Variable" Display="advanced" Required="false" Mask="false">14</Config>
+</Container>

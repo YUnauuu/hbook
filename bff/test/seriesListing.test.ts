@@ -1,0 +1,300 @@
+// The persisted listing's pure half: how a source's chapter list becomes one row per number, and how a
+// row becomes a reason on the series page.
+//
+// No database: listingRows and whyOf are functions over their arguments. The database half -- the sweep
+// writing rows, the route reading them back -- is seriesListing.int.test.ts.
+import test, { before } from 'node:test';
+import assert from 'node:assert/strict';
+
+process.env.DATABASE_URL ||= 'postgres://unused:unused@127.0.0.1:1/unused';
+process.env.JWT_SECRET ||= 'test-secret-at-least-16-chars';
+process.env.CONFIG_DIR ||= '/tmp/hbook-test-config';
+
+// Imported after the environment is set, not with it: a static import is hoisted above these assignments,
+// and lib/env refuses to load without DATABASE_URL. Nothing here connects -- the DSN points nowhere.
+let listingRows: typeof import('../src/lib/seriesListing')['listingRows'];
+let whyOf: typeof import('../src/lib/seriesListing')['whyOf'];
+let copyToChapter: typeof import('../src/lib/seriesListing')['copyToChapter'];
+let sameRelease: typeof import('../src/lib/seriesListing')['sameRelease'];
+let resolveListingRow: typeof import('../src/lib/seriesListing')['resolveListingRow'];
+let automaticCopies: typeof import('../src/lib/seriesListing')['automaticCopies'];
+let chooseReleases: typeof import('../src/lib/releases')['chooseReleases'];
+let releaseOrder: typeof import('../src/lib/releases')['releaseOrder'];
+let CHAPTER_RETRY_CAP: number;
+before(async () => {
+  ({ listingRows, whyOf, copyToChapter, sameRelease, resolveListingRow, automaticCopies } = await import('../src/lib/seriesListing'));
+  ({ chooseReleases, releaseOrder } = await import('../src/lib/releases'));
+  ({ CHAPTER_RETRY_CAP } = await import('../src/lib/updater'));
+});
+
+const ch = (n: number, extra: Record<string, unknown> = {}) => ({ sourceId: `c/${n}/${extra.scanlator ?? ''}`, number: n, title: `Chapter ${n}`, ...extra });
+const noPrefs = { priority: [], blocked: [], patienceMs: 0 };
+
+test('one row per number, carrying every group of every copy and the chosen copy\'s source', () => {
+  // Chapter 3 is listed by two groups on the primary and again by the follower; chapter 4 by the follower only.
+  const tagged = [
+    ch(1, { source: 'pri' }),
+    ch(3, { scanlator: 'Group A', source: 'pri' }),
+    ch(3, { scanlator: 'Group B', source: 'pri' }),
+    ch(3, { scanlator: 'Group A', source: 'fol' }), // the same group again: deduped, not listed twice
+    ch(4, { scanlator: 'Group C', source: 'fol' }),
+    { sourceId: 'x', number: NaN, source: 'pri' }, // an unparsable number is not a chapter
+  ];
+  const { releases, waiting } = chooseReleases(tagged, { ...noPrefs, priority: ['Group B'] }, { sourceRank: (s) => (s === 'pri' ? 0 : 1) });
+  const rows = listingRows(tagged, releases, new Set(waiting), 'pri');
+
+  assert.deepEqual(rows.map((r) => r.number), [1, 3, 4], 'one row per finite number, ascending');
+  const three = rows[1];
+  assert.deepEqual(three.groups, ['Group A', 'Group B'], 'every group that released ANY copy, deduped');
+  assert.equal(three.scanlator, 'Group B', 'the chosen copy is the ranked group\'s');
+  assert.equal(three.chosen.sourceId, 'c/3/Group B');
+  assert.equal(three.sourceId, 'pri');
+  assert.equal(three.status, 'available');
+  assert.equal(rows[2].sourceId, 'fol', 'a number only the follower lists is fetched through the follower');
+  assert.equal(rows[0].sourceId, 'pri');
+  assert.deepEqual(rows[0].groups, [], 'a copy naming no group contributes no group');
+});
+
+/**
+ * Reintroduce by storing `[shown].map(toCopy)` alone in listingRows: chapter 3 has one copy and "every
+ * copy" reads 1. Reintroduce the order by dropping the `others.sort(order)`: the follower's copy of 3 sits
+ * before the primary's blocked-by-nobody Group A copy, because the source listed it first.
+ */
+test('every copy of a number is kept, the chosen one first', () => {
+  // Chapter 3: the primary lists Group A, then an external link from Group B, then the follower lists
+  // Group C. Under a priority for B the rules would still take A's copy (B's is an external link, which is
+  // never preferred over a hosted one), so A is chosen; the rest follow in the rules' order -- C's hosted
+  // copy before B's external one -- rather than the order the sites listed them in.
+  const tagged = [
+    ch(3, { scanlator: 'Group A', source: 'pri', pages: 10, publishedAt: '2026-09-01T00:00:00Z' }),
+    ch(3, { scanlator: 'Group B', source: 'pri', pages: 0, publishedAt: '2026-09-02T00:00:00Z', lang: 'en' }),
+    ch(3, { scanlator: 'Group C', source: 'fol', publishedAt: 'not a date' }),
+    ch(4, { source: 'pri' }),
+  ];
+  const prefs = { ...noPrefs, priority: ['Group B'] };
+  const opts = { sourceRank: (s?: string) => (s === 'pri' ? 0 : 1) };
+  const { releases, waiting } = chooseReleases(tagged, prefs, opts);
+  const rows = listingRows(tagged, releases, new Set(waiting), 'pri', releaseOrder(prefs, opts));
+  const three = rows.find((r) => r.number === 3)!;
+  assert.equal(three.copies.length, 3, 'every copy');
+  assert.deepEqual(three.copies.map((c) => c.scanlator), ['Group A', 'Group C', 'Group B'], 'chosen first, then the rules\' order');
+  assert.deepEqual(three.copies[0], {
+    sourceId: 'c/3/Group A', source: 'pri', groups: ['Group A'], scanlator: 'Group A', lang: null, pages: 10, publishedAt: '2026-09-01T00:00:00Z',
+    title: 'Chapter 3',
+  });
+  assert.equal(three.copies[1].publishedAt, null, 'an unparsable date is stored as no date, as the row\'s own is');
+  assert.equal(three.copies[1].source, 'fol');
+  assert.deepEqual([three.copies[2].lang, three.copies[2].pages], ['en', 0]);
+  assert.deepEqual(rows.find((r) => r.number === 4)!.copies.map((c) => c.groups), [[]], 'a copy naming no group has no groups');
+
+  // And a stored copy comes back to the downloader as the chapter it was, with the row's title.
+  const back = copyToChapter(three.copies[2], { number: 3, title: 'Chapter 3' });
+  assert.deepEqual(back, {
+    sourceId: 'c/3/Group B', number: 3, title: 'Chapter 3', pages: 0, publishedAt: '2026-09-02T00:00:00Z',
+    scanlator: 'Group B', groups: ['Group B'], lang: 'en', source: 'pri',
+  });
+});
+
+test('every copy keeps its own title, and the number the source gave it', () => {
+  // #116: posts that share a number are different chapters with different names. Stored with the row's title
+  // alone, the versions sheet read twenty identical lines. Reintroduce by dropping `title` from toCopy: undefined.
+  const tagged = [
+    ch(2, { title: 'Episode 1 - Page1', source: 'pri', sourceNumber: 1 }),
+    ch(2, { title: 'Episode 1 - Page 2', scanlator: 'Group B', source: 'pri' }),
+  ];
+  const { releases } = chooseReleases(tagged, noPrefs);
+  const [row] = listingRows(tagged, releases, new Set(), 'pri');
+  assert.deepEqual(row.copies.map((c) => c.title).sort(), ['Episode 1 - Page 2', 'Episode 1 - Page1']);
+  assert.equal(row.copies.find((c) => c.title === 'Episode 1 - Page1')!.sourceNumber, 1);
+  assert.equal('sourceNumber' in row.copies.find((c) => c.title === 'Episode 1 - Page 2')!, false, 'absent where nothing was renumbered');
+});
+
+test('a pick is stamped with the picked copy\'s title', () => {
+  // copyToChapter feeds the downloader, whose title becomes the file's chapter name: a pick of another post must
+  // not be named after the chosen one. Reintroduce by returning `row.title`: 'Episode 1 - Page1'.
+  const copy = { sourceId: 'p2', source: 'pri', groups: [], scanlator: null, lang: null, pages: null, publishedAt: null, title: 'Episode 1 - Page 2' };
+  assert.equal(copyToChapter(copy, { number: 1, title: 'Episode 1 - Page1' }).title, 'Episode 1 - Page 2');
+  // A copy stored before copies had titles takes the row's, as every copy did.
+  const { title: _t, ...old } = copy;
+  assert.equal(copyToChapter(old, { number: 1, title: 'Episode 1 - Page1' }).title, 'Episode 1 - Page1');
+});
+
+test('a number only blocked groups released is kept as blocked, with a copy to show', () => {
+  // chooseReleases drops every copy of 7, so the number has no release. It must still be a row -- the
+  // series page has to say "only blocked groups released it", and a picker has to be able to name them --
+  // and it needs a copy for the title and the date.
+  const tagged = [ch(6, { source: 'pri' }), ch(7, { scanlator: 'Spam Group', source: 'pri', publishedAt: '2026-09-01T00:00:00Z' })];
+  const { releases, waiting } = chooseReleases(tagged, { ...noPrefs, blocked: ['spam group'] });
+  assert.deepEqual(releases.map((r) => r.number), [6], 'the chooser dropped 7 -- the premise of this test');
+  const rows = listingRows(tagged, releases, new Set(waiting), 'pri');
+  const seven = rows.find((r) => r.number === 7)!;
+  assert.ok(seven, 'the blocked number is still a row');
+  assert.equal(seven.status, 'blocked');
+  assert.deepEqual(seven.groups, ['Spam Group']);
+  assert.equal(seven.publishedAt, '2026-09-01T00:00:00Z', 'the first copy is kept for display');
+  assert.equal(rows.find((r) => r.number === 6)!.status, 'available');
+});
+
+test('a number the chooser is holding for the preferred group is held', () => {
+  const tagged = [ch(5, { scanlator: 'Group A', source: 'pri', publishedAt: new Date().toISOString() })];
+  const { releases, waiting } = chooseReleases(tagged, { priority: ['Group B'], blocked: [], patienceMs: 2 * 86_400_000 });
+  assert.deepEqual(waiting, [5], 'the chooser is holding 5 -- the premise of this test');
+  const rows = listingRows(tagged, releases, new Set(waiting), 'pri');
+  assert.equal(rows[0].status, 'held');
+  assert.equal(rows[0].scanlator, 'Group A', 'and the copy on offer today is still the row\'s copy');
+});
+
+test('a block reapply recomputes every chosen field and preserves the natural held state', () => {
+  const now = Date.now();
+  const fresh = new Date(now).toISOString();
+  const tagged = [
+    ch(9, { title: 'Bad title', scanlator: 'Bad', groups: ['Bad'], source: 'pri', pages: 10, publishedAt: fresh }),
+    ch(9, { title: 'Good title', scanlator: 'Good', groups: ['Good'], source: 'fol', pages: 12, publishedAt: fresh }),
+  ];
+  const [base] = listingRows(tagged, tagged.slice(0, 1), new Set(), 'pri');
+  const sourceRanked = resolveListingRow(base, noPrefs, { sourceRank: (source) => source === 'fol' ? 0 : 1 });
+  assert.equal(sourceRanked.sourceId, 'fol', 'the current source priority/follow order participates in the rebuild');
+  const blocked = resolveListingRow(base, { priority: ['Preferred'], blocked: ['Bad', 'Good'], patienceMs: 2 * 86_400_000 });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.unblockedStatus, 'held', 'lifting the block restores the chooser\'s wait');
+
+  const open = resolveListingRow(blocked, { priority: ['Good'], blocked: ['Bad'], patienceMs: 2 * 86_400_000 });
+  assert.equal(open.status, 'available');
+  assert.equal(open.sourceId, 'fol');
+  assert.equal(open.title, 'Good title');
+  assert.equal(open.scanlator, 'Good');
+  assert.equal(open.publishedAt, fresh);
+  assert.equal(open.chosen.sourceId, 'c/9/Good');
+  assert.equal(open.copies.length, 2, 'blocked copies remain stored for a later unblock');
+});
+
+test('automatic fallbacks drop blocked copies while an explicit picker can retain the original list', () => {
+  const copies = [
+    copy('pri', { groups: ['Blocked'] }),
+    copy('a', { groups: ['Open'] }),
+    copy('b', { groups: ['Blocked', 'Open'] }),
+  ];
+  const out = automaticCopies(copies, { priority: [], blocked: ['blocked'], patienceMs: 0 });
+  assert.deepEqual(out.map((c) => c.source), ['a', 'b'], 'joint releases survive when one contributing group is open');
+  assert.equal(copies.length, 3, 'the stored list stays intact for an explicit versions pick');
+});
+
+test('a copy an adapter tagged with nothing falls back to the series\' own source', () => {
+  const tagged = [ch(1)];
+  const rows = listingRows(tagged, tagged, new Set(), 'pri');
+  assert.equal(rows[0].sourceId, 'pri');
+});
+
+/**
+ * The precedence is the contract the series page draws from: floor > blocked > failed > held > missing.
+ * Reintroduce by swapping any two branches in whyOf -- the `held` and `failed` checks, say: "a capped
+ * chapter that is also held is failed" then reads held.
+ */
+test('whyOf: floor beats blocked beats failed beats held beats missing', () => {
+  const cap = CHAPTER_RETRY_CAP;
+  assert.equal(whyOf('available', 4, null, 0), 'missing', 'nothing wrong with it: the sweep has not got to it');
+  assert.equal(whyOf('held', 4, null, 0), 'held');
+  assert.equal(whyOf('held', 4, null, cap), 'failed', 'a capped chapter that is also held is failed');
+  assert.equal(whyOf('available', 4, null, cap - 1), 'missing', 'one try short of the cap is still being tried');
+  assert.equal(whyOf('blocked', 4, null, cap), 'blocked', 'a number with no takeable copy is blocked whatever its ledger says');
+  assert.equal(whyOf('blocked', 4, 10, cap), 'floor', 'below the floor nothing more specific may leak out of the run');
+  assert.equal(whyOf('available', 10, 10, 0), 'missing', 'the floor itself is not below the floor');
+  assert.equal(whyOf('held', 9.5, 10, 0), 'floor', 'a half chapter below the floor is below the floor');
+});
+
+test('another split of a chapter on disk says so, below the floor and failed or not', () => {
+  // v0.50.0 (lib/partAlias.ts R2). Reintroduce by testing the floor before `covered` in whyOf: "another split below
+  // the floor" reads floor -- folded into the older-chapters run, whose Fetch all would take it.
+  assert.equal(whyOf('covered', 78.3, null, 0), 'covered');
+  assert.equal(whyOf('covered', 78.3, 100, 0), 'covered', 'another split below the floor');
+  assert.equal(whyOf('covered', 78.3, null, CHAPTER_RETRY_CAP), 'covered', 'a failure count from before outranks it');
+  assert.equal(whyOf('covered', 78.3, null, 0, 90), 'covered', 'the slow archive never takes it');
+});
+
+// ---- sameRelease (v0.55.4, #158): which other copies of a number a download may take instead -------------------------
+
+/** One stored copy: a group (or none), a language and a page count, on `source`. */
+const copy = (source: string, o: { groups?: string[]; scanlator?: string | null; lang?: string | null; pages?: number | null } = {}) => ({
+  sourceId: `${source}/c1`, source, groups: o.groups ?? [], scanlator: o.scanlator ?? null, lang: o.lang ?? null,
+  pages: o.pages === undefined ? 20 : o.pages, publishedAt: null,
+});
+const FOLLOWED = ['pri', 'a', 'b', 'c', 'd', 'e'];
+
+test('the same release is the same groups, on a followed source, one copy per source and the chosen first', () => {
+  // Reintroduce by comparing the first group only (`theirs` against `mine` by their first key): "a joint release is not
+  // one group's" takes d's copy, which Group B released with Group A.
+  const chosen = copy('pri', { groups: ['Group A'] });
+  const copies = [
+    chosen,
+    copy('a', { groups: ['group-a '] }), // the same group, spelt as another site spells it
+    copy('a', { groups: ['Group A'] }), // a second copy on a: one per source
+    copy('b', { groups: ['Group B'] }),
+    copy('d', { groups: ['Group A', 'Group B'] }),
+    copy('x', { groups: ['Group A'] }), // not followed
+    copy('pri', { groups: ['Group A'], pages: 21 }), // a re-upload on the chosen copy's own source
+  ];
+  const out = sameRelease(chosen, copies, { followed: FOLLOWED });
+  assert.equal(out[0], chosen, 'the chosen copy comes first');
+  assert.ok(!out.some((c) => c.source === 'd'), 'a joint release is not one group\'s');
+  assert.ok(!out.some((c) => c.source === 'x'), 'a source the series does not follow is never asked');
+  assert.deepEqual(out.map((c) => c.source), ['pri', 'a'], 'a copy by another group is never the same release');
+});
+
+test('copies that name no group match only each other, in one language, with page counts that agree', () => {
+  // Aggregators rarely name a group. Reintroduce by dropping the page check: "a no-group copy with another page count is
+  // another release" takes c's 18 pages; by dropping the language check: "another language is another release" takes e.
+  const chosen = copy('pri', { pages: 20 });
+  const copies = [
+    chosen,
+    copy('a', { pages: 20 }),
+    copy('b', { pages: null }), // a count nobody knows contradicts nothing
+    copy('c', { pages: 18 }),
+    copy('d', { groups: ['Group A'] }),
+    copy('e', { pages: 20, lang: 'es' }),
+  ];
+  const out = sameRelease(chosen, copies, { followed: FOLLOWED }).map((c) => c.source);
+  assert.ok(!out.includes('c'), 'a no-group copy with another page count is another release');
+  assert.ok(!out.includes('e'), 'another language is another release');
+  assert.ok(!out.includes('d'), 'a copy naming a group is not the no-group release');
+  assert.deepEqual(out, ['pri', 'a', 'b']);
+  // And a chosen copy that names a group never matches one that names none, whatever its pages.
+  assert.deepEqual(sameRelease(copy('pri', { groups: ['Group A'] }), [copy('a', {})], { followed: FOLLOWED }).map((c) => c.source), ['pri'],
+    'a no-group copy was taken for a named group\'s release');
+});
+
+test('a placeholder where the group goes is no group: two "Unofficial" copies are held to their page counts', () => {
+  // v0.55.7 (#158). Aggregators label every chapter "Unofficial" or "Unknown". Reintroduce by keeping the placeholders
+  // as group names (keysOf without PLACEHOLDER_GROUPS): "two Unofficial copies with other page counts are other
+  // releases" takes b's 18 pages, paired by the label alone.
+  // As the listing stores them: `groups` already split from the site's label (listingRows, groupsOf).
+  const chosen = copy('pri', { groups: ['Unofficial'], scanlator: 'Unofficial', pages: 20 });
+  const copies = [
+    chosen,
+    copy('a', { groups: ['unofficial'], scanlator: 'unofficial', pages: 20 }), // the same label, spelt another way, and the pages agree
+    copy('b', { groups: ['Unofficial'], scanlator: 'Unofficial', pages: 18 }), // the same label, and another release by its pages
+    copy('c', { pages: 20 }), // no label at all: no group either
+    copy('d', { groups: ['N/A'], scanlator: 'N/A', pages: null }), // a count nobody knows contradicts nothing
+    copy('e', { groups: ['Group A'], pages: 20 }), // a real group is never the no-group release
+  ];
+  const out = sameRelease(chosen, copies, { followed: FOLLOWED }).map((c) => c.source);
+  assert.ok(!out.includes('b'), 'two Unofficial copies with other page counts are other releases');
+  assert.ok(!out.includes('e'), 'a named group was taken for the no-group release');
+  assert.deepEqual(out, ['pri', 'a', 'c', 'd'], 'a placeholder label is no group: it pairs with copies naming none when the pages agree');
+  // A real group beside a placeholder is that group's release, and "Unknown" never makes it another.
+  assert.deepEqual(sameRelease(copy('pri', { groups: ['Group A', 'Unknown'] }), [copy('a', { groups: ['Group A'] }), copy('b', { groups: ['No Group'] })],
+    { followed: FOLLOWED }).map((c) => c.source), ['pri', 'a'], 'the placeholder beside a real group changed which release it is');
+});
+
+test('a copy that names no language takes its source\'s, and an external link is never a release', () => {
+  // MangaDex says which language each chapter is in; an aggregator says nothing, and its source declares one.
+  // Reintroduce by dropping `langOf`: "a Spanish site's copy of an English chapter" is taken.
+  const chosen = copy('pri', { lang: 'en', pages: null });
+  const copies = [chosen, copy('a', { pages: null }), copy('b', { pages: null })];
+  const langOf = (s: string) => (s === 'a' ? 'es' : 'en');
+  const out = sameRelease(chosen, copies, { followed: FOLLOWED, langOf }).map((c) => c.source);
+  assert.deepEqual(out, ['pri', 'b'], "a Spanish site's copy of an English chapter");
+  // External links (pages === 0) are not a release anyone could download, on either side.
+  assert.deepEqual(sameRelease(chosen, [chosen, copy('a', { pages: 0 })], { followed: FOLLOWED }).map((c) => c.source), ['pri']);
+  const ext = copy('pri', { pages: 0 });
+  assert.deepEqual(sameRelease(ext, [ext, copy('a', { pages: 0 }), copy('b')], { followed: FOLLOWED }), [ext], 'an external chosen copy has no other');
+});

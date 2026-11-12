@@ -1,0 +1,151 @@
+/**
+ * The server's own downloading, as cards: the nightly sweep, the library repair and a bulk "Fetch newest".
+ *
+ * #82 (Wolf92s): "I can't find what's currently being downloaded." The download pill (Library -> Downloads since
+ * v0.49.0, web components/ServerDownloadsView.tsx) only ever knew the jobs a person started from a button --
+ * routes/sources.ts keeps those, one card per series folder. Everything the server does by itself went through `updateSeries`
+ * and was invisible: a sweep fetching forty chapters at three in the morning looked exactly like a quiet
+ * night until the Updates shelf filled up, and there was no way to stop one that was hammering a source.
+ *
+ * So each of the three runs registers ONE card while it goes -- one per run, not one per series: a sweep
+ * visits two hundred series, and two hundred cards is a log, not a view -- with how far it has got, what it
+ * has saved, what it is on right now, and a cancel flag the run checks between chapters. Admins only (the
+ * route decides): these are the server's housekeeping, and the series a sweep is on may be in a library the
+ * viewer cannot see.
+ *
+ * In memory, like the per-series jobs: a restart ends every run anyway, and the Tasks panel keeps the
+ * persisted result of the last one.
+ */
+
+import { saidOf, type Part, type Said } from './said';
+
+/**
+ * `find_sources` (v0.49.1): a Find other sources run (lib/findSources.ts). Admins only; it downloads nothing.
+ * `autofix` (v0.55.0): Health's Fix everything (lib/autofix.ts). Admins only: `done`/`total` are its phases, `step` the
+ * phase it is in, `current` the series it is on.
+ */
+export type RunKind = 'sweep' | 'repair' | 'newest' | 'find_sources' | 'autofix';
+
+export interface RunCard {
+  kind: RunKind;
+  /** The account that started it, or null for the schedule. */
+  by: string | null;
+  startedAt: number;
+  finishedAt?: number;
+  status: 'running' | 'done' | 'cancelled' | 'error';
+  /** Series looked at so far, of `total`; for the repair, steps. 0 of 0 until the run has sized itself. */
+  done: number;
+  total: number;
+  /** Chapters it saved, and chapters that would not save. */
+  fetched: number;
+  failed: number;
+  /** The series it is inside right now. */
+  current?: { id: string; title: string };
+  /** The repair's current step (lib/repair.ts REPAIR_STEPS). */
+  step?: string;
+  /**
+   * v0.49.0, the repair: what a one-row Health press is about -- a series title, or a source's name -- so a
+   * card that says "Library repair" can say which one. The web puts the action's own name in front of it.
+   */
+  label?: string;
+  /**
+   * v0.49.0, the repair: which run it is (lib/repairRuns.ts kindOf: fix_short, fill, retry, steps:…), and the
+   * chapter's number when it is about one chapter -- with `label`, "Find a longer copy · Walk Tale ch 3".
+   */
+  repairKind?: string;
+  number?: number;
+  /**
+   * v0.49.0, the repair: the series `label` names, when it names one. The Downloads view drops the label for a
+   * viewer who may not list that series (the 18+ hide); a source's name has no series and is not dropped.
+   */
+  seriesId?: string;
+  /**
+   * v0.49.0: `false` on a run that cannot download a chapter (a solver reset, a page count, names,
+   * directions; lib/repairRuns.ts canDownload). It stays a Server task but does not turn the Library ring.
+   * Absent: it may download.
+   */
+  downloads?: false;
+  /** v0.49.1, a Find other sources run: how many sources it has followed so far, across its series. */
+  followed?: number;
+  /**
+   * v0.54.0, a Find run in replace mode (`mode: 'replace'`): how many series it has moved to another main source so far,
+   * how many are still on the source it replaces (`left`, read again after each series), and, once it has ended,
+   * whether that source is switched off (`turnedOff`).
+   */
+  mode?: 'replace';
+  promoted?: number;
+  left?: number;
+  turnedOff?: boolean;
+  /**
+   * v0.54.0, a Find run over one source's series (Replace's always): that source, by id and by name, as the run's
+   * summary names it (lib/findSources.ts namedSource) -- so the card can say which source it replaces, and a Replace
+   * dialog opened again for that source finds the run going rather than offering to start one.
+   */
+  sourceId?: string;
+  sourceName?: string;
+  /**
+   * v0.49.1, a Find other sources run: what it waits on before its next series, while it waits (a sweep, a repair,
+   * the daily source check) -- so Server tasks says why it is paused rather than naming the series it last did.
+   */
+  waiting?: 'sweep' | 'repair' | 'check';
+  /** Someone asked it to stop: it does, after the chapter in flight. */
+  cancelRequested?: boolean;
+  reason?: string;
+  /** v0.49.1: `reason` as a code the web words (lib/said.ts `run.*`). */
+  reasonSaid?: Said;
+}
+
+const runs = new Map<RunKind, RunCard>();
+
+/** How long a finished run stays listed. The same day as the per-series cards (routes/sources.ts DONE_TTL). */
+export const RUN_TTL = 24 * 3600_000;
+
+/** A new card for a run that is starting, replacing whatever the last run of that kind left. */
+export function beginRun(kind: RunKind, by: string | null, total = 0): RunCard {
+  const card: RunCard = { kind, by, startedAt: Date.now(), status: 'running', done: 0, total, fetched: 0, failed: 0 };
+  runs.set(kind, card);
+  return card;
+}
+
+/**
+ * Close a run's card. A card whose cancel was asked for ends `cancelled` whatever the caller says, unless the
+ * run failed outright: "Cancelled" is the true account of a run that stopped because someone said so.
+ */
+export function endRun(card: RunCard, status: 'done' | 'error', reason?: Part): void {
+  card.status = status === 'error' ? 'error' : card.cancelRequested ? 'cancelled' : 'done';
+  card.finishedAt = Date.now();
+  card.current = undefined;
+  card.step = undefined;
+  if (reason) { card.reason = reason.text; card.reasonSaid = saidOf(reason); }
+}
+
+/** Whether the run of this kind was asked to stop. What the loops check, between chapters and between series. */
+export function stopRequested(card: RunCard | null | undefined): boolean {
+  return !!card?.cancelRequested;
+}
+
+/** Ask the running run of this kind to stop. False when none is running. */
+export function requestStop(kind: RunKind): boolean {
+  const c = runs.get(kind);
+  if (!c || c.status !== 'running') return false;
+  c.cancelRequested = true;
+  return true;
+}
+
+/** Drop a finished card. False when there is none, or it is still running (that one is cancelled, not dismissed). */
+export function dismissRun(kind: RunKind): 'ok' | 'running' | 'not_found' {
+  const c = runs.get(kind);
+  if (!c) return 'not_found';
+  if (c.status === 'running') return 'running';
+  runs.delete(kind);
+  return 'ok';
+}
+
+/** Every card still worth showing: the running ones, and finished ones from the last day. Oldest first. */
+export function listRuns(now = Date.now()): RunCard[] {
+  for (const [k, c] of runs) if (c.status !== 'running' && c.finishedAt && now - c.finishedAt > RUN_TTL) runs.delete(k);
+  return [...runs.values()].sort((a, b) => a.startedAt - b.startedAt).map((c) => ({ ...c }));
+}
+
+/** For tests: forget every card. */
+export function clearRuns(): void { runs.clear(); }

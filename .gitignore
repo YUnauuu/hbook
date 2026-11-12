@@ -1,0 +1,55 @@
+.env
+.env.title-extractor
+node_modules
+bff/node_modules
+web/node_modules
+web/.next/
+web/out/
+bff/dist/
+data/
+*.log
+.npm/
+# the scraper "source pack" is a SEPARATE, arm's-length repo — never commit it into the core
+sources-pack/
+# mounted source plugins (user-supplied); keep the empty default dir but not its contents
+sources/*
+!sources/.gitkeep
+# The Umbrel package commits its (empty) data directories: umbrelOS mounts them, and a missing one becomes
+# a root-owned mountpoint the app cannot write. `data/` above would swallow them.
+!deploy/umbrel/hbook/data/
+!deploy/umbrel/hbook/data/**
+# server-specific compose override (reverse-proxy networks) — the committed compose runs standalone
+docker-compose.override.yml
+# browser end-to-end screenshots: evidence for a failing run, not source
+web/test/e2e/shots/
+web/test/e2e/shots-i18n/
+web/shots*/
+.design/
+
+# Instance-local files that must never be committed: a login wall built from a real library, etc.
+local/
+
+# Python bytecode from the e2e seed script
+__pycache__/
+
+# The desktop app's build outputs are listed in desktop/.gitignore (resources/, out/, dist/, .cache/ -- where
+# desktop/scripts/release/pin-engine.mjs keeps the packs it hashes). This is the one that lands OUTSIDE
+# desktop/: the web + bff build that .github/workflows/desktop.yml hands to `scripts/stage.mjs --prebuilt`.
+prebuilt/
+
+# scripts/shots/run.sh --record writes the tour's video into docs/shots/ unless DEMO_DIR says where the site wants it;
+# only the animated tour.webp (the README's) is committed.
+docs/shots/tour.mp4
+docs/shots/tour.webm
+docs/shots/tour-poster.webp
+# Browser evidence from the backlog regression walk.
+web/test/e2e/shots-backlog/
+web/test/e2e/shots-page-cleanup/
+web/test/e2e/shots-title-art/
+web/test/e2e/shots-title-logo-scan/
+web/test/e2e/shots-title-extraction/
+web/test/e2e/shots-title-mask/
+web/test/e2e/shots-cover-title-batch/
+
+# IDE files
+.idea/

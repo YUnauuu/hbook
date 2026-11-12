@@ -1,0 +1,503 @@
+// Filling a series' missing chapters, driven through the real routes.
+//
+// The one that matters most is the metadata test. `downloadChapter` writes `meta.series` into the CBZ's
+// ComicInfo <Series>, and every persistScan re-reads the FIRST chapter's ComicInfo and overwrites the series
+// row's title, summary, author, status, genres and web from it (lib/library.ts, ON CONFLICT DO UPDATE). A
+// fill repairs the START of a series, so it writes the new first chapter. Pass the candidate's title as meta
+// and the series silently renames itself for everyone on the next scan -- and it fires when the match is
+// RIGHT, because a right match is usually under a different English title. That is not a hypothetical: the
+// series that prompted this feature is listed as "Mr Devourer, Please Act Like a Final Boss" elsewhere.
+//
+// Skipped automatically unless TEST_DATABASE_URL is set.
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const DSN = process.env.TEST_DATABASE_URL;
+let root = '';
+if (DSN) {
+  root = mkdtempSync(join(tmpdir(), 'hbook-fill-'));
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+  process.env.LIBRARY_BACKEND = 'owned';
+  // These read a scan's whole answer from POST: let its first answer wait for every source (v0.48.4 answers
+  // after SCAN_FIRST_ANSWER_MS with what it has, and a slow machine must not see half a scan).
+  process.env.SCAN_FIRST_ANSWER_MS = '60000';
+  process.env.DL_ROOT = root;
+  process.env.DOWNLOAD_MIN_GAP_MS = '0';
+  process.env.SCAN_CONCURRENCY = '4'; // the scan-latency test below assumes four slots and
+  process.env.SCAN_ENOUGH = '3';      // stops once three sources have the title
+  process.env.SCAN_SEARCH_MS = '300'; // real: 45s; the budget test below needs it short
+  process.env.SOLVER_BUDGET_MS = '800';
+}
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+const LIB = 'lib_fill', SERIES = 's_fill_1', FOLDER = 'Rich Source/Filled Series';
+const LATEST = 's_fill_latest', LATEST_FOLDER = 'Rich Source/Latest Series';
+const DUPE_SERIES = 's_fill_dupe', DUPE_FOLDER = 'Dupe Source/Dupe Series';
+const RICH = 'fill-rich';      // has 1..10
+const POOR = 'fill-poor';      // has only 8..10, which is what our library was built from
+const WRONG = 'fill-wrong';    // a different series that numbers 1..3
+const DUPE = 'fill-dupe';      // lists chapter 5 twice, once per group, the way MangaDex does
+const USER = 'fill-admin';
+let q: any, app: any, tok: string, uid: string;
+/** How many times the dupe source was asked for a chapter's pages: the number of downloads it served. */
+let dupePageCalls = 0;
+
+const page = (n: number) => ({ sourceId: `c/${n}`, number: n, title: `Chapter ${n}` });
+
+/**
+ * PNG magic plus padding. The padding is load-bearing: the downloader drops any response under 256 bytes as
+ * a blocked or empty page, so a real 68-byte 1x1 PNG is discarded and the chapter reports zero pages.
+ */
+const PIXEL = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(400, 7)]);
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (u: any, init?: any) => {
+  if (String(u).includes('example.invalid')) {
+    return new Response(PIXEL, { status: 200, headers: { 'content-type': 'image/png' } });
+  }
+  return realFetch(u, init);
+}) as typeof fetch;
+
+function fake(id: string, name: string, nums: number[], title: string) {
+  return {
+    id, name,
+    async search() { return [{ sourceId: `${id}-s`, source: id, title, coverUrl: undefined }]; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title }; },
+    async listChapters() { return nums.map(page); },
+    async getPageUrls() { return ['https://example.invalid/p1.jpg']; },
+    async latest() { return []; },
+  };
+}
+
+/** Chapters 3..7 with chapter 5 released by two groups: six rows for five numbers, each copy under its own id. */
+function dupe() {
+  return {
+    id: DUPE, name: 'Dupe Source',
+    async search() { return [{ sourceId: `${DUPE}-s`, source: DUPE, title: 'Dupe Series', coverUrl: undefined }]; },
+    async getSeries(sid: string) { return { sourceId: sid, source: DUPE, title: 'Dupe Series' }; },
+    async listChapters() {
+      return [
+        page(3), page(4),
+        { sourceId: 'c/5-a', number: 5, title: 'Chapter 5', scanlator: 'Group A' },
+        { sourceId: 'c/5-b', number: 5, title: 'Chapter 5', scanlator: 'Group B' },
+        page(6), page(7),
+      ];
+    },
+    async getPageUrls() { dupePageCalls++; return ['https://example.invalid/p1.jpg']; },
+    async latest() { return []; },
+  };
+}
+
+before(async () => {
+  if (!DSN) return;
+  const { migrate } = await import('../src/lib/migrate');
+  ({ q } = (await import('../src/lib/db')) as any);
+  const { registerAdapter } = await import('../src/lib/sources');
+  const Fastify = (await import('fastify')).default;
+  const jwt = (await import('@fastify/jwt')).default;
+  const sourceRoutes = (await import('../src/routes/sources')).default;
+  await migrate();
+
+  registerAdapter(fake(RICH, 'Rich Source', [1,2,3,4,5,6,7,8,9,10,11], 'Filled Series Deluxe Edition') as any);
+  registerAdapter(fake(POOR, 'Poor Source', [8,9,10,11], 'Filled Series') as any);
+  registerAdapter(fake(WRONG, 'Wrong Source', [1,2,3], 'Filled Series') as any);
+  registerAdapter(dupe() as any);
+
+  // A previous run's failed downloads leave these fakes marked blocked in source_health, and a blocked source
+  // is (correctly) not offered -- which would make this file fail for a reason that has nothing to do with it.
+  await q('DELETE FROM source_health WHERE source_id = ANY($1)', [[RICH, POOR, WRONG, DUPE]]);
+
+  await q(`INSERT INTO libraries (id, name, path) VALUES ($1,'Fill',$1) ON CONFLICT (id) DO NOTHING`, [LIB]);
+  await q(`DELETE FROM lib_series WHERE id = $1`, [SERIES]);
+  await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, summary, author)
+           VALUES ($1,'T!fill','Filled Series',$2,4,$3,$4,'poor-s','Our summary','Our author')`,
+    [SERIES, FOLDER, LIB, POOR]);
+  for (const n of [8, 9, 10, 11]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, root)
+             VALUES ($1,$2,'T!fill',$3,$4,$5,'/library') ON CONFLICT (id) DO NOTHING`,
+      [`b_fill_${n}`, SERIES, `${FOLDER}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  // A series added as "Latest 4" from the rich source: holds 8..11 of its 1..11, floor 8. The run below is
+  // on the series' own source, which is the one case the scan may offer it from.
+  await q(`DELETE FROM lib_series WHERE id = $1`, [LATEST]);
+  await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, summary, author, chapter_floor)
+           VALUES ($1,'T!fill','Latest Series',$2,4,$3,$4,'rich-s','Our summary','Our author',8)`,
+    [LATEST, LATEST_FOLDER, LIB, RICH]);
+  for (const n of [8, 9, 10, 11]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, root)
+             VALUES ($1,$2,'T!fill',$3,$4,$5,'/library') ON CONFLICT (id) DO NOTHING`,
+      [`b_latest_${n}`, LATEST, `${LATEST_FOLDER}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  // A series holding 3,4,6,7 -- a hole at 5 -- for the two-group listing below.
+  await q(`DELETE FROM lib_series WHERE id = $1`, [DUPE_SERIES]);
+  await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, summary, author)
+           VALUES ($1,'T!fill','Dupe Series',$2,4,$3,$4,'dupe-s','Our summary','Our author')`,
+    [DUPE_SERIES, DUPE_FOLDER, LIB, DUPE]);
+  for (const n of [3, 4, 6, 7]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, root)
+             VALUES ($1,$2,'T!fill',$3,$4,$5,'/library') ON CONFLICT (id) DO NOTHING`,
+      [`b_dupe_${n}`, DUPE_SERIES, `${DUPE_FOLDER}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  await q('DELETE FROM users WHERE username = $1', [USER]);
+  uid = (await q(`INSERT INTO users (username, display_name, password_hash, role, auth_kind)
+                  VALUES ($1,$1,'x','admin','password') RETURNING id`, [USER]))[0].id;
+
+  app = Fastify();
+  await app.register(jwt, { secret: process.env.JWT_SECRET! });
+  await app.register(sourceRoutes);
+  await app.ready();
+  tok = `Bearer ${app.jwt.sign({ sub: uid, role: 'admin' })}`;
+});
+
+after(async () => {
+  if (root) rmSync(root, { recursive: true, force: true });
+  if (!DSN) return;
+  await app?.close();
+  await q('DELETE FROM series_sources WHERE series_id = ANY($1)', [[SERIES, LATEST, DUPE_SERIES]]).catch(() => {});
+  await q('DELETE FROM lib_books WHERE series_id = ANY($1)', [[SERIES, LATEST, DUPE_SERIES]]).catch(() => {});
+  await q('DELETE FROM lib_series WHERE id = ANY($1)', [[SERIES, LATEST, DUPE_SERIES]]).catch(() => {});
+  await q('DELETE FROM libraries WHERE id = $1', [LIB]).catch(() => {});
+  await q('DELETE FROM users WHERE username = $1', [USER]).catch(() => {});
+  await q('DELETE FROM source_health WHERE source_id = ANY($1)', [[RICH, POOR, WRONG, DUPE]]).catch(() => {});
+});
+
+const scan = (body: any = {}) =>
+  app.inject({ method: 'POST', url: '/api/sources/fill/scan', headers: { authorization: tok }, payload: { seriesId: SERIES, ...body } });
+
+test('the scan finds the hole and says who can fill it', { skip }, async (t) => {
+  const res = await scan();
+  assert.equal(res.statusCode, 200);
+  const j = res.json();
+
+  await t.test('it reports the gap we actually have', () => {
+    assert.deepEqual(j.gaps.map((g: any) => [g.lo, g.hi]), [], 'no interior gap: 8..11 is one run');
+    assert.equal(j.have.count, 4);
+  });
+
+  await t.test('a source that carries our numbering is accepted, under its own title', () => {
+    const rich = j.candidates.find((c: any) => c.source === RICH);
+    assert.ok(rich, 'the rich source was found by title');
+    assert.notEqual(rich.title, 'Filled Series',
+      'the candidate must carry ITS title, not ours: that difference is the whole hazard');
+    assert.equal(rich.coverage, 1, 'it lists every chapter we hold');
+  });
+
+  await t.test('a source with a different story is refused, not offered', () => {
+    const wrong = j.candidates.find((c: any) => c.source === WRONG);
+    assert.ok(wrong, 'it is still shown, so the person can see why');
+    assert.equal(wrong.why, 'numbering_mismatch');
+    assert.ok(wrong.coverage < 0.9, `coverage ${wrong.coverage} is the evidence shown`);
+  });
+
+  await t.test('a plan id is issued, and the chapter urls are not in the response', () => {
+    assert.match(j.planId, /^fp_/);
+    assert.ok(!JSON.stringify(j).includes('c/9'), 'no chapter URL may cross the wire');
+  });
+});
+
+/**
+ * The scan's have-set is the one definition of what the library holds (lib/libraryNumbers.ts), so it agrees
+ * with the Health page next door about which chapters are missing at all.
+ *
+ * Two rules, and the dialog used to have neither: a file the verify task found GONE is a hole worth
+ * offering (that is the whole point of the 'missing' reason), while a chapter somebody deliberately deleted
+ * is not -- offering to re-fetch a deletion is how the fill dialog and the Health page ended up telling an
+ * admin two different stories about the same series.
+ *
+ * Reintroduce by reading the raw rows again (`SELECT number FROM lib_books WHERE series_id = $1` in place
+ * of `haveNumbers`): `have.count` reads 5 and the gap at 3 disappears, so nothing is offered for the file
+ * that actually went missing.
+ */
+test('the scan offers a chapter whose file went missing, and not one deleted on purpose', { skip }, async () => {
+  const HELD = 's_fill_held', HELD_FOLDER = 'Poor Source/Held Series';
+  await q('DELETE FROM lib_series WHERE id = $1', [HELD]);
+  await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id)
+           VALUES ($1,'T!fill','Filled Series',$2,5,$3,$4,'poor-s')`, [HELD, HELD_FOLDER, LIB, POOR]);
+  for (const n of [1, 2, 3, 4, 5]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, root)
+             VALUES ($1,$2,'T!fill',$3,$4,$5,'/library')`,
+      [`b_held_${n}`, HELD, `${HELD_FOLDER}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  // 3: the verify task found the file gone. 4: an admin deleted it on purpose.
+  await q(`UPDATE lib_books SET pruned_at = now(), pruned_reason = 'missing' WHERE id = 'b_held_3'`);
+  await q(`UPDATE lib_books SET pruned_at = now(), pruned_reason = 'deleted' WHERE id = 'b_held_4'`);
+  try {
+    const j = (await scan({ seriesId: HELD })).json();
+    assert.equal(j.have.count, 4, 'the deleted chapter still counts as held; the missing one does not');
+    assert.deepEqual(j.gaps.map((g: any) => [g.lo, g.hi]), [[3, 3]], 'only the file that went missing is a hole');
+  } finally {
+    await q('DELETE FROM lib_series WHERE id = $1', [HELD]).catch(() => {});
+  }
+});
+
+test('a series added as "Latest N" can get its older chapters from its own source', { skip }, async (t) => {
+  // The add dialog's hint sends people here for the chapters a "Latest N" add left behind. Before this the
+  // scan offered interior gaps and newer chapters only, so that series answered "nothing is missing between
+  // the chapters you already have" -- a hint pointing at a dialog that could not deliver.
+  //
+  // Reintroduce by passing `{ older: false }` (or nothing) to assess() in the scan route: the pinned
+  // candidate's `older` is empty, its verdict is nothing_to_fill, and the `offers the run below` assertion
+  // fails.
+  const res = await scan({ seriesId: LATEST });
+  assert.equal(res.statusCode, 200);
+  const j = res.json();
+  const own = j.candidates.find((c: any) => c.source === RICH && c.pinned);
+  assert.ok(own, 'the series\' own source is a candidate');
+
+  await t.test('offers the run below what we hold, and nothing is refused', () => {
+    assert.deepEqual(own.older, [1, 2, 3, 4, 5, 6, 7], 'offers the run below');
+    assert.equal(own.why, 'ok');
+    assert.equal(j.refusal, null);
+    assert.equal(typeof j.fillMax, 'number', 'the dialog is told how much one fill may take');
+  });
+
+  await t.test('another source is never offered that run: below the floor is extrapolation from anyone else', () => {
+    for (const c of j.candidates.filter((c: any) => !c.pinned)) assert.deepEqual(c.older, [], `${c.source} offered older chapters`);
+  });
+
+  await t.test('and the fill accepts numbers from that run', async () => {
+    const r = await app.inject({
+      method: 'POST', url: '/api/sources/fill', headers: { authorization: tok },
+      payload: { planId: j.planId, source: RICH, sourceSeriesId: 'rich-s', numbers: [6, 7] },
+    });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(r.json().total, 2);
+  });
+});
+
+test('THE METADATA HAZARD: a fill must not rename the series', { skip }, async () => {
+  // A real interior gap to repair: drop chapter 9, leaving 8,10,11 -- still above MIN_HAVE, with a hole.
+  await q('DELETE FROM lib_books WHERE series_id = $1 AND number = 9', [SERIES]);
+  const j = (await scan()).json();
+  const rich = j.candidates.find((c: any) => c.source === RICH);
+  assert.ok(rich.fillable.includes(9), `chapter 9 should be offered, got ${JSON.stringify(rich.fillable)}`);
+
+  // Same plan, a number it never offered. Chapter 1 sits below everything we hold, so it is extrapolation
+  // rather than repair and was deliberately not on the list. Trusting the body here would let a client fetch
+  // anything it could name from any source in the plan.
+  const sneaky = await app.inject({
+    method: 'POST', url: '/api/sources/fill', headers: { authorization: tok },
+    payload: { planId: j.planId, source: RICH, sourceSeriesId: rich.sourceSeriesId, numbers: [1] },
+  });
+  assert.equal(sneaky.statusCode, 400, 'a number that was not offered must be refused');
+  assert.equal(sneaky.json().error, 'not_offered');
+
+  const res = await app.inject({
+    method: 'POST', url: '/api/sources/fill', headers: { authorization: tok },
+    payload: { planId: j.planId, source: RICH, sourceSeriesId: rich.sourceSeriesId, numbers: [9] },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  // The fill answers as soon as it has decided; the work happens after. Poll rather than guess a duration.
+  let written: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    written = existsSync(join(root, FOLDER)) ? readdirSync(join(root, FOLDER)) : [];
+    if (written.some((f) => f.includes('Chapter 9'))) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const jobs = (await app.inject({ method: 'GET', url: '/api/sources/jobs', headers: { authorization: tok } })).json();
+  assert.ok(written.some((f) => f.includes('Chapter 9')),
+    `chapter 9 should be on disk, saw ${JSON.stringify(written)}; job: ${JSON.stringify(jobs.content || jobs)}`);
+
+  // Read the ComicInfo straight out of the archive: this is the exact value persistScan will later read back
+  // and copy over the series row, which is the whole point of the assertion below.
+  const AdmZip = (await import('adm-zip')).default;
+  const xml = new AdmZip(join(root, FOLDER, 'Chapter 9.cbz')).readAsText('ComicInfo.xml');
+  assert.match(xml, /<Series>Filled Series<\/Series>/,
+    'the CBZ must carry OUR series name. The candidate is called "Filled Series Deluxe Edition"; writing that ' +
+    'here would rename this series for everyone on the next persistScan.');
+  assert.doesNotMatch(xml, /Deluxe/, 'not a trace of the candidate title may reach the archive');
+  assert.match(xml, /Our summary/, 'and our summary, for the same reason');
+});
+
+
+test('a stale plan is refused rather than re-derived', { skip }, async () => {
+  const res = await app.inject({
+    method: 'POST', url: '/api/sources/fill', headers: { authorization: tok },
+    payload: { planId: 'fp_deadbeefdeadbeef', source: RICH, sourceSeriesId: `${RICH}-s`, numbers: [9] },
+  });
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.json().error, 'plan_stale');
+});
+
+
+/**
+ * A candidate that lists chapter 5 once per group goes into the plan as ONE copy of 5.
+ *
+ * `authorise` filters the stored list by number, so two stored copies answer a fill of [5] with both. The
+ * second is skipped at the downloader's file check -- the archive is named by number alone -- but the fill's
+ * `total` counts it, the job ends "done" at 1 of 2, and the bar sits one short of full on a fill that did
+ * everything it was asked. Reintroduce by storing the raw list (`const list = raw` in the scan route, in
+ * place of chooseReleases): `one copy per number` reads 6 and `one download, not one per group` reads 2.
+ *
+ * Reintroduce the stamp by removing `setBookMeta(s.folder, landed)` from the fill route: `stamped with the
+ * group whose copy landed` reads null.
+ */
+test('a two-group listing is planned as one copy per number, filled once, and stamped', { skip }, async (t) => {
+  const j = (await scan({ seriesId: DUPE_SERIES })).json();
+  const cand = j.candidates.find((c: any) => c.source === DUPE);
+  assert.ok(cand, 'the dupe source was found by title');
+
+  await t.test('the plan holds one copy of chapter 5', () => {
+    assert.equal(cand.why, 'ok', `judged on its chapters, got ${cand.why}`);
+    assert.equal(cand.count, 5, 'one copy per number');
+    assert.deepEqual(cand.fillable, [5]);
+    assert.deepEqual([cand.first, cand.last], [3, 7]);
+  });
+
+  await t.test('a fill of [5] is one download, and the job ends whole', async () => {
+    dupePageCalls = 0;
+    const r = await app.inject({
+      method: 'POST', url: '/api/sources/fill', headers: { authorization: tok },
+      payload: { planId: j.planId, source: DUPE, sourceSeriesId: cand.sourceSeriesId, numbers: [5] },
+    });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(r.json().total, 1, 'one download, not one per group');
+    let job: any = null;
+    for (let i = 0; i < 40 && job?.status !== 'done'; i++) {
+      await new Promise((res) => setTimeout(res, 250));
+      job = (await app.inject({ method: 'GET', url: '/api/sources/jobs', headers: { authorization: tok } })).json()
+        .content.find((x: any) => x.folder === DUPE_FOLDER);
+    }
+    assert.equal(job?.status, 'done', `job: ${JSON.stringify(job)}`);
+    assert.equal(job.done, job.total, 'the bar reaches full');
+    // Not the pin -- the downloader's on-disk check would skip a second copy before it reached the source
+    // even with the raw list stored -- just the sanity check that nothing was fetched twice. `total` above
+    // is the assertion the reintroduction fails.
+    assert.equal(dupePageCalls, 1, 'the source served exactly one chapter');
+  });
+
+  await t.test('the book that landed is stamped with its group and adapter', async () => {
+    // The stamp is written after the scan that creates the row, so it is there by the time the job is done.
+    const row = (await q(`SELECT scanlator, source_id FROM lib_books WHERE series_id = $1 AND number = 5`, [DUPE_SERIES]))[0];
+    assert.ok(row, 'chapter 5 was scanned in');
+    assert.deepEqual({ scanlator: row.scanlator, source_id: row.source_id }, { scanlator: 'Group A', source_id: DUPE },
+      'stamped with the group whose copy landed');
+  });
+});
+
+
+/**
+ * The scan says which sources the series already follows, so the dialog can mark them rather than offer to
+ * follow one twice. Reintroduce by dropping `following` from the scan response: `nothing followed yet` reads
+ * undefined.
+ */
+test('the scan lists the sources the series already follows', { skip }, async () => {
+  let j = (await scan({ seriesId: DUPE_SERIES })).json();
+  assert.deepEqual(j.following, [], 'nothing followed yet');
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, 'dupe-s')`, [DUPE_SERIES, RICH]);
+  try {
+    j = (await scan({ seriesId: DUPE_SERIES })).json();
+    assert.deepEqual(j.following, [RICH], 'the followed source is named');
+  } finally {
+    await q('DELETE FROM series_sources WHERE series_id = $1', [DUPE_SERIES]);
+  }
+});
+
+
+/**
+ * A source with a failure streak is still OFFERED, and the dialog is told.
+ *
+ * The scan gated on `blocked_until` alone. Once a cooldown lapsed the source came back as a clean
+ * `why='ok'`, whatever its record: live, WeebCentral had 403'd on every image byte since June, never once
+ * completed a download, and rendered as a confident "Fetch 12 chapters" button. Hiding it instead would
+ * deadlock it -- `consecutive` is cleared only by reportOk, which fires only after a download succeeds.
+ *
+ * Reintroduce by dropping the `health:` field from the candidate: the first assertion below fails.
+ */
+test('a source with a streak is offered with its record attached, not hidden', { skip }, async () => {
+  await q(`INSERT INTO source_health (source_id, status, consecutive, last_fail_at, last_ok_at, blocked_until)
+           VALUES ($1, 'rate_limited', 3, now(), NULL, now() - interval '1 hour')
+           ON CONFLICT (source_id) DO UPDATE SET status = 'rate_limited', consecutive = 3, last_fail_at = now(),
+             last_ok_at = NULL, blocked_until = now() - interval '1 hour'`, [RICH]);
+  let rich = (await scan()).json().candidates.find((c: any) => c.source === RICH);
+  assert.ok(rich, 'the source is still in the list');
+  // Whatever the verdict says about its chapters, the streak itself must not have decided anything.
+  assert.notEqual(rich.why, 'blocked', 'a lapsed cooldown is not a block: a warning is not a filter');
+  assert.ok(['ok', 'nothing_to_fill', 'numbering_mismatch'].includes(rich.why), `judged on its chapters, got ${rich.why}`);
+  assert.ok(rich.health, 'and the dialog is told what it is dealing with');
+  assert.equal(rich.health.status, 'rate_limited');
+  assert.equal(rich.health.consecutive, 3);
+  assert.equal(rich.health.lastOkAt, null, 'never completed a download here: the fact that would have saved a person from WeebCentral');
+  assert.ok(!('lastError' in rich.health) && !JSON.stringify(rich).includes('last_error'),
+    'last_error carries internal hostnames and this route is not admin-only');
+
+  await q('DELETE FROM source_health WHERE source_id = $1', [RICH]);
+  rich = (await scan()).json().candidates.find((c: any) => c.source === RICH);
+  assert.equal(rich.health, null, 'a clean source carries no warning');
+});
+
+
+/**
+ * Many slow sources: none may be reported unreachable just for waiting its turn, the likely ones are asked
+ * first, and the scan stops asking once it has enough.
+ *
+ * Live, with 35 sources and a four-slot solver, 16 of 21 candidates were sources whose whole 45 s budget went
+ * on waiting for a slot, reported as `unreachable` -- which reads as broken. Here: thirty sources at 200 ms
+ * each behind four slots. Reintroduce by removing the slot gate (the timer then runs while queued; with a
+ * short SCAN_SEARCH_MS the tail would time out), by removing the `enough()` check (nothing is `not_tried`),
+ * or by dropping scanOrder (a Russian-only source can be asked before an unpinned one).
+ */
+test('a scan with many slow sources times out none, asks the likely ones first, and stops when it has enough', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const started: string[] = [];
+  const slow = (id: string, lang: string | undefined, preferredOrder: number, carries: boolean) => ({
+    id, name: id, lang, preferredOrder,
+    async search() {
+      started.push(id);
+      await new Promise((r) => setTimeout(r, 200));
+      return carries ? [{ sourceId: `${id}-s`, source: id, title: 'Filled Series', coverUrl: undefined }] : [];
+    },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: 'Filled Series' }; },
+    async listChapters() { return [8, 9, 10, 11].map(page); },
+    async getPageUrls() { return ['https://example.invalid/p1.jpg']; },
+    async latest() { return []; },
+  });
+  // Five unpinned sources that carry the title, and twenty-five pinned to a language the series is not in.
+  // The pinned ones get the BETTER preferredOrder on purpose: only language ranking puts the unpinned ones
+  // first, so this fails if the route stops using scanOrder.
+  for (let i = 0; i < 5; i++) registerAdapter(slow(`slow-any-${i}`, undefined, 100 + i, true) as any);
+  for (let i = 0; i < 25; i++) registerAdapter(slow(`slow-ru-${i}`, 'ru', i, true) as any);
+
+  const t0 = Date.now();
+  const j = (await scan()).json();
+  const ms = Date.now() - t0;
+  const why = (id: string) => j.candidates.find((c: any) => c.source === id)?.why;
+
+  assert.ok(ms < 10_000, `thirty sources at 200 ms behind four slots must not take ${ms} ms`);
+  assert.ok(!j.candidates.some((c: any) => c.why === 'unreachable'),
+    `nothing was unreachable: ${JSON.stringify(j.candidates.filter((c: any) => c.why === 'unreachable').map((c: any) => c.source))}`);
+  assert.ok(started.length >= 3 && started.every((id) => id.startsWith('slow-any-')),
+    `only unpinned sources were asked before the scan had enough; asked: ${started.join(', ')}`);
+  const tried = j.candidates.filter((c: any) => c.source.startsWith('slow-ru-') && c.why !== 'not_tried').map((c: any) => c.source);
+  assert.deepEqual(tried, [], 'every Russian-only source was reported as not tried, not as broken or absent');
+  assert.equal(why('slow-any-0'), 'nothing_to_fill', 'a source that was asked and had the title carries a real verdict');
+});
+
+
+/**
+ * The scan gives a source behind the solver time for its challenge, and only that source.
+ *
+ * Reintroduce by passing SCAN_SEARCH_MS instead of budgetFor(src, SCAN_SEARCH_MS): the solver-fronted source
+ * reads `unreachable`.
+ */
+test('a solver-fronted source that answers inside the solver budget is asked, a plain one that slow is not', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const slow = (id: string, requiresCloudflare: boolean) => ({
+    id, name: id, requiresCloudflare, preferredOrder: -1,
+    async search() { await new Promise((r) => setTimeout(r, 500)); return [{ sourceId: `${id}-s`, source: id, title: 'Filled Series', coverUrl: undefined }]; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: 'Filled Series' }; },
+    async listChapters() { return [8, 9, 10, 11].map(page); },
+    async getPageUrls() { return ['https://example.invalid/p1.jpg']; },
+    async latest() { return []; },
+  });
+  registerAdapter(slow('budget-cf', true) as any);
+  registerAdapter(slow('budget-plain', false) as any);
+  const j = (await scan()).json();
+  const why = (id: string) => j.candidates.find((c: any) => c.source === id)?.why;
+  assert.notEqual(why('budget-cf'), 'unreachable', 'a 500 ms answer fits an 800 ms solver budget');
+  assert.equal(why('budget-plain'), 'unreachable', 'the same 500 ms is over a 300 ms budget with no solver involved');
+});

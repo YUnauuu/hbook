@@ -1,0 +1,410 @@
+// What persistScan() actually writes, against a real Postgres and a real library on disk.
+//
+// This file exists because library identity is about to stop being derived from the file path, and
+// persistScan had NO tests at all — despite deciding every series id, every book id, and therefore what a
+// user's reading progress is attached to. A mistake there is silent: the library still renders, the rows
+// still exist, and the progress is simply on a row nothing points at any more.
+//
+// So these pin CURRENT behaviour, bugs included. Where today's behaviour is wrong, the test name says so and
+// asserts the wrong thing on purpose. When the identity work lands, those specific tests are expected to
+// fail, and each failure should be a line someone chose to change.
+//
+// Skipped automatically unless TEST_DATABASE_URL is set (CI provides a throwaway Postgres service).
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile, rename, readdir } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+const DSN = process.env.TEST_DATABASE_URL;
+
+// Roots are read at module load (`process.env.LIBRARY_ROOT || '/library'`), so they must be set before the
+// first import of library.ts. mkdtempSync would be neater but these have to exist before any await.
+const ROOT_A = join(tmpdir(), `hbook-lib-${process.pid}`);
+const ROOT_B = join(tmpdir(), `hbook-dl-${process.pid}`);
+
+if (DSN) {
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+  process.env.LIBRARY_ROOT = ROOT_A;
+  process.env.DL_ROOT = ROOT_B;
+}
+
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+type Q = <T = any>(sql: string, params?: any[]) => Promise<T[]>;
+let q: Q;
+let persistScan: () => Promise<{ series: number; books: number; ms: number }>;
+
+/** A minimal but genuinely valid CBZ: one page plus a ComicInfo.xml the scanner can parse. */
+async function writeCbz(abs: string, opts: { series?: string; number?: number; pages?: number; pixel?: string; genre?: string } = {}) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip();
+  const pages = opts.pages ?? 1;
+  for (let i = 1; i <= pages; i++) {
+    zip.addFile(`${String(i).padStart(3, '0')}.jpg`, Buffer.from(opts.pixel ?? `page-${i}-bytes`));
+  }
+  if (opts.series) {
+    zip.addFile(
+      'ComicInfo.xml',
+      Buffer.from(
+        `<?xml version="1.0"?><ComicInfo><Series>${opts.series}</Series>` +
+          `<Number>${opts.number ?? 1}</Number><Writer>A. Writer</Writer>` +
+          `<Genre>${opts.genre ?? 'Action, Drama'}</Genre><Web>https://example.invalid/x</Web>` +
+          `<Summary>A summary.</Summary></ComicInfo>`,
+      ),
+    );
+  }
+  await mkdir(join(abs, '..'), { recursive: true });
+  await writeFile(abs, zip.toBuffer());
+}
+
+const seriesDir = (root: string, source: string, title: string) => join(root, source, title);
+const chapter = (root: string, source: string, title: string, file: string) => join(root, source, title, file);
+
+/** Remove every row this file created, identified by the temp folder prefix. */
+async function wipe() {
+  await q(`DELETE FROM lib_books WHERE root = $1 OR root = $2`, [ROOT_A, ROOT_B]);
+  await q(`DELETE FROM lib_series WHERE source LIKE 'T!%'`);
+}
+
+before(async () => {
+  if (!DSN) return;
+  const { migrate } = await import('../src/lib/migrate');
+  ({ q } = (await import('../src/lib/db')) as { q: Q });
+  ({ persistScan } = await import('../src/lib/library'));
+  await migrate();
+  await mkdir(ROOT_A, { recursive: true });
+  await mkdir(ROOT_B, { recursive: true });
+  await wipe();
+});
+
+after(async () => {
+  if (!DSN) return;
+  await wipe().catch(() => {});
+  await rm(ROOT_A, { recursive: true, force: true }).catch(() => {});
+  await rm(ROOT_B, { recursive: true, force: true }).catch(() => {});
+});
+
+const oneSeries = async (folder: string) =>
+  (await q(`SELECT * FROM lib_series WHERE folder = $1`, [folder]))[0];
+const booksOf = async (seriesId: string) =>
+  q(`SELECT id, file, root, number, title FROM lib_books WHERE series_id = $1 ORDER BY file`, [seriesId]);
+
+// First in the file, so the library holds only its own folders: it counts every first archive a scan opens.
+test('persistScan: a rescan opens no first archive it has read already, and one that changed is read and written again', { skip }, async () => {
+  // v0.55.7 (#150): every scan opened the first archive of every folder for its ComicInfo -- on @Kedryn's Unraid share,
+  // one spun-up disk read per folder, to write the same values again. Reintroduce by always reading (drop the
+  // info_read test in persistScan): the second scan opens all four.
+  const { comicInfoReads } = await import('../src/lib/library');
+  const { utimes } = await import('fs/promises');
+  const src = 'T!info';
+  for (const t of ['Alpha', 'Beta']) for (const n of [1, 2]) await writeCbz(chapter(ROOT_A, src, t, `Chapter ${n}.cbz`), { series: `${t} Series` });
+  // A chapter that is a folder of images is read every time: a tagger can rewrite its ComicInfo.xml in place.
+  const loose = join(seriesDir(ROOT_A, src, 'Gamma'), 'Chapter 1');
+  await mkdir(loose, { recursive: true });
+  await writeFile(join(loose, '001.jpg'), Buffer.from('page'));
+  await writeFile(join(loose, 'ComicInfo.xml'), '<ComicInfo><Series>Gamma Series</Series></ComicInfo>');
+  // And a first archive that cannot be read is tried again by every scan, as it always was.
+  await mkdir(seriesDir(ROOT_A, src, 'Delta'), { recursive: true });
+  await writeFile(chapter(ROOT_A, src, 'Delta', 'Chapter 1.cbz'), Buffer.from('not a zip'));
+  const reads = async () => { const n = comicInfoReads(); await persistScan(); return comicInfoReads() - n; };
+  const title = async (t: string) => (await oneSeries(`${src}/${t}`))?.title;
+
+  assert.equal(await reads(), 4, 'precondition: a first scan reads every folder');
+  assert.equal(await title('Alpha'), 'Alpha Series');
+  assert.equal(await reads(), 2, 'a rescan opened a first archive it had read already');
+  assert.deepEqual([await title('Alpha'), await title('Beta'), await title('Gamma'), await title('Delta')],
+    ['Alpha Series', 'Beta Series', 'Gamma Series', 'Delta']);
+
+  // Alpha's first file replaced by a retagged one: read, and the series written from it, as every scan did.
+  const a1 = chapter(ROOT_A, src, 'Alpha', 'Chapter 1.cbz');
+  await writeCbz(a1, { series: 'Alpha Retagged', genre: 'Comedy' });
+  const later = new Date(Date.now() + 5_000);
+  await utimes(a1, later, later);
+  assert.equal(await reads(), 3, 'a first archive that changed was not read again');
+  const alpha = await oneSeries(`${src}/Alpha`);
+  assert.deepEqual([alpha.title, alpha.genres], ['Alpha Retagged', ['Comedy']], 'the retagged file was not written to the series');
+  // A new first chapter is another file: read.
+  await writeCbz(chapter(ROOT_A, src, 'Beta', 'Chapter 0.cbz'), { series: 'Beta From Zero' });
+  assert.equal(await reads(), 3, 'a new first chapter was not read');
+  assert.equal(await title('Beta'), 'Beta From Zero');
+});
+
+test('persistScan: a fresh scan creates the series and its chapters', { skip }, async () => {
+  const src = 'T!fresh';
+  await writeCbz(chapter(ROOT_A, src, 'Solo Leveling', 'Chapter 1.cbz'), { series: 'Solo Leveling', number: 1 });
+  await writeCbz(chapter(ROOT_A, src, 'Solo Leveling', 'Chapter 2.cbz'), { series: 'Solo Leveling', number: 2 });
+
+  await persistScan();
+
+  const s = await oneSeries(`${src}/Solo Leveling`);
+  assert.ok(s, 'series row was not created');
+  assert.equal(s.title, 'Solo Leveling', 'title should come from ComicInfo <Series>');
+  assert.equal(s.author, 'A. Writer');
+  assert.deepEqual(s.genres, ['Action', 'Drama']);
+  assert.equal(s.books_count, 2);
+
+  const books = await booksOf(s.id);
+  assert.equal(books.length, 2);
+  assert.deepEqual(books.map((b) => b.number), [1, 2]);
+  assert.deepEqual(books.map((b) => b.title), ['Chapter 1', 'Chapter 2']);
+  assert.ok(books.every((b) => b.root === ROOT_A));
+});
+
+test("persistScan: a chapter file whose <Genre> holds a site's genre menu gives the series its own genres (v0.55.5)", { skip }, async () => {
+  // Files the Manganato engine wrote before v0.55.5 carry Natomanga's whole genre menu, and every scan reads the first
+  // file back. Reintroduce the plain split in library.ts: Adult and Hentai are the series' genres again.
+  const src = 'T!menu';
+  const genre = 'Action, Manhwa, Fantasy, Action, Manhwa, Fantasy, All, Completed, Ongoing, Action, Adult, Hentai, Manga, Manhua, Manhwa, Smut';
+  await writeCbz(chapter(ROOT_A, src, 'War God', 'Chapter 1.cbz'), { series: 'War God', number: 1, genre });
+  await persistScan();
+  const s = await oneSeries(`${src}/War God`);
+  assert.deepEqual(s.genres, ['Action', 'Manhwa', 'Fantasy']);
+  // Typed from them as well: the menu names three origins and types nothing, the series' own say manhwa.
+  assert.deepEqual([s.series_type, s.series_type_from], ['manhwa', 'genre']);
+});
+
+test('persistScan: cover_book_id points at a book row that actually exists', { skip }, async () => {
+  // The scanner computes cover_book_id by hashing a path rather than reading it back, so it is only correct
+  // as long as ids are a pure function of the path. This is the single assertion most likely to catch the
+  // identity change breaking every cover in the product.
+  const src = 'T!cover';
+  await writeCbz(chapter(ROOT_A, src, 'Cover Test', 'Chapter 1.cbz'), { series: 'Cover Test' });
+  await writeCbz(chapter(ROOT_A, src, 'Cover Test', 'Chapter 2.cbz'), { series: 'Cover Test' });
+  await persistScan();
+
+  const s = await oneSeries(`${src}/Cover Test`);
+  assert.ok(s.cover_book_id, 'no cover_book_id was set');
+  const hit = await q(`SELECT id, file FROM lib_books WHERE id = $1`, [s.cover_book_id]);
+  assert.equal(hit.length, 1, `cover_book_id ${s.cover_book_id} does not resolve to a book`);
+  assert.equal(hit[0].file, `${src}/Cover Test/Chapter 1.cbz`, 'cover should be the first chapter');
+});
+
+test('persistScan: rescanning changes nothing — same ids, same counts', { skip }, async () => {
+  const src = 'T!idem';
+  await writeCbz(chapter(ROOT_A, src, 'Idem', 'Chapter 1.cbz'), { series: 'Idem' });
+  await persistScan();
+  const before1 = await oneSeries(`${src}/Idem`);
+  const beforeBooks = await booksOf(before1.id);
+
+  await persistScan();
+  const after1 = await oneSeries(`${src}/Idem`);
+  const afterBooks = await booksOf(after1.id);
+
+  assert.equal(after1.id, before1.id, 'series id changed on rescan');
+  assert.equal(after1.books_count, before1.books_count);
+  assert.deepEqual(afterBooks.map((b) => b.id), beforeBooks.map((b) => b.id), 'book ids changed on rescan');
+  const total = await q(`SELECT count(*)::int n FROM lib_series WHERE folder = $1`, [`${src}/Idem`]);
+  assert.equal(total[0].n, 1, 'rescan duplicated the series row');
+});
+
+test('persistScan: adding a chapter adds one book and keeps the series id', { skip }, async () => {
+  const src = 'T!add';
+  await writeCbz(chapter(ROOT_A, src, 'Growing', 'Chapter 1.cbz'), { series: 'Growing' });
+  await persistScan();
+  const before1 = await oneSeries(`${src}/Growing`);
+
+  await writeCbz(chapter(ROOT_A, src, 'Growing', 'Chapter 2.cbz'), { series: 'Growing' });
+  await persistScan();
+  const after1 = await oneSeries(`${src}/Growing`);
+
+  assert.equal(after1.id, before1.id);
+  assert.equal(after1.books_count, 2);
+});
+
+test('persistScan: re-downloading a chapter in place keeps the same book id', { skip }, async () => {
+  // Replacing a broken chapter is a normal user action, and it must not look like a new book — the reading
+  // progress is attached to the id.
+  const src = 'T!redl';
+  const file = chapter(ROOT_A, src, 'Redownload', 'Chapter 1.cbz');
+  await writeCbz(file, { series: 'Redownload', pages: 1 });
+  await persistScan();
+  const s = await oneSeries(`${src}/Redownload`);
+  const [bookBefore] = await booksOf(s.id);
+
+  await writeCbz(file, { series: 'Redownload', pages: 5, pixel: 'different-bytes-entirely' });
+  await persistScan();
+  const [bookAfter] = await booksOf(s.id);
+
+  assert.equal(bookAfter.id, bookBefore.id, 'a re-download changed the book id');
+});
+
+test('persistScan: a file whose mtime moved is fingerprinted again; one that did not keeps its fingerprint', { skip }, async () => {
+  // v0.55.7 (#150): the fingerprint is of the bytes. A file replaced by hand -- or one the backfill read while it was
+  // still being unpacked, stamped unreadable for good -- kept the old one, and Rescan everything could never pair it
+  // after a move. Reintroduce by dropping the four fingerprint CASEs from persistScan's upsert: the scan after the
+  // replacement leaves the old fingerprint on the row.
+  const { runFingerprintBackfill } = await import('../src/lib/fingerprintJob');
+  const { utimes } = await import('fs/promises');
+  const src = 'T!fpmt';
+  const file = chapter(ROOT_A, src, 'Replaced', 'Chapter 1.cbz');
+  await writeCbz(file, { series: 'Replaced', pages: 1 });
+  await persistScan();
+  await runFingerprintBackfill();
+  const row = async () => (await q<{ fingerprint: string | null; fp_kind: string | null; fp_at: string | null; size: string | null }>(
+    `SELECT fingerprint, fp_kind, fp_at, size FROM lib_books WHERE root = $1 AND file = $2`, [ROOT_A, `${src}/Replaced/Chapter 1.cbz`]))[0];
+  const first = await row();
+  assert.ok(first.fingerprint && first.fp_at && first.size, `precondition: fingerprinted ${JSON.stringify(first)}`);
+
+  await persistScan();
+  assert.deepEqual(await row(), first, 'a scan that found the same file cleared its fingerprint');
+
+  await writeCbz(file, { series: 'Replaced', pages: 3, pixel: 'other-bytes' });
+  const later = new Date(Date.now() + 5_000);
+  await utimes(file, later, later);
+  await persistScan();
+  assert.deepEqual(await row(), { fingerprint: null, fp_kind: null, fp_at: null, size: null }, 'the old fingerprint stayed on a file whose mtime moved');
+  await runFingerprintBackfill();
+  const again = await row();
+  assert.ok(again.fingerprint && again.fingerprint !== first.fingerprint, 'the replaced file was not read again');
+});
+
+test('persistScan: a file whose mtime moved is counted again; one that did not keeps its count', { skip }, async () => {
+  // v0.72.0: `pages_checked_at` with `pages` 0 is what Health's Chapter files card lists (lib/healthFiles.ts) -- the
+  // nightly count opened the file and found no page. A Fetch again that landed, or a copy replaced by hand, is other
+  // bytes: the stamp goes, the row leaves the card, and the next count reads the new file. Reintroduce by dropping the
+  // pages_checked_at CASE from persistScan's upsert: the stamp stays on the replaced file.
+  const { utimes } = await import('fs/promises');
+  const src = 'T!pgmt';
+  const file = chapter(ROOT_A, src, 'Recounted', 'Chapter 1.cbz');
+  await writeCbz(file, { series: 'Recounted', pages: 1 });
+  await persistScan();
+  const where = [ROOT_A, `${src}/Recounted/Chapter 1.cbz`];
+  // What the count stamps on a file it could read no page of.
+  await q(`UPDATE lib_books SET pages = 0, pages_checked_at = now() WHERE root = $1 AND file = $2`, where);
+  const stamp = async () => (await q<{ checked: boolean }>(
+    `SELECT pages_checked_at IS NOT NULL AS checked FROM lib_books WHERE root = $1 AND file = $2`, where))[0]?.checked;
+  await persistScan();
+  assert.equal(await stamp(), true, 'a scan that found the same file cleared its count');
+  await writeCbz(file, { series: 'Recounted', pages: 3, pixel: 'other-bytes' });
+  const later = new Date(Date.now() + 5_000);
+  await utimes(file, later, later);
+  await persistScan();
+  assert.equal(await stamp(), false, 'the count stayed on a file whose mtime moved');
+});
+
+test('persistScan: TODAY renaming a folder orphans the series — this is the bug being fixed', { skip }, async () => {
+  const src = 'T!rename';
+  await writeCbz(chapter(ROOT_A, src, 'Old Name', 'Chapter 1.cbz'), { series: 'Old Name' });
+  await persistScan();
+  const before1 = await oneSeries(`${src}/Old Name`);
+
+  await rename(seriesDir(ROOT_A, src, 'Old Name'), seriesDir(ROOT_A, src, 'New Name'));
+  await persistScan();
+
+  const after1 = await oneSeries(`${src}/New Name`);
+  assert.ok(after1, 'renamed folder produced no series');
+  assert.notEqual(after1.id, before1.id, 'EXPECTED TO FAIL once identity is decoupled: id should survive a rename');
+
+  const ghost = await oneSeries(`${src}/Old Name`);
+  assert.ok(ghost, 'EXPECTED TO FAIL later: the old row survives today because the scanner never deletes');
+  assert.equal(ghost.books_count, 1, 'and it keeps a stale count for files that no longer exist');
+});
+
+test('persistScan: TODAY a file deleted from disk keeps its row forever', { skip }, async () => {
+  const src = 'T!prune';
+  await writeCbz(chapter(ROOT_A, src, 'Pruned', 'Chapter 1.cbz'), { series: 'Pruned' });
+  await writeCbz(chapter(ROOT_A, src, 'Pruned', 'Chapter 2.cbz'), { series: 'Pruned' });
+  await persistScan();
+  const s = await oneSeries(`${src}/Pruned`);
+  assert.equal(s.books_count, 2);
+
+  await rm(chapter(ROOT_A, src, 'Pruned', 'Chapter 2.cbz'));
+  await persistScan();
+
+  const after1 = await oneSeries(`${src}/Pruned`);
+  const books = await booksOf(after1.id);
+  assert.equal(books.length, 2, 'EXPECTED TO FAIL once pruning lands: the deleted chapter still has a row');
+  assert.equal(after1.books_count, 2, 'and books_count stays permanently wrong');
+});
+
+test('persistScan: the same series under BOTH roots merges into one row', { skip }, async () => {
+  // 146 of 210 series on the live instance are in this shape, so it is load-bearing, not an edge case:
+  // a series part-downloaded by the extension engine into one root and by hbook into the other.
+  const src = 'T!tworoot';
+  await writeCbz(chapter(ROOT_A, src, 'Split', 'Chapter 1.cbz'), { series: 'Split' });
+  await writeCbz(chapter(ROOT_B, src, 'Split', 'Chapter 2.cbz'), { series: 'Split' });
+
+  await persistScan();
+
+  const rows = await q(`SELECT id FROM lib_series WHERE folder = $1`, [`${src}/Split`]);
+  assert.equal(rows.length, 1, 'the two roots produced two series rows');
+
+  const books = await booksOf(rows[0].id);
+  assert.equal(books.length, 2, 'books from both roots should belong to the one series');
+  assert.deepEqual(
+    books.map((b) => b.root).sort(),
+    [ROOT_A, ROOT_B].sort(),
+    'each book should record the root it actually lives in',
+  );
+});
+
+test('persistScan: the same filename in both roots is two books, not one', { skip }, async () => {
+  // This used to collapse: both paths hashed to the same book id, so the second root's upsert rewrote the
+  // first's `root` and the other file became unreachable to the page server. Books are now keyed by
+  // (root, file), so each one keeps its own row and stays readable.
+  const src = 'T!collide';
+  await writeCbz(chapter(ROOT_A, src, 'Collide', 'Chapter 1.cbz'), { series: 'Collide', pixel: 'from-root-a' });
+  await writeCbz(chapter(ROOT_B, src, 'Collide', 'Chapter 1.cbz'), { series: 'Collide', pixel: 'from-root-b' });
+
+  await persistScan();
+
+  const s = await oneSeries(`${src}/Collide`);
+  const books = await booksOf(s.id);
+  assert.equal(books.length, 2, 'the two roots should hold two distinct books');
+  assert.deepEqual(books.map((b) => b.root).sort(), [ROOT_A, ROOT_B].sort());
+  assert.equal(new Set(books.map((b) => b.id)).size, 2, 'the two books share an id');
+});
+
+test('persistScan: ids are no longer derived from the path', { skip }, async () => {
+  // The point of the whole change: two libraries laid out identically must not produce identical ids, and
+  // an id must not be reconstructible from a folder name.
+  const src = 'T!minted';
+  await writeCbz(chapter(ROOT_A, src, 'Minted', 'Chapter 1.cbz'), { series: 'Minted' });
+  await persistScan();
+  const s = await oneSeries(`${src}/Minted`);
+
+  const { createHash } = await import('crypto');
+  const oldStyle = 's_' + createHash('sha1').update(`${src}/Minted`).digest('hex').slice(0, 20);
+  assert.notEqual(s.id, oldStyle, 'the id is still a hash of the folder path');
+  assert.match(s.id, /^s_[0-9a-f]{20}$/, 'the id changed shape, which would break existing URLs and OPDS feeds');
+
+  const [book] = await booksOf(s.id);
+  assert.match(book.id, /^b_[0-9a-f]{20}$/, 'book ids changed shape');
+});
+
+test('persistScan: a folder with no chapters is skipped entirely', { skip }, async () => {
+  const src = 'T!empty';
+  await mkdir(seriesDir(ROOT_A, src, 'Nothing Here'), { recursive: true });
+  await persistScan();
+  assert.equal(await oneSeries(`${src}/Nothing Here`), undefined);
+});
+
+test('persistScan: an unreadable archive still yields a book row, using the filename', { skip }, async () => {
+  // A corrupt file must not abort the scan or vanish — the health page is what surfaces it.
+  const src = 'T!corrupt';
+  await mkdir(seriesDir(ROOT_A, src, 'Corrupt'), { recursive: true });
+  await writeFile(chapter(ROOT_A, src, 'Corrupt', 'Chapter 1.cbz'), Buffer.from('this is not a zip'));
+  await writeCbz(chapter(ROOT_A, src, 'Corrupt', 'Chapter 2.cbz'), { series: 'Corrupt' });
+
+  await persistScan();
+
+  const s = await oneSeries(`${src}/Corrupt`);
+  assert.ok(s, 'a corrupt first chapter aborted the whole series');
+  assert.equal(s.title, 'Corrupt', 'with no readable ComicInfo the folder name is the title');
+  assert.equal((await booksOf(s.id)).length, 2);
+});
+
+test('persistScan: chapter numbers come from the filename, decimals included', { skip }, async () => {
+  const src = 'T!numbers';
+  for (const f of ['Chapter 1.cbz', 'Chapter 2.5.cbz', 'Chapter 10.cbz']) {
+    await writeCbz(chapter(ROOT_A, src, 'Numbering', f), { series: 'Numbering' });
+  }
+  await persistScan();
+  const s = await oneSeries(`${src}/Numbering`);
+  const books = await booksOf(s.id);
+  assert.deepEqual(books.map((b) => Number(b.number)).sort((a, b) => a - b), [1, 2.5, 10]);
+});

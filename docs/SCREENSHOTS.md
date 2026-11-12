@@ -1,0 +1,197 @@
+# Screenshots
+
+Screenshots are **generated, never hand-taken**. If you change a screen, re-run the rig rather than cropping a
+window by hand. The previous set was captured manually and went stale within a day: five features shipped in
+the thirteen hours after it, and none of them appeared in a single image.
+
+```bash
+bash scripts/shots/run.sh --yes                        # everything
+bash scripts/shots/run.sh --yes --only home,library    # a subset
+bash scripts/shots/run.sh --yes --site-dir /path/to/site  # also refresh the marketing site's copies
+bash scripts/shots/run.sh --yes --record                 # the tour video instead of stills
+# the fixture shots (Admin → Sources) against a throwaway instance -- see "Shots that use a fixture"
+SHOT_NET=<its docker network> SHOT_BASE=http://<its container>:3000 \
+  bash scripts/shots/run.sh --yes --login <user>:<password> --only admin-extensions,crop-extensions
+# the desktop app's own pages, from the real Electron app
+SHOT_SERVER=http://127.0.0.1:<port> xvfb-run -a node scripts/shots/desktop.mjs
+```
+
+Output lands in `docs/shots/` as WebP. With `--site-dir` it also writes smaller copies into the marketing
+site's `assets/shots/` — one capture, two encodes, because the docs want sharpness and the site wants bytes.
+Point `--site-dir` at either the site checkout or its `assets/shots/` directly; both resolve to the same
+place.
+
+## What it does
+
+It drives a real browser (`ghcr.io/puppeteer/puppeteer`) against a **running** hbook over the Docker
+network. Because the shots should show a real library rather than an empty demo, it runs against your own
+instance.
+
+The real admin account usually has 2FA, which a scripted password login can't get past, so the rig creates a
+temporary `shotbot` admin directly in the database, signs in **once**, reuses that one session for every shot,
+and deletes the account again in a trap that fires even if it crashes. It prints what it will insert and delete
+before doing it, and refuses to start if a previous run left its account behind.
+
+Everything is captured with `prefers-reduced-motion` forced on, and each shot waits for network idle, then for
+every image to actually decode, then for fonts. That last part matters: the old `series.jpg` shipped for two
+months with a blurred placeholder banner, an empty cover box and blank chapter thumbnails because it was taken
+before the art arrived.
+
+## Profiles
+
+| Profile | Viewport | Output |
+| --- | --- | --- |
+| `desk` | 1366 × 860 @2x | 2732 × 1720 |
+| `phone` | 390 × 844 @3x | 1170 × 2532 |
+| `crop` | element-clipped | varies |
+
+Admin screens are framed by scrolling the relevant panel into view rather than clipping the column: a plain
+full-viewport shot of a two-column settings grid is mostly the hero, and a full-column clip comes out absurdly
+tall.
+
+## Shots that use a fixture
+
+Some states can't exist on a capture-only account, and some must not be photographed as they really are, so
+the rig supplies them. Every one renders real components from real response shapes; only the inputs are
+provided. They are listed here so nobody later mistakes them for mockups.
+
+- **`login-sso`** — intercepts `GET /auth/config` to report an OIDC provider. SSO isn't configured on the
+  instance these are captured from, and `oidcEnabled()` is a pure env check, so the button cannot appear
+  otherwise.
+- **The extension and sources shots** — `admin-extensions`, `crop-extensions`, `crop-repo-empty`,
+  `crop-repo-added`, `crop-repo-toast` (the success notice, taken the moment the add answers: since v0.49.0 a
+  card at the bottom of the window, bottom-right on a laptop, for about 6 s), `ext-strip-1..3`,
+  `admin-providers`, `crop-addsite`, and the site's phone plates `phone-repo-empty`,
+  `phone-repo-added`, `phone-extensions` and `phone-sources`. Since v0.45.0 no screenshot may show a real
+  extension, site or repository name (the owner's rule): the live catalogue is a legible wall of third-party site
+  names, some 18+, and a shot of the repository row would show the live server's repository address. So these
+  are taken on a page whose `/api/admin/extensions/*`, `/api/sources` and `/api/admin/sources*` answers come from
+  `scripts/shots/fixtures.mjs` — made-up extensions (*Example Manga (EN)*, *Sample Reader*…), generated icons with no letters
+  in them, MangaDex beside two made-up sites (the sources overview Admin → Sources lists since v0.54.0 too), and the
+  repository `https://example.org/repo/index.min.json` the tests use. ⚠️ The app's service worker fetches
+  `/api/admin/*` and the images itself, out of a page's request interception's sight, wherever one can register
+  (https, or a `localhost` base): `fixturePage()` and `neutralNames()` bypass it, or the real names would come back
+  without a word. It applies on every run, against any instance, so a later live run cannot bring the real names
+  back; and unlike the older shots these fail loudly when an element is missing. They need no library, so take
+  them against a throwaway instance with `--login` (no database is touched), never by creating an account on
+  someone's server.
+- **`desktop-library-folder`** (from `desktop.mjs`) — the folder page's path is set through the page's own
+  `show()` to what a Windows PC computes (`C:\Users\you\hbook Library`, 412 GB free) instead of the Linux
+  build host's home folder. Everything else on the desktop pages is what the app showed: a certificate made at
+  run time for `manga.home.arpa` (RFC 8375's home-network name, mapped to 127.0.0.1 inside Chromium, so no real
+  host is involved), whose fingerprint the script checks against `openssl` before it takes the picture.
+
+- **Every shot taken on a real library, and the tour** — `neutralNames()` in `fixtures.mjs`. A real library
+  names where its chapters come from: `series` showed a real site and two scanlation groups in its supply line,
+  and the tour showed the same line, a scanlator's credits page and the live extension catalogue. So the library
+  pages (in `capture.mjs`) and the tour's page (in `record.mjs`) show every source and translation-group name the
+  app's own API answers carry as a made-up one (*Example Manga*, *Example Scans*, *Sample Translations*…) — in
+  text and in `title` / `aria-label` / `alt`, from the first frame — and every source or extension icon (a site's
+  logo) as a generated tile. MangaDex stays: it is the built-in source every guide names. The names are met first
+  (Admin → Sources lists them all), so a name inside a sentence is caught too. The tour also uses the extension
+  fixture above for its catalogue, and keeps no frame until the reader has jumped past a chapter's first page
+  (the credits page). ⚠️ Silent by design, like the rest of the rig: a name that reaches the screen by a field
+  `namesIn()` does not read is not rewritten — look at every image and every second of the video.
+
+Everything else is the real thing, including the health findings.
+
+## The desktop app's pages
+
+`scripts/shots/desktop.mjs` launches the real Electron app under Xvfb on a fresh profile and photographs its
+own pages: the first-launch choice, the server address, the certificate prompt and the changed-certificate
+warning (a self-signed https front it runs itself, proxying to `SHOT_SERVER`), the error page for a server that
+does not answer, the library-folder page, and Admin → Sources before the engine download (that one needs
+the standalone payload staged: `node desktop/scripts/stage.mjs`). It needs Linux with Xvfb, node 22+,
+`npm ci` and `npm run build` in `desktop/` with the Electron binary installed, and openssl. The black around a
+shell page is trimmed. The tray menus and native dialogs cannot be reached from the page, so they are
+described in words, not pictured; operating-system dialogs (SmartScreen, Gatekeeper) are never faked.
+
+## The capture account reads a little, and everyone else is a sample name
+
+The rig signs in as a freshly created account, and until v0.60.1 anything scoped to one user rendered with nothing in
+it: no progress bars on the covers, *Start reading* on every series, empty stars, no Keep reading. Since then, on a
+live run (never with `--login`), `fixtures.mjs` `seedReading` first marks chapters read through the app's own API, as a
+reader's *Mark read* does: the first eighteen series of the Library's default order and the series the `series` shot
+shows, each to a different depth, one chapter part-read in every third, and the shot series rated four stars and
+favourited. Those marks are *silent*, so they are not reading events: nobody's weekly board or Top 10 moves while the
+rig runs, and `profile-stats` and `wrapped` still show an account that has read nothing this week. Every row is the
+account's own, and run.sh's delete of the account removes it with them (each foreign key to `users` cascades).
+`crop-tokens` still shows "No tokens yet". Don't reach for `profile-stats` or `wrapped` to illustrate a claim about a
+busy library.
+
+The people on a real server are not ours to publish. Since v0.60.1 every answer that lists them (`/api/admin/users`,
+`/api/leaderboard`, `/api/admin/sessions`) is fetched for real and handed to the page with sample names (*Alex*,
+*Sam*, …, the same person the same name on every screen) and no avatar, by `fixtures.mjs` `peopleFixture`; the
+capture account keeps its own. Before that, `admin-members` and `profile-stats` showed the household's real display
+names and usernames. A new screen that lists people is not covered until its route is added there: look at the
+output.
+
+Capturing a really populated stats page would mean signing in as a real reader, which the rig deliberately cannot
+do: the real accounts have 2FA, and working around that is worse than the screenshot is worth.
+
+## Currency
+
+Every capture except the desktop app's was retaken against **v0.65.0** on 2026-10-14, with the tour video, because the
+UI refresh changed every screen: the sidebar on a computer, the top bar see-through over art, Home's banner as whole
+strips, the series page on its banner, Lists with covers, Offline by series, Admin's compact header and Settings index,
+Members' keys and Profile's tab strip. Same rig, same fixtures and the same capture account's reading life as the
+v0.60.1 run described next; the desktop shots (`desktop-*`) are still v0.45.0's.
+
+Before that, every capture except the desktop app's was retaken against **v0.60.1** on 2026-10-12, with the tour video, on the live
+library behind `neutralNames()`, `peopleFixture` and `librariesFixture` (see above), with the capture account's reading
+life: the series page's Continue, four keys and ratings, *More* open (`series-more`), the Library's toolbar and progress
+bars, Discover's one card per work, Health with *Fix everything*, Admin → Sources, and three new crops for the marketing
+site's "What's new" cards (`crop-library`, `crop-ratings`, `crop-fix-everything`). The desktop shots (`desktop-*`) are
+v0.45.0's: those pages have not changed since. The reader stills and the tour open the shot series' first chapter
+numbered 1 or more (run.sh): a chapter 0 is often a prologue of a few panels on black, and this run's first pass
+photographed one.
+
+After **v0.61.0** went live the same evening, three crops were added for the site's "What's new" cards, and only
+they were taken: `crop-radar` (the Library in its Releasing soon order, narrowed to the series the capture account is
+part-way through, because the soonest of all series are the ones running late; the covers and their *~Thu* / *~Sun*
+captions), `crop-related` (the Related row of the series whose AniList entry has the most related works, picked by
+run.sh, so the row is a row) and `crop-reader-comfort` (the reader's settings from *Wide pages*). v0.61.0 adds to some
+of the other screens (Related on the series page, Home's new rails, a Library order, reading time) without making
+them wrong; the next full run takes them.
+
+Before that, the whole set was re-captured against **v0.40.0** on 2026-09-22; for **v0.45.0** the extension and sources
+shots were retaken on the fixture above and the desktop pages added, and everything that showed a third-party name was
+retaken behind `neutralNames()` on a throwaway instance; on 2026-10-03 the extension and sources shots were retaken for
+v0.53.0 and v0.54.0's Admin → Sources. The marketing site's copies of those 10-03 shots were not refreshed until
+2026-10-12: a fixed shot reaches the site only through a run with `--site`.
+
+Two things the 2026-09-22 run turned up were worth writing down, because both had been silently wrong for weeks:
+
+- `profile-security` and `profile-stats` had been **byte-identical**. The Account capture navigates to
+  `/profile/?tab=Account`, and `?tab=` addresses only arrived in v0.39.0 — before that the deep link was
+  ignored and the rig photographed the You tab twice. Two identical files is the tell; check for it.
+- `admin-import` had been defined in `capture.mjs` since v0.35.0 and had **never produced a file**, so the
+  reviewed-import page was undocumented and unillustrated. A capture that is defined but not referenced
+  anywhere is easy to lose; `ls docs/shots/` against the `want(...)` calls catches it.
+
+`record.mjs` had drifted separately: it clicked **Providers** and then looked for the extension search
+field, which moved to its own tab in v0.39.0. Everything after that point was guarded by `if (f)`, so the
+recording simply lost its last twelve seconds without saying anything.
+
+## Before and after
+
+A redesign is judged on pictures of the same screens, taken the same way, before and after. `--compare <url>`
+photographs every chosen shot twice with the same capture account: first from `SHOT_BASE`, then from `<url>`.
+It writes `<out>/before` and `<out>/after`. `--out` is required with it, so a preview set can never overwrite
+`docs/shots`.
+
+```bash
+bash scripts/shots/run.sh --yes --out web/shots-preview --compare http://hbook-web-preview --only home,library,series
+```
+
+The `<url>` is a preview build of the web app (`cd web && npm run build`) served by a throwaway nginx on
+`SHOT_NET`. Its configuration is a copy of `web/nginx.conf` whose API, auth and image paths go to the same app
+`SHOT_BASE` names, so both passes read the same server and the same account. Never start a second server on
+the live database for this: its schedulers would run twice. `web/shots*/` is gitignored, and the second pass
+does not seed reading again.
+
+## Adding a shot
+
+Add a `want('<name>')` block in `scripts/shots/capture.mjs` and re-run with `--only <name>`. Prefer a whole
+screen over a crop unless the crop is going to be used small, always look at the result before committing
+it, and reference it from a doc or the site — an unreferenced shot stops being maintained.

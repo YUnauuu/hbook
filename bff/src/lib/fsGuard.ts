@@ -1,0 +1,174 @@
+// Can this process actually write here, and if not, exactly how do you fix it.
+//
+// Modelled on runBackup()'s EACCES branch, which exists because an unattended permission error with a bare
+// errno is the worst possible outcome: a failed rename is indistinguishable from "nothing happened". The
+// library is the harder case, because the answer is usually "set PUID", not "chown this" -- a library belongs
+// to the user, and telling them to give it away to uid 10002 is what PUID exists to avoid.
+import { lstat, mkdtemp, opendir, realpath, rmdir, stat } from 'fs/promises';
+import type { Stats } from 'fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { forDesktop } from './desktop';
+
+export type Writability =
+  | { ok: true }
+  | { ok: false; reason: string; fix: string };
+
+/**
+ * The desktop app's fix for a folder it cannot use: there is no container, volume or PUID on a PC, only the
+ * person's own account and its permissions on that folder.
+ */
+const DESKTOP_FIX =
+  'Make sure the folder exists and that your account can write to it (Windows: Properties, Security; ' +
+  'macOS: Get Info, Sharing & Permissions), or choose another folder.';
+
+/**
+ * Actually create and remove a directory rather than trusting access().
+ *
+ * access() reports the permission bits, which an NFS or SMB mount can satisfy while still refusing the
+ * write. The only reliable answer is to try it.
+ */
+export async function writePreflight(dir: string): Promise<Writability> {
+  const me = typeof process.getuid === 'function' ? process.getuid() : -1;
+  let ownerUid = -1;
+  try {
+    ownerUid = (await stat(dir)).uid;
+  } catch {
+    return {
+      ok: false,
+      reason: `${dir} does not exist or cannot be read`,
+      fix: forDesktop(`Check that the volume is mounted. In docker-compose.yml the library is mounted at ${dir}.`, DESKTOP_FIX),
+    };
+  }
+
+  try {
+    const probe = await mkdtemp(join(dir, '.hbook-write-'));
+    await rmdir(probe);
+    return { ok: true };
+  } catch {
+    return forDesktop<Writability>({
+      ok: false,
+      reason: `${dir} is not writable: it is owned by uid ${ownerUid} and this container runs as uid ${me}`,
+      // PUID first, because it is the answer that leaves the user's files alone.
+      fix:
+        ownerUid >= 0
+          ? `Set PUID=${ownerUid} (and PGID to its group) in your .env and restart. ` +
+            `Alternatively, and only if you are sure nothing else uses these files, give them to the app: ` +
+            `chown -R ${me}:${me} <your library path>`
+          : `Set PUID and PGID to the owner of your library, then restart.`,
+    }, { ok: false, reason: `hbook can't write to ${dir}.`, fix: DESKTOP_FIX });
+  }
+}
+
+/**
+ * Why a library root cannot answer for its files right now, or null when it can.
+ *
+ * An error code: the root cannot be opened (a network share or removable drive that isn't mounted, a path that is
+ * gone, mode bits). `empty`: it opens and holds nothing -- a bare mount point, which is what an unmounted share leaves
+ * behind and what Docker creates for a bind-mount source that is missing. A job that would WRITE what it sees into
+ * the catalog (a "checked" stamp, a mark) must not do so from either: every file would read as unreadable or gone.
+ *
+ * One entry is read, never the listing: a top-level readdir of a library is tens of thousands of names and wakes
+ * every disk behind it (the same read as firstEntry in lib/healthDisk.ts). This alone is not enough for a job: a
+ * sweep that ran while the share was down can leave real files on the bare mount point, so the jobs ask
+ * catalogRootUnavailable (lib/catalogRootGuard.ts), which starts here.
+ */
+export async function rootUnavailable(root: string): Promise<string | null> {
+  try {
+    const d = await opendir(root, { bufferSize: 1 });
+    try {
+      return (await d.read()) ? null : 'empty';
+    } finally {
+      await d.close().catch(() => {});
+    }
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code || 'unreadable';
+  }
+}
+
+/**
+ * Every distinct root a set of chapters lives under.
+ *
+ * A series is routinely split across the read library and the download dir -- 146 of 210 on the instance
+ * this was written for -- so "is this writable" has more than one answer and every one of them has to be
+ * yes before a rename may start.
+ */
+export async function allWritable(dirs: string[]): Promise<Writability> {
+  for (const d of dirs) {
+    const r = await writePreflight(d);
+    if (!r.ok) return r;
+  }
+  return { ok: true };
+}
+
+/**
+ * Resolve `rel` under `root` and refuse anything that escapes it.
+ *
+ * There is no path-containment check anywhere in this codebase today, and sanitize() in the downloader
+ * strips path separators but lets `..` through as a whole segment -- sanitize.test.ts records that as an
+ * asserted behaviour. Every filesystem write added from here on goes through this.
+ *
+ * Returns the resolved absolute path, or null if it escapes. Callers treat null as a refusal, never as a
+ * reason to fall back to the raw input.
+ */
+export function containedPath(root: string, rel: string): string | null {
+  if (!rel || rel.startsWith('/') || rel.includes('\0')) return null;
+  const base = resolve(root);
+  const full = resolve(base, rel);
+  return full === base || full.startsWith(base + sep) ? full : null;
+}
+
+/** A resolved path is below a resolved root, on every supported platform. */
+const inside = (base: string, candidate: string): boolean => {
+  const rel = relative(base, candidate);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+};
+
+/**
+ * Lexical containment plus filesystem containment through every existing symlink.
+ *
+ * The final file may legitimately be absent (a tombstone being restored, or a new chapter). In that case the
+ * nearest existing parent is resolved and checked. If the final entry exists, it is resolved too, so both an
+ * intermediate symlink and a final symlink out of the download root are refused. Call this again immediately
+ * before a destructive operation or write: an earlier validation is not a lock on the filesystem.
+ */
+export async function realContainedPath(root: string, rel: string): Promise<string | null> {
+  const full = containedPath(root, rel);
+  if (!full) return null;
+  const base = await realpath(resolve(root)).catch(() => null);
+  if (!base) return null;
+
+  let parent = dirname(full);
+  let realParent: string | null = null;
+  for (;;) {
+    realParent = await realpath(parent).catch(() => null);
+    if (realParent) break;
+    const up = dirname(parent);
+    if (up === parent) return null;
+    parent = up;
+  }
+  if (!inside(base, realParent)) return null;
+
+  const entry = await lstat(full).catch((e: NodeJS.ErrnoException) => e?.code === 'ENOENT' ? null : false);
+  if (entry === false) return null;
+  if (entry) {
+    const target = await realpath(full).catch(() => null);
+    if (!target || !inside(base, target)) return null;
+  }
+  return full;
+}
+
+/**
+ * Stat a chapter file for a delete, telling "not there" from "may not look". Resolves to the stats, to `null` for a
+ * path that is not there (ENOENT, ENOTDIR), or to the error code of any other failure -- EACCES from a folder whose mode
+ * bits slipped, EPERM, an I/O error, a dropped share's ENOTCONN -- which says nothing about the file: it may well be on
+ * disk, and a row marked deleted on that evidence hides a chapter whose bytes are still there. Here, beside the other
+ * path guards, so the read-chapter cleanup uses it too (libraryAdmin imports chapterCleanup, never the other way).
+ */
+export async function statOrGone(abs: string): Promise<Stats | null | string> {
+  try {
+    return await stat(abs);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? null : code || 'error';
+  }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="hbook">
+  <!-- hbook's mark: a lower-case h whose right shoulder is a page.
+       One shape, two colours: the stroke runs blue at the top to teal at the bottom. -->
+  <defs>
+    <!-- The gradient is in USER space, not in each path's own box: a vertical line has a
+         zero-width box, and a gradient in a zero-width box is not a gradient at all. -->
+    <linearGradient id="hbook" gradientUnits="userSpaceOnUse" x1="170" y1="116" x2="330" y2="396">
+      <stop offset="0" stop-color="#5b9cff"/>
+      <stop offset="1" stop-color="#7ee0c0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0e1116"/>
+  <g fill="none" stroke="url(#hbook)" stroke-width="46" stroke-linecap="round">
+    <path d="M170 116 V396"/>
+    <path d="M170 272c0-54 44-92 100-92s100 38 100 92v124"/>
+  </g>
+</svg>

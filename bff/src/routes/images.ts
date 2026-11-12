@@ -1,0 +1,1356 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import sharp from 'sharp';
+import { IMG_COOKIE, API_TOKEN_PREFIX, resolveApiToken, resolveOpdsBasic, accountActive } from '../lib/auth';
+import { clientZone } from '../lib/clientAddr';
+import { verifyLocalSessionJwt } from '../lib/profileTokens';
+import { komga, komgaImage } from '../lib/komga';
+import { serveImage, getOrFetch } from '../lib/imageCache';
+import { doneTranslation, drawPage, readerLang } from '../lib/translate/pages';
+import { RENDER_VERSION } from '../lib/translate/render';
+import { engineKey, translateOn } from '../lib/translate/queue';
+import { dominantHex } from '../lib/color';
+import { fetchAniListArt } from '../lib/anilist';
+import { learnDirectionWith, directionFromAniListMatch } from '../lib/readingDirection';
+import { learnTypeFromAniListWith } from '../lib/seriesType';
+import { automaticAniListAllowed, withAniListMutation } from '../lib/anilistPolicy';
+import { linkSeriesWith } from '../lib/trackers';
+import { LIBRARY_ROOT, cbzPageAt } from '../lib/library';
+import { cfSession, withSolverDeadline } from '../lib/sources/flaresolverr';
+import { solverMayVisit } from '../lib/sources/imageHosts';
+import { getSource, isSwAdapterId } from '../lib/sources';
+import type { SourceAdapter, SourceChapter } from '../lib/sources/types';
+import { fetchPages } from '../lib/downloader';
+import { previewPageList, copyPageList, isRefusal } from './sources';
+import { assertPublicHost, isBlockedHost, BlockedAddress } from '../lib/ssrfGuard';
+import { fetchPublicHop } from '../lib/publicConnection';
+import { suwayomiUrl, suwayomiBase, suwayomiImageHeaders, onEngineOrigin } from '../lib/sources/suwayomi/client';
+import { fetchPublic, readCapped, withoutCredentials, MAX_COVER_BYTES, MAX_ICON_BYTES, MAX_HTML_BYTES } from '../lib/safeFetch';
+import { env } from '../env';
+import { readLocalSeriesArt } from '../lib/localSeriesArt';
+import { basename, join, resolve, sep } from 'path';
+import { readFile, stat } from 'fs/promises';
+import { q, one } from '../lib/db';
+import { pageFileVersion, pageFileVersionOf } from '../lib/pageCleanupFiles';
+import { viewCtxFor, visibleBookFile, seriesVisible, sourceAllowedFor, SYSTEM_CTX, type ViewCtx } from '../lib/visibility';
+import { ART_DIR, artFile, firstPageBookOf, FIRST_PAGE } from '../lib/seriesArt';
+import { readTitleLogo } from '../lib/titleArt';
+import { namesOf } from '../lib/altTitles';
+import { HERO_FRAMES, backdropLook, heroFit, type HeroAr } from '../lib/heroFrame';
+import { heroServable, heroFrame, heroVariant, queueHero, type AutoHeroAr } from '../lib/autoHero';
+
+async function fetchUpstream(path: string): Promise<Buffer> {
+  const res = await komgaImage(path);
+  if (res.statusCode >= 400) {
+    const t = await res.body.text();
+    throw Object.assign(new Error(`upstream ${res.statusCode}`), { statusCode: res.statusCode, body: t });
+  }
+  return Buffer.from(await res.body.arrayBuffer());
+}
+
+async function fetchUpstreamWithType(path: string): Promise<{ buffer: Buffer; contentType: string }> {
+  const res = await komgaImage(path);
+  if (res.statusCode >= 400) {
+    const t = await res.body.text();
+    throw Object.assign(new Error(`upstream ${res.statusCode}`), { statusCode: res.statusCode, body: t });
+  }
+  return {
+    buffer: Buffer.from(await res.body.arrayBuffer()),
+    contentType: (res.headers['content-type'] as string) || 'image/jpeg',
+  };
+}
+
+const CF_IMAGE_TIMEOUT_MS = 5000;
+
+/**
+ * A cover value this server can actually go and fetch, or null.
+ *
+ * `fetchCoverImage` is handed whatever a source, an admin override or a query string called a cover, and a
+ * value that is not a URL used to reach the network layer and come back as an unhandled `TypeError` -- a 500
+ * with a level-50 stack behind an `<img>`, rather than a missing cover. It failed in two different shapes,
+ * and a check for one would have missed the other:
+ *
+ *   'mangakakalot'  -> `new URL()` throws ERR_INVALID_URL         (a plain source id)
+ *   'sw:8796296...' -> parses fine, origin is the string "null",
+ *                      and undici then rejects it with `fetch failed: unknown scheme`  (a Suwayomi id)
+ *
+ * So the test is "absolute, and http(s)", not "does `new URL` survive it".
+ */
+export function fetchableCoverUrl(u: string | null | undefined): URL | null {
+  if (!u) return null;
+  let parsed: URL;
+  try { parsed = new URL(u); } catch { return null; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  // And it must not name something on this machine or this network. This is the cheap half of the SSRF
+  // guard -- a literal `http://127.0.0.1:5432/` or `http://hbook-db/` -- kept synchronous so this predicate
+  // stays usable anywhere. The half that needs DNS, and the redirect chain, live in fetchCoverImage.
+  if (isBlockedHost(parsed.hostname)) return null;
+  return parsed;
+}
+
+/** `scheme://host:port` of a URL, or null if it is not a URL at all. Compared, never parsed by hand. */
+function originOf(u: string): string | null {
+  try { return new URL(u).origin; } catch { return null; }
+}
+
+/**
+ * Is this URL on the configured extension engine's own origin?
+ *
+ * Exported so the rule can be tested directly rather than restated in a test, which is how a guard ends up
+ * asserted against a copy of itself. `engine` is a parameter for the same reason — `env` is parsed once at
+ * module load, so a test cannot vary it by poking `process.env`.
+ *
+ * Origin is scheme + host + PORT, compared whole: naming the host does not inherit the exemption for every
+ * port on it, and a `null` on either side never matches, so an unconfigured engine exempts nothing and two
+ * unparseable values do not compare equal.
+ */
+export function isEngineOrigin(u: string, engine: string | undefined = env.SUWAYOMI_URL): boolean {
+  const want = originOf(engine || '');
+  const got = originOf(u);
+  return want !== null && got !== null && got === want;
+}
+
+/**
+ * The ONE engine URL the cover proxy may fetch without the SSRF guard, rebuilt from the operator's base, or
+ * null.
+ *
+ * Suwayomi hands the adapter a server-relative thumbnail path and `suwayomiUrl` makes it absolute, so every
+ * extension cover this server ever stores has exactly one shape: `<SUWAYOMI_URL>/api/v1/manga/<id>/thumbnail`
+ * (sources.ts `toSeries`, pinned by suwayomiAdapter.test.ts; every stored engine cover on the live install
+ * matched it). That is the whole exemption. Being on the engine's origin is necessary but NOT sufficient: the
+ * engine fetch carries the engine's Basic credentials, and `?u=` is caller-supplied, so "any path on the
+ * origin" let any signed-in reader make this server issue an authenticated GET to any engine endpoint --
+ * GETs with side effects on its legacy REST API, and 502-versus-500 as an oracle for which paths exist there.
+ *
+ * ⚠️ THE CALLER'S STRING IS NEVER FETCHED. The only thing taken from it is the numeric manga id; the URL that
+ * goes on the wire is `engine base + fixed path + that id`, and it is accepted only if it round-trips to
+ * exactly the origin+path the caller named (so a base with a sub-path still works, and a caller cannot smuggle
+ * a prefix, a query or a fragment past the shape check). Exported so coverProxy.test.ts asserts the shipped
+ * rule rather than a restatement of it; `engine` is a parameter because `env` is parsed once at module load.
+ *
+ * ⚠️ The base is `suwayomiBase(engine)`, the SAME normalisation `suwayomiUrl` stores covers with -- never the
+ * raw env string with one slash trimmed. The round-trip below only succeeds when the two sides were built
+ * from the same base, so an operator value that is not already clean (`http://engine:4567//`, `...:4567/?q`,
+ * `...:4567#f`) used to make this refuse every cover the adapter had just produced, silently.
+ */
+export function engineCoverUrl(u: string, engine: string | undefined = env.SUWAYOMI_URL): URL | null {
+  if (!isEngineOrigin(u, engine)) return null;
+  let parsed: URL;
+  try { parsed = new URL(u); } catch { return null; }
+  const m = /^(?:\/[^/]+)*\/api\/v1\/manga\/(\d+)\/thumbnail$/.exec(parsed.pathname);
+  if (!m) return null;
+  let target: URL;
+  try { target = new URL(`${suwayomiBase(engine)}/api/v1/manga/${m[1]}/thumbnail`); } catch { return null; }
+  // Rebuilt, then compared: the caller named the engine's thumbnail for this id, or nothing is fetched.
+  if (target.origin + target.pathname !== parsed.origin + parsed.pathname) return null;
+  return target;
+}
+
+/** Thrown for a cover value that could never be fetched, so callers can tell it from a transient failure. */
+export class UnfetchableCoverUrl extends Error {
+  readonly statusCode = 400;
+  constructor(readonly url: string) { super('cover url is not fetchable'); }
+}
+
+/** Fetch a remote cover image as raw bytes. Sends browser-ish headers (AniList/MangaDex CDNs reject bare
+ *  requests) and, for Cloudflare-protected source hosts (Aqua/ManhuaPlus), attaches FlareSolverr cookies.
+ *  `callerSupplied`: `u` came from a request, not from our database -- see `sourceCoverInput`. */
+export async function fetchCoverImage(u: string, source?: string, opts: { callerSupplied?: boolean; timeoutMs?: number } = {}): Promise<Buffer> {
+  // ⚠️ THE EXTENSION ENGINE IS NOT THE PUBLIC INTERNET, AND ITS COVERS ARE NOT AN SSRF TARGET.
+  //
+  // Suwayomi proxies every cover through itself, so an extension source's `coverUrl` is an absolute URL on
+  // the engine's own origin -- `http://hbook-suwayomi:4567/...` by default. That origin resolves to a private
+  // address, which is exactly what the guard below refuses, so EVERY cover from EVERY extension source was
+  // answered with the grey placeholder: whole rails of Discover, permanently, and cached for a year because
+  // `srccover:` is stored immutable. Extension ICONS never had the problem only because their route fetches
+  // the engine directly and never consults the guard at all.
+  //
+  // The exemption is ONE PATH SHAPE on ONE ORIGIN, and both halves are the safety argument. `?u=` is
+  // caller-supplied, so a rule like "allow private addresses" would hand back the very thing v0.21.0 removed --
+  // any signed-in reader could point this at hbook-db or the cloud metadata service. `SUWAYOMI_URL` is
+  // operator-configured and is where we already send credentials. But the origin alone was not enough either:
+  // for three releases this branch fetched WHATEVER PATH the caller named on that origin, with the engine's
+  // Basic credentials attached, so a reader could make this server issue an authenticated GET to any engine
+  // endpoint (its legacy REST API has GETs with side effects), and the 502 for a non-2xx against the 500 for
+  // a body sharp cannot decode was a two-state oracle for which engine paths exist. `engineCoverUrl` closes
+  // the first and shrinks the second to "is there a manga with this id", which the source search already
+  // answers: the only shape it accepts is the thumbnail the adapter produces, and the URL on the wire is
+  // rebuilt from the operator base plus the numeric id -- the caller's string is never what gets fetched.
+  //
+  // Redirects are not followed here: if the engine ever answered a redirect, it would leave this origin and
+  // deserve the full guard, so a non-2xx simply fails. ⚠️ `redirect: 'error'` IS WHAT MAKES THAT SENTENCE
+  // TRUE. It was written, and believed, while the fetch used the default -- which FOLLOWS redirects -- so the
+  // one origin this exemption trusts could have handed back a 302 to anywhere. CodeQL flags this line
+  // (js/request-forgery) because it cannot see either predicate; it did prompt the re-read that found the
+  // comment and the code disagreeing.
+  //
+  // Reintroduce by allowing any private address instead of this one origin: the guard is gone and
+  // `coverProxy.test.ts` fails on hbook-db, the metadata service and an unrelated private host. Or by
+  // matching the origin alone: the same file's "anything at all on the engine origin" case is fetched. Or
+  // by dropping `redirect: 'error'`: engineRedirect.test.ts's redirect case is followed instead of refused.
+  const engineTarget = engineCoverUrl(u);
+  if (engineTarget) {
+    const r = await fetch(engineTarget, { headers: suwayomiImageHeaders(), redirect: 'error', signal: AbortSignal.timeout(20000) })
+      .catch(() => { throw Object.assign(new Error('cover'), { statusCode: 502 }); });
+    if (!r.ok) throw Object.assign(new Error('cover'), { statusCode: 502 });
+    return readCapped(r, MAX_COVER_BYTES).catch(() => { throw Object.assign(new Error('cover'), { statusCode: 502 }); });
+  }
+
+  // Before anything else, and before any network call: everything below assumes a real http(s) URL.
+  const parsed = fetchableCoverUrl(u);
+  if (!parsed) throw new UnfetchableCoverUrl(u);
+  // ⚠️ AND THE DNS HALF, BEFORE THE SOLVER. Until v0.45.1 this ran only inside the redirect loop below, after
+  // the requiresCloudflare block had already handed `u` to cfSession -- FlareSolverr's browser, on the same
+  // Docker network as the engine and the database -- so a name that resolves privately was opened by the
+  // solver first and refused second. Nothing below may touch the network until this has passed.
+  // Reintroduce by moving this below the requiresCloudflare block: coverSolverGuard.test.ts's DNS case fails.
+  try {
+    await assertPublicHost(parsed.hostname);
+  } catch (e) {
+    if (e instanceof BlockedAddress) throw new UnfetchableCoverUrl(u);
+    throw e;
+  }
+  const src = source ? getSource(source) : null;
+  const staticReferer = typeof src?.imageReferer === 'string' ? src.imageReferer : undefined;
+  const extras = typeof src?.imageHeaders === 'function' ? src.imageHeaders(u) : src?.imageHeaders ?? {};
+  const sourceHeaders: Record<string, string> = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    'accept-language': 'en-US,en;q=0.9',
+    'sec-fetch-dest': 'image', 'sec-fetch-mode': 'no-cors', 'sec-fetch-site': 'cross-site',
+    referer: staticReferer ?? `${parsed.origin}/`,
+    ...extras,
+  };
+  // A caller-supplied URL reaches the solver only on a host this source vouched for -- its own site, or one it
+  // has served covers from (imageHosts.ts). The solver follows redirects and runs page scripts, so a public page
+  // the caller controls could otherwise walk it into the network. Library covers come from series_art, not
+  // from a caller: Aqua's CDN answers 403 without clearance.
+  const mayClear = !!src?.requiresCloudflare && (!opts.callerSupplied || solverMayVisit(src, parsed.hostname));
+  const fetchFollowing = async (): Promise<Response> => {
+    // Redirects are followed BY HAND so every hop is checked. `redirect: 'follow'` would let a public URL
+    // bounce to 169.254.169.254 or hbook-db with no second look, which makes any check on the original URL
+    // alone decorative.
+    let target = parsed;
+    let r: Response;
+    for (let hop = 0; ; hop++) {
+      try {
+        await assertPublicHost(target.hostname);
+      } catch (e) {
+        // Not fetchable, ever -- the same class as a bare source id, so it takes the same placeholder path.
+        // Deliberately indistinguishable from any other unfetchable value: a distinct status here would be
+        // the internal-service oracle this guard exists to remove.
+        if (e instanceof BlockedAddress) throw new UnfetchableCoverUrl(u);
+        throw e;
+      }
+      // Credentials go to the cover's own origin only, as fetchFollowingPublic sends them (lib/safeFetch.ts): a hop
+      // anywhere else drops the cookie and authorization -- the solver's clearance after a solve among them -- and
+      // the source's own extra headers. Reintroduce by sending `sourceHeaders` on every hop: "a redirect to another
+      // origin carries none of the first one's credentials" in coverRedirectHeaders.test.ts sees them arrive.
+      const headers = target.origin === parsed.origin ? sourceHeaders : withoutCredentials(sourceHeaders, Object.keys(extras));
+      // Twenty seconds is a cover's worth of time. A comic PAGE is several megabytes, and on a slow
+      // link that is more than twenty seconds of transfer -- the reader got a blank page for every
+      // one of them. The caller says how long its images are allowed to take.
+      r = await fetchPublicHop(target, { headers, signal: AbortSignal.timeout(opts.timeoutMs ?? 20000) });
+      if (r.status < 300 || r.status > 399) break;
+      const loc = r.headers.get('location');
+      if (!loc || hop >= 4) throw new UnfetchableCoverUrl(u);
+      let next: URL;
+      try { next = new URL(loc, target); } catch { throw new UnfetchableCoverUrl(u); }
+      if (next.protocol !== 'http:' && next.protocol !== 'https:') throw new UnfetchableCoverUrl(u);
+      target = next;
+    }
+    return r;
+  };
+
+  // PLAIN FIRST (v0.59.0). Every cover of a source behind Cloudflare used to ask the solver for clearance BEFORE the
+  // fetch -- and a cover CDN is no page: on the owner's install about 89 such solves for one CDN all failed, each
+  // holding one of the solver's four slots for up to a minute, while the plain fetch served every one of those covers
+  // with a 200. The solves starved Discover's own listings into timeouts. Now the referer-only fetch goes first, and only
+  // a Cloudflare refusal (403, 503 or `cf-mitigated`) asks for clearance -- the CDN's origin alone for a caller's
+  // cover, never the image URL itself -- capped hard, then one retry with the cookies. Reintroduce the solve-first
+  // order: "a cover the CDN serves never asks the solver" in coverSolverGuard.test.ts sees the solver asked.
+  let r = await fetchFollowing();
+  if (mayClear && refusedByCloudflare(r)) {
+    try {
+      // Capped hard. cfSession is built for solving a real challenge on a page load and will sit there for
+      // up to 95 seconds; behind an <img> that is a tile that never resolves. The deadline also drops the solve from
+      // the solver's queue if no slot frees in time (withSolverDeadline).
+      let timer: NodeJS.Timeout | undefined;
+      const s = await Promise.race([
+        withSolverDeadline(CF_IMAGE_TIMEOUT_MS, () => cfSession(u, { solveUrl: !opts.callerSupplied })),
+        new Promise<never>((_, rej) => {
+          timer = setTimeout(() => rej(new Error('cf timeout')), CF_IMAGE_TIMEOUT_MS);
+        }),
+      ]).finally(() => clearTimeout(timer)); // or the loser holds the event loop open for 5s
+      if (s.cookie) {
+        await r.body?.cancel().catch(() => {});
+        sourceHeaders.cookie = s.cookie;
+        sourceHeaders['user-agent'] = s.userAgent;
+        r = await fetchFollowing();
+      }
+    } catch {
+      /* no clearance in time: the refusal stands */
+    }
+  }
+  // A flat 502, never the upstream status. Reflecting it turned this route into a port and path scanner:
+  // 404 meant an open HTTP service, a hang meant a filtered port. `Img` only needs SOME error to fall back
+  // to its direct-URL retry, and 502 is the honest one -- the failure was upstream, not in this request.
+  if (!r.ok) throw Object.assign(new Error('cover'), { statusCode: 502 });
+  // Counted as it decodes and refused past the cap (lib/safeFetch.ts): the caller names this URL, and a 49 KB gzip
+  // response decoded into a 48 MiB buffer before anything looked at it.
+  return readCapped(r, MAX_COVER_BYTES).catch(() => { throw Object.assign(new Error('cover'), { statusCode: 502 }); });
+}
+
+/** A Cloudflare refusal: what clearance cookies could get past (v0.59.0). */
+const refusedByCloudflare = (r: Response): boolean =>
+  r.status === 403 || r.status === 503 || r.headers.get('cf-mitigated') === 'challenge';
+
+/**
+ * The cover route's fetch. `u` is whatever the caller put in the query string, so the Cloudflare solver is held
+ * to the hosts the source vouched for. Exported so coverSolverGuard.test.ts drives the route's own call rather
+ * than a restatement of it. Reintroduce by calling fetchCoverImage without `callerSupplied`: that test's route
+ * case sees the solver asked.
+ */
+export const sourceCoverInput = (u: string, source?: string, opts: { timeoutMs?: number } = {}): Promise<Buffer> =>
+  fetchCoverImage(u, source, { callerSupplied: true, ...opts });
+
+// ---- series backdrop recipes (module-level so the pre-warmer can build them without a request) ----
+const bookFileAbs = async (id: string, ctx: ViewCtx): Promise<string | null> => {
+  const r = await visibleBookFile(id, ctx);
+  return r ? join(r.root || LIBRARY_ROOT, r.file) : null;
+};
+// Bytes of a series' first downloaded page — the universal fallback when a remote cover/backdrop URL can't be
+// fetched (hotlink-protected CDN, dead link, timeout, unparsed cover). Guarantees art for any downloaded series.
+// The page the read-chapter cleanup kept before deleting its chapter comes first (v0.97.0, #332, lib/seriesArt.ts
+// keepCoverPage): it is the cover as it was, whichever chapter is lowest now. Its file is named by the id the database
+// holds, never the request's, as the art routes in admin.ts name theirs. Reintroduce by reading the chapters first:
+// "the cover's chapter goes, and its page stays the cover" in cleanupCoverPage.int.test.ts sees the next chapter's page.
+// Else the cover chapter's, unless that is a notice chapter the admin hides (lib/noticeChapters.ts), which has no pages
+// to give anyone: then the lowest chapter that is shown, picked the way the scan picks the cover (lib/library.ts, live
+// first). Reintroduce by reading cover_book_id alone: "a hidden notice as the cover chapter" in
+// noticeSurfaces.int.test.ts finds the series' cover a 404.
+const firstPageInput = async (id: string, ctx: ViewCtx): Promise<Buffer> => {
+  const s = await one<{ id: string; cover_book_id: string | null }>(
+    `SELECT s.id, ${firstPageBookOf('s')} AS cover_book_id FROM lib_series s WHERE s.id = $1`, [id]);
+  const kept = s ? await readFile(artFile(s.id, 'page')).catch(() => null) : null;
+  if (kept) return kept;
+  const abs = s?.cover_book_id ? await bookFileAbs(s.cover_book_id, ctx) : null;
+  if (!abs) throw Object.assign(new Error('no cover'), { statusCode: 404 });
+  // A cover chapter whose file is gone -- deleted or moved by hand, which is what Rescan everything finds (v0.55.4), or a
+  // library folder not mounted right now -- is a 404, as a chapter's own thumbnail is (pageOrGone, below): the admin
+  // header's backdrop asked for one, and the ENOENT surfaced as a server error. Reintroduce by calling cbzPageAt here:
+  // "a series whose cover chapter's file is gone" in prunedBooks.int.test.ts sees 500.
+  const first = await pageOrGone(abs, 0);
+  if (!first) throw Object.assign(new Error('empty'), { statusCode: 404 });
+  return first.bytes;
+};
+
+// Hero frames match the two client viewports (lg desktop strip / phone portrait) so the browser barely crops.
+const ambientComposite = (input: Buffer) =>
+  sharp(input).resize(1600, 1024, { fit: 'cover' }).blur(22).modulate({ brightness: 0.82, saturation: 1.18 }).webp({ quality: 80 }).toBuffer();
+const heroSharp = async (input: Buffer, ar: HeroAr) => {
+  const f = HERO_FRAMES[ar];
+  const meta = await sharp(input).metadata();
+  if (heroFit(meta.width ?? 0, meta.height ?? 0, ar) === 'crop') {
+    // shapes are close — a mild saliency crop fills the frame without wrecking the art
+    return sharp(input).resize(f.w, f.h, { fit: 'cover', position: 'attention' }).modulate({ brightness: 0.95 }).webp({ quality: 82 }).toBuffer();
+  }
+  // shapes differ a lot — sharp art shown whole over a blurred self-fill (no crop, no zoom)
+  const fg = await sharp(input).resize(f.w, f.h, { fit: 'inside' }).toBuffer();
+  return sharp(input)
+    .resize(f.w, f.h, { fit: 'cover' })
+    .blur(28)
+    .modulate({ brightness: 0.62, saturation: 1.15 })
+    .composite([{ input: fg, gravity: 'centre' }])
+    .webp({ quality: 82 })
+    .toBuffer();
+};
+
+/**
+ * A real banner on the series page (v0.53.0), sharp: never cropped here -- the page's frame is a strip on a desktop and
+ * a shorter one on a phone, and it crops to whichever it is -- never enlarged, at most as wide as the widest hero, with
+ * the light brightness step the hero frames take. The page's own gradient keeps the title readable over it.
+ */
+const bannerSharp = (input: Buffer) =>
+  sharp(input).resize({ width: HERO_FRAMES.wide.w, withoutEnlargement: true }).modulate({ brightness: 0.95 }).webp({ quality: 82 }).toBuffer();
+
+/**
+ * Resolve a backdrop's cache variant + producer for (series, style, frame) — shared by the route and warmer. `style` is
+ * the page's ask (lib/heroFrame.ts backdropLook): `hero` the framed sharp art, `banner` a real banner as it is, else the
+ * ambient wash.
+ */
+async function backdropRecipe(id: string, style: 'hero' | 'banner' | null, ar: HeroAr, ctx: ViewCtx): Promise<{ variant: string; producer: () => Promise<{ buffer: Buffer; contentType: string }> }> {
+  const hero = style === 'hero';
+  // admin override wins (uploaded banner/cover or pasted URL)
+  const ovr = await one<{ banner: string | null; cover: string | null; v: string }>('SELECT banner, cover, EXTRACT(EPOCH FROM updated_at) * 1000 AS v FROM series_overrides WHERE series_id = $1', [id]);
+  if (ovr?.banner) {
+    return {
+      variant: `artw7${hero ? `h${ar}` : style === 'banner' ? 'b' : ''}:${id}:ov:${Math.floor(Number(ovr.v))}`,
+      producer: async () => {
+        let input: Buffer;
+        let fromBanner = true;
+        if (ovr.banner === 'upload') input = await readFile(artFile(id, 'banner'));
+        else { try { input = await fetchCoverImage(ovr.banner!); } catch { input = await firstPageInput(id, ctx); fromBanner = false; } }
+        const look = backdropLook(style, { hasUrl: true, fromBanner });
+        const buffer = look === 'hero' ? await heroSharp(input, ar) : look === 'banner' ? await bannerSharp(input) : await ambientComposite(input);
+        return { buffer, contentType: 'image/webp' };
+      },
+    };
+  }
+  const localBanner = ovr?.cover === FIRST_PAGE ? null : await readLocalSeriesArt(id, 'banner');
+  if (localBanner) {
+    const look = backdropLook(style, { hasUrl: true, fromBanner: true });
+    return {
+      variant: `local-banner:${id}:${localBanner.version}:${style ?? 'ambient'}:${ar}`,
+      producer: async () => ({ buffer: look === 'hero' ? await heroSharp(localBanner.bytes, ar)
+        : look === 'banner' ? await bannerSharp(localBanner.bytes) : await ambientComposite(localBanner.bytes), contentType: 'image/webp' }),
+    };
+  }
+  // Use the first page (v0.55.7, lib/seriesArt.ts FIRST_PAGE): the series' art is its own pages -- the first page's wash
+  // here, and the banner made from its pages -- and nothing online is looked up or shown for it. Reintroduce by reading
+  // series_art for it: "the first page, chosen, keeps online art away" in onlineMatch.int.test.ts finds the stored
+  // banner's variant.
+  let art: { banner: string | null; cover: string | null; checked_at: Date | null; rev?: number } | null = ovr?.cover === FIRST_PAGE
+    ? { banner: null, cover: null, checked_at: new Date() }
+    : await one<{ banner: string | null; cover: string | null; checked_at: Date | null; rev: number }>('SELECT banner, cover, checked_at, rev FROM series_art WHERE series_id = $1', [id]);
+  // An opted-out add may still have its source cover.  That row is deliberately unchecked: once its current library
+  // allows automatic enrichment, look up the missing online banner without replacing the source's own cover.
+  if (!art || (!art.banner && !art.checked_at)) {
+    // A disabled library makes no implicit title request and, importantly, stores no miss.  If the admin
+    // enables lookups later this same absent row is eligible immediately; existing art remains visible.
+    if (!(await automaticAniListAllowed({ id }))) art ??= { banner: null, cover: null, checked_at: null };
+    else {
+      try {
+        // Every name the series goes by (lib/altTitles.ts namesOf): the search asks by its title, and the answer is kept
+        // only when it is one of them (lib/onlineMatch.ts). Another work's answer comes back as nulls and is stored as
+        // the miss a 404 is, so it is not asked again on every view (#168).
+        let names: string[] = [];
+        try {
+          names = await namesOf({ id });
+          if (!names.length) { const s = await komga.series(id); const t = s?.metadata?.title || s?.name; if (t) names = [t]; }
+        } catch {}
+        const title = names[0] ?? '';
+        // Names are a database read and the library can change while it is in flight.  Re-read at the actual title
+        // boundary; if the series moved into an opted-out destination, preserve its existing/source art and cache no
+        // miss.  Re-read once more after the network answer before any art/link/type/direction mutation.
+        if (title && !(await automaticAniListAllowed({ id }))) {
+          throw new Error('automatic AniList lookup disabled');
+        }
+        const fetched = title ? await fetchAniListArt(title, names) : { banner: null, cover: null };
+        if (title && !(await automaticAniListAllowed({ id }))) {
+          throw new Error('automatic AniList lookup disabled');
+        }
+        // The last policy read above is still not write authority: a move or toggle can commit in the few instructions
+        // before the INSERT. Lock the series and its current library, then apply the art, link, direction and type as
+        // one decision. A refused transaction stores no negative result, so enabling later can take the lookup up.
+        const applied = await withAniListMutation({ id }, 'automatic', async (qq, seriesId) => {
+          // checked_at: held to the title check as it was stored (lib/matchCheck.ts rechecks a row only while it is NULL).
+          const stored = await qq<{ banner: string | null; cover: string | null; checked_at: Date | null; rev: number }>(
+            `INSERT INTO series_art (series_id, banner, cover, checked_at) VALUES ($1, $2, $3, now())
+             ON CONFLICT (series_id) DO UPDATE SET
+               banner = COALESCE(series_art.banner, EXCLUDED.banner),
+               cover = COALESCE(series_art.cover, EXCLUDED.cover),
+               fetched_at = now(), checked_at = now()
+             RETURNING banner, cover, checked_at, rev`,
+            [seriesId, fetched.banner, fetched.cover],
+          );
+          // The same match also anchors tracker sync and carries the weakest direction/type evidence.
+          if (fetched.mediaId) {
+            await linkSeriesWith(qq, seriesId, fetched.mediaId, fetched.mediaTitle ?? null);
+            await learnDirectionWith(qq, { id: seriesId }, directionFromAniListMatch(names, fetched), 'anilist');
+            await learnTypeFromAniListWith(qq, { id: seriesId }, names, fetched);
+          }
+          return stored[0] ?? null;
+        });
+        if (applied.applied) {
+          art = applied.value ?? { banner: art?.banner ?? fetched.banner, cover: art?.cover ?? fetched.cover, checked_at: new Date() };
+        } else {
+          art = await one<{ banner: string | null; cover: string | null; checked_at: Date | null; rev: number }>(
+            'SELECT banner, cover, checked_at, rev FROM series_art WHERE series_id = $1', [id],
+          ) ?? art ?? { banner: null, cover: null, checked_at: null };
+        }
+      } catch {
+        art ??= { banner: null, cover: null, checked_at: null }; // transient AniList error: don't cache; fall back this view
+      }
+    }
+  }
+  // v0.51.0: a series someone looks at with no banner of its own -- one just added, or one the daily warm-up has not
+  // reached -- gets the one made from its pages soon, in the background (lib/autoHero.ts queueHero: one at a time,
+  // paced, standing aside for a sweep, a repair or the source check; a no-op for one made, tried lately or not
+  // eligible). Nothing here waits on it: the payload offers it once it is made.
+  const localCover = !ovr?.cover && !art.banner ? await readLocalSeriesArt(id, 'cover') : null;
+  if (localCover) {
+    const look = backdropLook(style, { hasUrl: true, fromBanner: false });
+    return {
+      variant: `local-cover:${id}:${localCover.version}:${style ?? 'ambient'}:${ar}`,
+      producer: async () => ({ buffer: look === 'hero' ? await heroSharp(localCover.bytes, ar)
+        : await ambientComposite(localCover.bytes), contentType: 'image/webp' }),
+    };
+  }
+  if (!art.banner) queueHero(id);
+  const url = art.banner || art.cover;
+  // The look the art in hand would get: the hero shows a banner OR a cover sharp (only the no-art first page stays
+  // ambient), the series page only a real banner -- a cover blown up to a banner's frame stays the blurred wash.
+  const planned = backdropLook(style, { hasUrl: !!url, fromBanner: !!art.banner });
+  // `rev` (v0.103.1): the art was replaced under the same series -- a link moved to the series' own AniList entry
+  // (lib/matchCheck.ts moveLink) -- and the picture made from the old one must not answer for it. 0 keeps the key it was.
+  const variant = url
+    ? `artw${planned === 'hero' ? `7h${ar}` : planned === 'banner' ? '8b' : '6'}:${id}:${art.banner ? 'b' : 'c'}${art.rev ? `:r${art.rev}` : ''}`
+    : `artw6:${id}:p`;
+  const srcRow = await one<{ source_id: string | null }>('SELECT source_id FROM lib_series WHERE id = $1', [id]);
+  return {
+    variant,
+    producer: async () => {
+      // remote art (AniList banner / source cover) first; fall back to the first downloaded page so the hero is never empty
+      let input: Buffer;
+      let fetched = false;
+      try {
+        if (!url) throw new Error('no remote art');
+        input = await fetchCoverImage(url, srcRow?.source_id || undefined);
+        fetched = true;
+      } catch {
+        input = await firstPageInput(id, ctx);
+      }
+      // A banner that could not be fetched is the first page now: the wash, never a page drawn sharp across the frame.
+      const look = backdropLook(style, { hasUrl: !!url, fromBanner: fetched && !!art.banner });
+      const buffer = look === 'hero' ? await heroSharp(input, ar) : look === 'banner' ? await bannerSharp(input) : await ambientComposite(input);
+      return { buffer, contentType: 'image/webp' };
+    },
+  };
+}
+
+/** Pre-generate both hero frames for a set of series so the carousel never waits on sharp/remote fetches.
+ *  Disk-cache aware (getOrFetch): already-warm entries cost one stat() each. Fire-and-forget.
+ *
+ *  Two things this has to get right. It ran strictly one frame after another, so warming today's seven picks
+ *  was fourteen sequential remote fetches and sharp encodes -- long enough that the carousel could easily
+ *  reach a frame before the warmer did, which is the case warming exists to prevent. And the `warmed` tag was
+ *  only recorded AFTER the work finished, so two callers arriving together both did all of it.
+ *
+ *  The concurrency cap is deliberately low: this is background work competing with the requests someone is
+ *  actually waiting on, and sharp already uses a thread pool per call. */
+const warmed = new Set<string>();
+const WARM_CONCURRENCY = 3;
+
+export async function warmHeroBackdrops(ids: string[]): Promise<void> {
+  const jobs: Array<{ id: string; ar: HeroAr; tag: string }> = [];
+  for (const id of ids) {
+    for (const ar of ['wide', 'tall'] as const) {
+      const tag = `${id}:${ar}`;
+      if (warmed.has(tag)) continue;
+      warmed.add(tag); // claim it up front so a second caller does not duplicate the work
+      jobs.push({ id, ar, tag });
+    }
+  }
+  if (!jobs.length) return;
+
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      try {
+        const r = await backdropRecipe(job.id, 'hero', job.ar, SYSTEM_CTX);
+        await getOrFetch(r.variant, r.producer);
+      } catch {
+        warmed.delete(job.tag); // best-effort, but let a later pass retry it
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WARM_CONCURRENCY, jobs.length) }, worker));
+}
+
+/**
+ * Authorize a request for image BYTES, and bind who is asking.
+ *
+ * ⚠️ REGISTERED AT THE ROOT, IN server.ts, FOR THE WHOLE `/img/` PREFIX -- not as a hook inside this
+ * plugin, which is where it used to live. Fastify hooks are encapsulated, so a plugin-local hook covers
+ * only the routes that plugin registers: any NEW plugin that served something under `/img/` would have
+ * silently served it unauthenticated, and there is nothing in the type system or the tests to notice.
+ * That is not hypothetical -- a downstream fork added an `/img/stream/:sessionId/:pageIndex` byte proxy in
+ * its own plugin and shipped it with no auth at all, having "fixed" auth for its `/api/` half.
+ *
+ * Browser <img> tags cannot set an Authorization header, hence the stateless hbook_img cookie.
+ *
+ * BIND the subject, do not just verify it. This used to call app.jwt.verify(token) and return, so the
+ * decoded sub was thrown away and no image handler had any notion of who was asking. That made every
+ * series-level rule a no-op on the one route family that serves actual bytes: /img/lib/books/:id/page/:n
+ * resolved a file from a book id with no series join, so a hidden series' pages rendered for anyone
+ * holding the id.
+ */
+export async function authorizeImageRequest(
+  app: FastifyInstance,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const token = req.cookies?.[IMG_COOKIE];
+  if (token) {
+    try {
+      let claims: { sub?: string; typ?: string; loc?: unknown };
+      try { claims = app.jwt.verify(token); }
+      catch { claims = verifyLocalSessionJwt(app, token); }
+      // ⚠️ Only the image cookie itself. Every JWT this server signs verifies under the same secret, so
+      // without this an ACCESS token -- or any other signed payload that names a `sub` -- pasted into the
+      // hbook_img cookie was an image session for that account. The cookie is minted with `typ: 'img'`
+      // (routes/auth.ts) and nothing else is. Reintroduce by dropping the typ condition: "an access token in
+      // the hbook_img cookie does not open images" in komgaCompat.int.test.ts sees 200.
+      if (claims.typ === 'img') {
+        // The cookie lives for a week and nothing revokes it, so the account behind it is checked on every use: a
+        // disabled or deleted owner gets the 401 every other credential gets. Reintroduce by dropping this line:
+        // "the image cookie stops working..." in imageBearer.int.test.ts sees a disabled member's page (200).
+        if (!(await accountActive(claims.sub))) return reply.code(401).send({ error: 'unauthorized' });
+        // The cookie of a session entered without a password (`loc`, routes/auth.ts) opens pages at home only, like every
+        // request of that session (lib/auth.ts authenticate); it lasts a week, so it is judged on every use too.
+        if (claims.loc === true && clientZone(req) !== 'local') return reply.code(401).send({ error: 'local_only' });
+        (req as any).viewCtx = await viewCtxFor(claims.sub ?? null);
+        (req as any).imgCredential = { kind: 'session' } satisfies ImgCredential;
+        return;
+      }
+    } catch { /* fall through to OPDS auth */ }
+  }
+  // A third-party client -- the Mihon extension -- holds ONE credential, an API token, and needs it to
+  // work for the page bytes as well as the JSON that named them. Until v0.29.0 it did not: /img/* took the
+  // cookie or the OPDS token and nothing else, so an extension would have needed two secrets pasted in.
+  //
+  // ⚠️ Resolved DIRECTLY, not through authenticate(). Images are GET, so a read-only token is exactly
+  // enough, which is the point: the README tells people to mint a token with the read scope alone. The
+  // grants still apply through viewCtxFor, so a token for a member without access to a library gets the
+  // same 404 that member's session would. Reintroduce by removing this branch: imageBearer.int.test.ts
+  // fails on its very first assertion, a read token fetching a page.
+  const auth = req.headers.authorization;
+  if (auth && /^bearer /i.test(auth)) {
+    const raw = auth.slice(7).trim();
+    if (raw.startsWith(API_TOKEN_PREFIX)) {
+      const tok = await resolveApiToken(raw);
+      if (tok) {
+        (req as any).viewCtx = await viewCtxFor(tok.userId, tok.role);
+        (req as any).imgCredential = { kind: 'token', scopes: [...tok.scopes] } satisfies ImgCredential;
+        return;
+      }
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+  }
+  // OPDS readers load covers/pages with the same HTTP Basic token as the feed
+  const who = await resolveOpdsBasic(req.headers.authorization);
+  if (who) { (req as any).viewCtx = await viewCtxFor(who.userId); (req as any).imgCredential = { kind: 'opds' } satisfies ImgCredential; return; }
+  return reply.code(401).send({ error: 'unauthorized' });
+}
+
+/**
+ * Which credential let an image request in (authorizeImageRequest): the image cookie of a signed-in session, an API token
+ * with its scopes, or an OPDS reader's Basic token. Every image route but one only needs to know WHO; the compare view's
+ * page (#241) is an admin's, and `requireAdmin`'s rule is that an admin's token must also carry the admin scope.
+ */
+export type ImgCredential = { kind: 'session' } | { kind: 'token'; scopes: string[] } | { kind: 'opds' };
+
+/**
+ * The admin rule for an image route, as requireAdmin (lib/auth.ts) holds it for the API: the account is an admin now (read
+ * from the database: the image cookie carries no role), and the credential is a session or an API token carrying the
+ * admin scope -- never an OPDS reader's token, nor a read token an admin minted for a script.
+ * Reintroduce by checking the role alone: "a read-scope token of an admin is refused" in copyPages.int.test.ts sees 200.
+ */
+async function adminImageRequest(req: FastifyRequest): Promise<boolean> {
+  const ctx = (req as any).viewCtx as ViewCtx | undefined;
+  const cred = (req as any).imgCredential as ImgCredential | undefined;
+  if (!ctx?.userId || !cred || cred.kind === 'opds') return false;
+  if (cred.kind === 'token' && !cred.scopes.includes('admin')) return false;
+  const me = await one<{ role: string }>('SELECT role FROM users WHERE id = $1', [ctx.userId]).catch(() => null);
+  return me?.role === 'admin';
+}
+
+// ---- owned library image helpers: serve thumbnails + pages straight from the CBZ files ----
+//
+// Module-level and EXPORTED, not closures inside imageRoutes as they were until v0.38.0. The Komga-compatible
+// API (routes/komgaCompat.ts) serves the same bytes under /api/v1/series/:id/thumbnail and
+// /api/v1/books/:id/pages/:n, and a redirect to /img/* was not an option: authorizeImageRequest takes the
+// hbook_img cookie, a Bearer token or OPDS Basic, none of which that client sends on an image hop. Sharing the
+// producers shares the cache keys too (lib-sthumb/lib-bthumb/lib-page), so nothing is decoded twice.
+//
+// ⚠️ Every one of these reads the viewer from `req.viewCtx` and trusts it. The caller's hook binds it; the
+// /img/ root guard in server.ts does NOT cover any other prefix (see authorizeImageRequest).
+
+/** The viewer bound by whichever hook authorised this request. */
+const vc = (req: FastifyRequest): ViewCtx => (req as any).viewCtx as ViewCtx;
+
+const libCt = (name: string): string => {
+  const e = name.toLowerCase().split('.').pop() || '';
+  return e === 'png' ? 'image/png' : e === 'webp' ? 'image/webp' : e === 'gif' ? 'image/gif' : e === 'avif' ? 'image/avif' : 'image/jpeg';
+};
+const storeColor = (id: string, input: Buffer) =>
+  dominantHex(input)
+    .then((hex) => q(`INSERT INTO series_colors (series_id, color) VALUES ($1,$2)
+      ON CONFLICT (series_id) DO UPDATE SET color=EXCLUDED.color, updated_at=now()`, [id, hex]))
+    .catch(() => {});
+// Hi-res poster variants: covers default to 400px (cards), the detail poster + hero request 800/1600.
+// Only whitelisted widths are honored so the cache can't be spammed with arbitrary sizes.
+const thumbWidth = (req: FastifyRequest): number => {
+  const w = Number((req.query as any)?.w);
+  return w === 800 || w === 1600 ? w : 400;
+};
+// Series cover: an admin's (an upload, a link, or the first page by choice), else the real cover art (the source's, or
+// AniList's when its entry is named as the series is, cached in series_art.cover); fall back to the first page of
+// chapter 1. Distinct cache variants so it upgrades to the real cover once one is known.
+export const serveLibSeriesThumb = async (req: FastifyRequest, reply: FastifyReply, id: string) => {
+  // The series-level art routes read lib_series and series_art by id, so they need the check that
+  // bookFileAbs now carries for chapters. Without it a hidden series' cover still renders, which is
+  // how a deleted series has always kept its thumbnail.
+  if (!(await seriesVisible(id, vc(req)))) return reply.code(404).send({ error: 'not_found' });
+  const w = thumbWidth(req);
+  const wk = w === 400 ? '' : `:w${w}`; // 400 keeps the legacy cache key so existing entries stay warm
+  // admin override wins (uploaded file or pasted URL); variant carries updated_at so edits bust the cache
+  const ovr = await one<{ cover: string | null; v: string }>('SELECT cover, EXTRACT(EPOCH FROM updated_at) * 1000 AS v FROM series_overrides WHERE series_id = $1', [id]);
+  if (ovr?.cover) {
+    return serveImage(req, reply, `lib-sthumb:${id}:ov:${Math.floor(Number(ovr.v))}${wk}`, async () => {
+      const input = await seriesCoverInput(id, vc(req));
+      storeColor(id, input);
+      const buffer = await thumbWebp(input, w, 80);
+      return { buffer, contentType: 'image/webp' };
+    });
+  }
+  const localCover = await readLocalSeriesArt(id, 'cover');
+  if (localCover) return serveImage(req, reply, `lib-sthumb:${id}:local:${localCover.version}${wk}`, async () => {
+    storeColor(id, localCover.bytes);
+    return { buffer: await thumbWebp(localCover.bytes, w, 80), contentType: 'image/webp' };
+  });
+  const art = await one<{ cover: string | null; source_id: string | null; rev: number }>(
+    'SELECT a.cover, s.source_id, a.rev FROM series_art a LEFT JOIN lib_series s ON s.id = a.series_id WHERE a.series_id = $1', [id]);
+  if (art?.cover) {
+    // `rev`: a cover replaced under the same series (backdropRecipe says why) is a new key; 0 keeps the one it was.
+    return serveImage(req, reply, `lib-sthumb:${id}:c${art.rev ? `:r${art.rev}` : ''}${wk}`, async () => {
+      // remote cover first; on ANY failure (hotlink CDN, dead link, timeout) fall back to the first page
+      const input = await seriesCoverInput(id, vc(req));
+      storeColor(id, input);
+      const buffer = await thumbWebp(input, w, 80);
+      return { buffer, contentType: 'image/webp' };
+    });
+  }
+  return serveImage(req, reply, `lib-sthumb:${id}:p${wk}`, async () => {
+    const input = await seriesCoverInput(id, vc(req));
+    storeColor(id, input);
+    const buffer = await thumbWebp(input, w, 72);
+    return { buffer, contentType: 'image/webp' };
+  });
+};
+/** The current cover's actual input, shared by thumbnails and local title extraction. No new metadata lookup. */
+export async function seriesCoverInput(id: string, ctx: ViewCtx): Promise<Buffer> {
+  if (!(await seriesVisible(id, ctx))) throw Object.assign(new Error('no cover'), { statusCode: 404 });
+  const ovr = await one<{ cover: string | null }>('SELECT cover FROM series_overrides WHERE series_id=$1', [id]);
+  if (ovr?.cover === 'upload') {
+    const path=resolve(ART_DIR,basename(artFile(id,'cover')));
+    if(!path.startsWith(resolve(ART_DIR)+sep))throw Object.assign(new Error('no cover'),{statusCode:404});
+    return readFile(path);
+  }
+  if (ovr?.cover === FIRST_PAGE) return firstPageInput(id, ctx);
+  if (ovr?.cover) {
+    try { return await fetchCoverImage(ovr.cover); } catch { return firstPageInput(id, ctx); }
+  }
+  const local = await readLocalSeriesArt(id, 'cover');
+  if (local) return local.bytes;
+  const art = await one<{ cover: string | null; source_id: string | null }>(
+    'SELECT a.cover,s.source_id FROM series_art a JOIN lib_series s ON s.id=a.series_id WHERE a.series_id=$1', [id]);
+  if (art?.cover) {
+    try { return await fetchCoverImage(art.cover, art.source_id || undefined); } catch { return firstPageInput(id, ctx); }
+  }
+  return firstPageInput(id, ctx);
+}
+/** WebP holds no image taller (or wider) than this; JPEG holds 65,535. */
+const WEBP_MAX_SIDE = 16383;
+const JPEG_MAX_SIDE = 65535;
+
+/** The size `input` comes out at `w` wide, never enlarged; null when sharp cannot read it. */
+async function sizeAt(input: Buffer, w: number): Promise<{ width: number; height: number; format?: string } | null> {
+  const m = await sharp(input).metadata().catch(() => null);
+  if (!m?.width || !m.height) return null;
+  const k = Math.min(1, w / m.width);
+  return { width: Math.round(m.width * k), height: Math.round(m.height * k), format: m.format };
+}
+
+/**
+ * A thumbnail `w` wide, as WebP. One that would come out taller than WebP holds -- a chapter stitched into long strips
+ * (lib/longStrip.ts: Eleceed 215 on the live server is two 689 x 54,000 images, 31,350 px tall at 400 wide) -- is cut to
+ * its top four widths: sharp's WebP encoder threw on it, and the chapter's thumbnail, or a series cover drawn from such a
+ * first page, answered 500 (v0.60.1, from Squeaks72's fork). Every other image comes out exactly as before.
+ * Reintroduce by encoding the whole strip: "a long strip's thumbnail is its top" in tallStrip.int.test.ts sees a 500.
+ */
+export async function thumbWebp(input: Buffer, w: number, quality: number): Promise<Buffer> {
+  const size = await sizeAt(input, w);
+  let img = sharp(input).resize({ width: w, withoutEnlargement: true });
+  if (size && size.height > WEBP_MAX_SIDE) img = img.extract({ left: 0, top: 0, width: size.width, height: size.width * 4 });
+  return img.webp({ quality }).toBuffer();
+}
+
+/**
+ * A page `w` wide, as WebP -- or as JPEG when that would be taller than WebP holds (the same strips: the page grid and the
+ * strip thumbnails ask for them at 400 and 200 wide), and as it is when even JPEG cannot hold it (v0.60.1). Every other
+ * page comes out exactly as before. Reintroduce by always encoding WebP: "a long strip's page comes at any width" in
+ * tallStrip.int.test.ts sees a 500.
+ */
+export async function pageAtWidth(input: Buffer, w: number, quality: number): Promise<{ buffer: Buffer; contentType: string }> {
+  const size = await sizeAt(input, w);
+  const img = sharp(input).resize({ width: w, withoutEnlargement: true });
+  if (!size || size.height <= WEBP_MAX_SIDE) return { buffer: await img.webp({ quality }).toBuffer(), contentType: 'image/webp' };
+  if (size.height <= JPEG_MAX_SIDE) {
+    return { buffer: await img.flatten({ background: '#ffffff' }).jpeg({ quality: 82, mozjpeg: true }).toBuffer(), contentType: 'image/jpeg' };
+  }
+  return { buffer: input, contentType: `image/${size.format === 'jpg' || !size.format ? 'jpeg' : size.format}` };
+}
+
+/**
+ * The quality a page is re-encoded at for READING (#234, Reader → Fit pages to my screen): above the thumbnails' 72/74,
+ * since this copy is the page itself. Measured on real pages at 1,080 wide: 44 dB PSNR against the plain resize at 85,
+ * 41.5 at 74, for about a third more bytes -- still a fraction of a 4,000 px scan.
+ */
+export const READ_QUALITY = 85;
+
+/**
+ * A page for a screen that shows it `w` pixels wide (#234): pageAtWidth at READ_QUALITY -- WebP, JPEG for a strip too
+ * tall for WebP -- or the page exactly as it is whenever a copy could only be worse: already that narrow (re-encoding a
+ * page that fits only costs it quality), animated (sharp would keep one frame), unreadable, or no smaller once
+ * re-encoded. Only the reader's opt-in asks (`?fit=`); thumbnails keep `?w=`, as they were.
+ */
+export async function pageForScreen(input: Buffer, type: string, w: number): Promise<{ buffer: Buffer; contentType: string }> {
+  const keep = { buffer: input, contentType: type };
+  const m = await sharp(input).metadata().catch(() => null);
+  if (!m?.width || !m.height || m.width <= w || (m.pages ?? 1) > 1) return keep;
+  const out = await pageAtWidth(input, w, READ_QUALITY).catch(() => null);
+  return out && out.buffer.length < input.length ? out : keep;
+}
+/** `?fit=` as the reader sends it: the widths a page is fitted to, else nothing (the page as it is). */
+const fitOf = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 64 && n <= 2000 ? n : 0;
+};
+
+// A chapter file that is not on disk -- deleted by the read-chapter cleanup or an admin (the row stays as
+// a tombstone), or a library not mounted right now -- is a 404, not a 500. Every chapter row used to ask
+// for its thumbnail regardless, and the ENOENT from the zip reader surfaced as a server error in the log
+// and the browser console for each one. Reintroduce by calling cbzPageAt directly: "a deleted chapter's
+// thumbnail is a 404, not a server error" in prunedBooks.int.test.ts sees 500.
+const pageOrGone = async (abs: string, index: number) => {
+  try {
+    return await cbzPageAt(abs, index);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') throw Object.assign(new Error('no file'), { statusCode: 404 });
+    throw e;
+  }
+};
+export const serveLibBookThumb = async (req: FastifyRequest, reply: FastifyReply, id: string) => {
+  // ⚠️ The visibility check runs BEFORE the cache, not inside the producer. getOrFetch answers a warm key
+  // without ever calling the producer, and `lib-bthumb:<id>` carries no viewer -- so once anyone allowed had
+  // warmed a chapter's thumbnail, a capped or ungranted member (or a request for a deleted series) was handed
+  // the bytes by the cache. The series thumb and the page route already checked first; this one did not.
+  // Reintroduce by moving the bookFileAbs call back inside the producer: "a capped member gets 404 on a
+  // warmed book thumbnail" in komgaCompat.int.test.ts sees 200.
+  const abs = await bookFileAbs(id, vc(req));
+  if (!abs) return reply.code(404).send({ error: 'not_found' });
+  return serveImage(req, reply, `lib-bthumb:${id}`, async () => {
+    const first = await pageOrGone(abs, 0);
+    if (!first) throw Object.assign(new Error('empty'), { statusCode: 404 });
+    q('UPDATE lib_books SET pages=$1 WHERE id=$2 AND pages<>$1', [first.total, id]).catch(() => {});
+    const buffer = await thumbWebp(first.bytes, 400, 72);
+    return { buffer, contentType: 'image/webp' };
+  });
+};
+/**
+ * One page of a chapter, 1-based. `w` in 64..2000 answers a webp downscale; `fit` in 64..2000 the page for a screen that
+ * shows it that wide (pageForScreen, #234); anything else the original bytes.
+ *
+ * `tl` (v0.85.0): the page translated into that language, drawn from its stored translation (lib/translate/pages.ts) and
+ * cached like any page -- the reader adds it, with the translation's stamp as `tv`, only for a page that is done. A page
+ * with no translation by the installed engine, or with the feature off, is the original, `no-store`: the URL is the
+ * translated page's, and must not keep the original once the translation is there.
+ */
+export const serveLibBookPage = async (req: FastifyRequest, reply: FastifyReply, id: string, pageNo: number, w: number, fit = 0, tl: string | null = null) => {
+  const abs = await bookFileAbs(id, vc(req));
+  if (!abs) return reply.code(404).send({ error: 'no_book' });
+  // The reader changes ?cv= after reversible page edits. The disk cache must identify the new bytes too,
+  // otherwise a fresh browser URL would still be answered with the old cached page.
+  const fileStat = await stat(abs).catch(() => null);
+  if (!fileStat) return reply.code(404).send({ error: 'no_book' });
+  const fileVersion = pageFileVersionOf(fileStat);
+  const requestedVersion = (req.query as Record<string, unknown>).cv;
+  if (requestedVersion !== undefined && requestedVersion !== fileVersion)
+    return reply.code(409).send({ error: 'page_version_changed', message: 'The chapter changed. Reload its page list or restart this download.' });
+  const currentPage = async () => {
+    const page = await pageOrGone(abs, pageNo - 1);
+    if (await pageFileVersion(abs) !== fileVersion)
+      throw Object.assign(new Error('The chapter changed while reading this page. Restart its download.'), { statusCode: 409 });
+    return page;
+  };
+  if (tl && !w) {
+    const engine = (await translateOn()) ? await engineKey() : null;
+    const done = engine ? await doneTranslation(id, pageNo, tl, engine) : null;
+    if (done && engine) {
+      return serveImage(req, reply, `lib-page:${id}:${pageNo}:tl${tl}:${engine}:r${RENDER_VERSION}:${done.at}${fit ? `:fit${fit}` : ''}:${fileVersion}`, async () => {
+        const page = await currentPage();
+        if (!page) throw Object.assign(new Error('no page'), { statusCode: 404 });
+        const drawn = await drawPage(page.bytes, done.regions, tl);
+        return fit ? pageForScreen(drawn.buffer, drawn.contentType, fit) : drawn;
+      });
+    }
+    const page = await currentPage();
+    if (!page) return reply.code(404).send({ error: 'no_page' });
+    const out = fit ? await pageForScreen(page.bytes, libCt(page.name), fit) : { buffer: page.bytes, contentType: libCt(page.name) };
+    return reply.header('content-type', out.contentType).header('cache-control', 'private, no-store').send(out.buffer);
+  }
+  if (fit && !w) {
+    return serveImage(req, reply, `lib-page:${id}:${pageNo}:fit${fit}:${fileVersion}`, async () => {
+      const page = await currentPage();
+      if (!page) throw Object.assign(new Error('no page'), { statusCode: 404 });
+      return pageForScreen(page.bytes, libCt(page.name), fit);
+    });
+  }
+  if (w && Number.isInteger(w) && w >= 64 && w <= 2000) {
+    return serveImage(req, reply, `lib-page:${id}:${pageNo}:w${w}:${fileVersion}`, async () => {
+      const page = await currentPage();
+      if (!page) throw Object.assign(new Error('no page'), { statusCode: 404 });
+      return pageAtWidth(page.bytes, w, 74);
+    });
+  }
+  return serveImage(req, reply, `lib-page:${id}:${pageNo}:${fileVersion}`, async () => {
+    const page = await currentPage();
+    if (!page) throw Object.assign(new Error('no page'), { statusCode: 404 });
+    q('UPDATE lib_books SET pages=$1 WHERE id=$2 AND pages<>$1', [page.total, id]).catch(() => {});
+    return { buffer: page.bytes, contentType: libCt(page.name) };
+  });
+};
+
+/** A preview page bigger than this is not served (#91): a page is a few hundred kilobytes, a video is not. */
+const PREVIEW_MAX_BYTES = 15 * 1024 * 1024;
+/** The pause between two preview pages from one source, as the downloader paces its own. */
+const PREVIEW_GAP_MS = 250;
+const previewChains = new Map<string, Promise<unknown>>();
+/** One preview page at a time per source, PREVIEW_GAP_MS apart: an <img> per page must not become a burst. */
+function previewGate<T>(sourceId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = previewChains.get(sourceId) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(async () => {
+    try { return await fn(); } finally { await new Promise((r) => setTimeout(r, PREVIEW_GAP_MS)); }
+  });
+  previewChains.set(sourceId, next);
+  void next.catch(() => {}).finally(() => { if (previewChains.get(sourceId) === next) previewChains.delete(sourceId); });
+  return next;
+}
+
+/**
+ * What the bytes are, from the bytes: only an image is served. A site that answers a page with HTML must not
+ * have it rendered from this origin, so anything else is refused rather than labelled and sent.
+ */
+export function sniffImage(b: Buffer): string | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (b.length >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (b.length >= 6 && /^GIF8[79]a$/.test(b.subarray(0, 6).toString('latin1'))) return 'image/gif';
+  if (b.length >= 12 && b.subarray(4, 8).toString('latin1') === 'ftyp' && /^avi[fs]$/.test(b.subarray(8, 12).toString('latin1'))) return 'image/avif';
+  return null;
+}
+
+/**
+ * One page's bytes for a preview. Everything but an extension source goes through fetchCoverImage -- the DNS
+ * check before any connection, redirects followed by hand with every hop re-checked, the source's referer and
+ * solver cookies. The URL is one the source's own page list gave the SERVER, so it is not caller-supplied, but
+ * a site is still somebody else's server, and nothing it names is fetched from inside the network.
+ *
+ * An extension's pages are on the extension engine, a private address by design: fetched the way the
+ * downloader fetches them, and only when the URL really is on the engine's configured origin.
+ */
+async function previewPageBytes(src: SourceAdapter, chapter: SourceChapter, urls: string[], idx: number): Promise<Buffer | null> {
+  const u = urls[idx];
+  if (isSwAdapterId(src.id)) {
+    let same = false;
+    try { same = new URL(u).origin === new URL(suwayomiBase()).origin; } catch { same = false; }
+    if (!same) return null;
+    const res = await fetchPages(src, urls, [idx], { chapterSourceId: chapter.sourceId, retry: false });
+    return res.page[idx] ?? null;
+  }
+  return fetchCoverImage(u, src.id);
+}
+
+/** The add dialog's own permission: a member who may not add series may not read one in first either. */
+async function mayDownload(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const me = await one<{ role: string; perms: { canDownload?: boolean } | null }>('SELECT role, perms FROM users WHERE id = $1', [userId]).catch(() => null);
+  return !!me && (me.role === 'admin' || me.perms?.canDownload !== false);
+}
+
+export default async function imageRoutes(app: FastifyInstance) {
+  // Belt and braces. server.ts guards the whole /img/ prefix at the root -- that is the protection that
+  // cannot be opted out of, and it is what covers a future plugin serving bytes under /img/. This second
+  // hook exists so imageRoutes is ALSO safe when mounted on its own, which is exactly how the tests mount
+  // it: moving the guard to the root alone silently un-authenticated every one of them.
+  //
+  // Free in production: the root hook has already bound viewCtx by the time this runs, so it returns
+  // immediately rather than verifying the cookie and hitting the database a second time per image.
+  app.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
+    if ((req as any).viewCtx) return;
+    await authorizeImageRequest(app, req, reply);
+  });
+
+  // Series cover thumbnail -> webp (400px default; ?w=800|1600 for the detail poster / hero).
+  app.get('/img/series/:id/thumb', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (id.startsWith('s_')) return serveLibSeriesThumb(req, reply, id);
+    const w = thumbWidth(req);
+    return serveImage(req, reply, `series-thumb:${id}:webp:${w}`, async () => {
+      const input = await fetchUpstream(komga.seriesThumbPath(id));
+      // ambient theming: store the cover's dominant color (fire-and-forget, once per cover)
+      dominantHex(input)
+        .then((hex) =>
+          q(
+            `INSERT INTO series_colors (series_id, color) VALUES ($1, $2)
+             ON CONFLICT (series_id) DO UPDATE SET color = EXCLUDED.color, updated_at = now()`,
+            [id, hex],
+          ),
+        )
+        .catch(() => {});
+      const buffer = await thumbWebp(input, w, 72);
+      return { buffer, contentType: 'image/webp' };
+    });
+  });
+
+  // Book/chapter cover thumbnail.
+  app.get('/img/books/:id/thumb', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (id.startsWith('b_')) return serveLibBookThumb(req, reply, id);
+    return serveImage(req, reply, `book-thumb:${id}:webp:400`, async () => {
+      const input = await fetchUpstream(komga.bookThumbPath(id));
+      const buffer = await thumbWebp(input, 400, 72);
+      return { buffer, contentType: 'image/webp' };
+    });
+  });
+
+  // Full page image. Default: pass-through original bytes (already-optimized JPEGs).
+  // Optional ?w=<px> downscales to webp for lightweight previews; ?fit=<px> is the reader's page for a screen that shows it
+  // that wide, and the original wherever a copy would not be better (pageForScreen, #234).
+  app.get('/img/books/:id/page/:n', async (req, reply) => {
+    const { id, n } = req.params as { id: string; n: string };
+    const pageNo = Number(n);
+    if (!Number.isInteger(pageNo) || pageNo < 1) return reply.code(400).send({ error: 'bad_page' });
+    const w = Number((req.query as Record<string, string>).w);
+    const fit = fitOf((req.query as Record<string, string>).fit);
+    if (id.startsWith('b_')) return serveLibBookPage(req, reply, id, pageNo, w, fit, readerLang((req.query as Record<string, string>).tl));
+
+    if (fit && !w) {
+      return serveImage(req, reply, `page:${id}:${pageNo}:fit${fit}`, async () => {
+        const up = await fetchUpstreamWithType(komga.bookPagePath(id, pageNo));
+        return pageForScreen(up.buffer, up.contentType, fit);
+      });
+    }
+
+    if (w && Number.isInteger(w) && w >= 64 && w <= 2000) {
+      return serveImage(req, reply, `page:${id}:${pageNo}:w${w}`, async () => {
+        const input = await fetchUpstream(komga.bookPagePath(id, pageNo));
+        return pageAtWidth(input, w, 74);
+      });
+    }
+
+    return serveImage(req, reply, `page:${id}:${pageNo}`, () =>
+      fetchUpstreamWithType(komga.bookPagePath(id, pageNo)),
+    );
+  });
+
+  // Real per-series art pulled from the internet (AniList): wide banner, else high-res cover.
+  // Looked up lazily on first view and cached in series_art, so newly-added series get art automatically.
+  // ?style=hero → the REAL art sharp, frame-aware (?ar=wide|tall). Recipe + warmer live at module level.
+  app.get('/img/series/:id/backdrop', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    // The same check every sibling image route opens with, and the only one this family was missing. The ctx
+    // passed to backdropRecipe below reaches only its FALLBACK path, so whenever series_art holds a banner --
+    // the normal state, since AniList art is fetched lazily for everything -- the image was produced from that
+    // URL with no series join at all, and an age-capped account could render key art for a series it is
+    // otherwise correctly walled off from.
+    if (!(await seriesVisible(id, vc(req)))) return reply.code(404).send({ error: 'not_found' });
+    const asked = (req.query as Record<string, string>)?.style;
+    // `banner` (v0.53.0): the series page, which shows a real banner sharp and keeps a stand-in cover blurred.
+    const style = asked === 'hero' || asked === 'banner' ? asked : null;
+    const ar: HeroAr = (req.query as Record<string, string>)?.ar === 'tall' ? 'tall' : 'wide';
+    const r = await backdropRecipe(id, style, ar, vc(req));
+    return serveImage(req, reply, r.variant, r.producer);
+  });
+
+  // A title logo is already a local normalized raster. Do not crop it or fall back to a cover.
+  app.get('/img/series/:id/logo', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await seriesVisible(id, vc(req)))) return reply.code(404).header('cache-control', 'private, no-store').send({ error: 'not_found' });
+    const logo = await readTitleLogo(id);
+    if (!logo) return reply.code(404).header('cache-control', 'private, no-store').send({ error: 'not_found' });
+    return reply.type('image/webp').header('cache-control', 'private, max-age=86400').header('x-content-type-options', 'nosniff').send(logo.bytes);
+  });
+
+  // The automatic banner (v0.51.0, lib/autoHero.ts): four crops of the series' own pages, for a series with no banner
+  // of its own. Gated exactly as its cover is -- deleted, merged, outside the viewer's libraries or above their age
+  // cap is a 404 -- and then a 404 again for a series that may not have one: a real banner, 18+ by any rule, or a last
+  // try that made none. The web asks only for one the payload offers, which is one already made (autoHeroFor); a miss
+  // here -- the cache's sweeper evicted the file, or a direct request -- makes it, and a try that makes none is a 404.
+  // ?ar=tall is the phone's frame (2 x 2); ?v=<seed> on the web's URL is only a cache-buster: the seed served is the
+  // stored one, so an old URL still gets the current banner.
+  app.get('/img/series/:id/hero', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await seriesVisible(id, vc(req)))) return reply.code(404).send({ error: 'not_found' });
+    const hero = (await heroServable([id])).get(id);
+    if (!hero) return reply.code(404).send({ error: 'not_found' });
+    const ar: AutoHeroAr = (req.query as Record<string, string>)?.ar === 'tall' ? 'tall' : 'wide';
+    return serveImage(req, reply, heroVariant(id, hero.seed, ar), () => heroFrame(id, hero.seed, ar));
+  });
+
+  // direct owned-library image routes (the /img/series & /img/books routes above also reach these by id prefix)
+  app.get('/img/lib/series/:id/thumb', (req, reply) => serveLibSeriesThumb(req, reply, (req.params as { id: string }).id));
+  app.get('/img/lib/books/:id/thumb', (req, reply) => serveLibBookThumb(req, reply, (req.params as { id: string }).id));
+  app.get('/img/lib/books/:id/page/:n', (req, reply) => {
+    const { id, n } = req.params as { id: string; n: string };
+    const pageNo = Number(n);
+    if (!Number.isInteger(pageNo) || pageNo < 1) return reply.code(400).send({ error: 'bad_page' });
+    const query = req.query as Record<string, string>;
+    return serveLibBookPage(req, reply, id, pageNo, Number(query.w), fitOf(query.fit), readerLang(query.tl));
+  });
+
+  // Proxy a remote source cover (for search results); handles Cloudflare sites via FlareSolverr cookies.
+  // Extension icons live on the extension server, which a browser can't reach (it is on an internal network),
+  // so proxy them same-origin. Same lesson as source covers: cross-origin images are unreliable in an
+  // installed PWA, same-origin is not.
+  app.get('/img/extensions/icon/:pkgName', async (req, reply) => {
+    const { pkgName } = req.params as { pkgName: string };
+    // the package name lands in a URL path, so allow only what a package name can actually contain
+    if (!/^[A-Za-z0-9._-]{1,200}$/.test(pkgName)) return reply.code(400).send({ error: 'bad' });
+    return serveImage(req, reply, `swicon:${pkgName}`, async () => {
+      const r = await fetch(suwayomiUrl(`/api/v1/extension/icon/${pkgName}`), {
+        headers: suwayomiImageHeaders(),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) throw new Error(`extension icon ${r.status}`);
+      const buffer = await sharp(await readCapped(r, MAX_ICON_BYTES))
+        .resize({ width: 96, withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+      return { buffer, contentType: 'image/webp' };
+    });
+  });
+
+  /**
+   * A source's own icon, same-origin.
+   *
+   * Three ways a source can have one, tried in order:
+   *   1. an extension names it (`iconUrl`) -- Suwayomi has always returned this and the adapter now keeps it;
+   *   2. a template site has a `base`, so its own favicon is fetchable;
+   *   3. nothing, and the client draws a lettered tile instead.
+   *
+   * The MISS is cached as deliberately as the hit. Without that, every source with no icon costs a fetch --
+   * for a template site, two, including a homepage parse -- on every single page load, forever. A one-byte
+   * sentinel is stored and served as a 404, so the second visit is a cache read.
+   *
+   * One day, not `immutable`: sites change their logo, and unlike a cover the URL carries no version. This
+   * matches how extension icons are already cached.
+   */
+  app.get('/img/sources/icon/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    // Source ids are slugs or `sw:<numeric>`; this lands in a cache path, so allow only those shapes.
+    if (!/^[A-Za-z0-9:._-]{1,120}$/.test(id)) return reply.code(400).send({ error: 'bad' });
+    const src = getSource(id);
+    if (!src) return reply.code(404).send({ error: 'not_found' });
+    // The age cap every by-id source route applies (sourceAllowedFor): an adult source's own icon is not served to an
+    // account capped below it. Its lettered tile is -- the series pages that name the source still paint a tile, and
+    // nothing is fetched -- under its own cache key, never the real icon's. Reintroduce by removing this:
+    // "a capped account gets the tile, not an adult source's icon" in visibilityGaps.int.test.ts sees the icon's pixels.
+    if (!sourceAllowedFor(src, vc(req).maxAgeRating)) {
+      return serveImage(req, reply, `srcicon-tile:${id}`, async () => ({ buffer: await letterTile(src.name || src.id), contentType: 'image/webp' }));
+    }
+
+    return serveImage(req, reply, `srcicon:${id}`, async () => {
+      const raw = await sourceIconBytes(src).catch(() => null);
+      if (raw) {
+        try {
+          const buffer = await sharp(raw).resize({ width: 64, withoutEnlargement: true }).webp({ quality: 80 }).toBuffer();
+          return { buffer, contentType: 'image/webp' };
+        } catch { /* an .ico sharp cannot read, or an error page wearing an image's URL */ }
+      }
+      // Falling back to a lettered tile HERE rather than answering 404 and letting the browser fall back.
+      // A 404 behind an <img> is a console error, so a source with no icon would log one in every visitor's
+      // browser on every visit -- six of them in the end-to-end run, which is how this was caught. The tile
+      // is cached like any other answer, so a source without an icon still costs one lookup rather than one
+      // per paint.
+      return { buffer: await letterTile(src.name || src.id), contentType: 'image/webp' };
+    });
+  });
+
+  /**
+   * One page of a preview (#91): the chapter by its NUMBER in the listing the server fetched for that series,
+   * the page by its INDEX -- never a URL, never a chapter id from the client (routes/sources.ts
+   * previewChapters). Served as the original bytes, `no-store`, and not through the image cache: a preview is
+   * a look, and a year of cached pages for a series nobody added is exactly what it must not leave behind.
+   * Every failure is the same flat answer, so this cannot be used to learn what a site returned.
+   */
+  app.get('/img/sources/preview', async (req, reply) => {
+    const { source, sourceId, number, i } = req.query as { source?: string; sourceId?: string; number?: string; i?: string };
+    const ctx = vc(req);
+    if (!(await mayDownload(ctx.userId))) return reply.code(403).send({ error: 'forbidden' });
+    const r = await previewPageList(ctx, source, sourceId, number);
+    if (isRefusal(r)) return reply.code(r.code).send({ error: r.error });
+    const idx = Number(i);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= r.urls.length) return reply.code(404).send({ error: 'not_found' });
+    const buf = await previewGate(r.src.id, () => previewPageBytes(r.src, r.chapter, r.urls, idx)).catch(() => null);
+    const type = buf && buf.length <= PREVIEW_MAX_BYTES ? sniffImage(buf) : null;
+    if (!buf || !type) return reply.code(502).send({ error: 'unavailable' });
+    reply.header('cache-control', 'private, no-store');
+    reply.header('x-content-type-options', 'nosniff');
+    reply.type(type);
+    return reply.send(buf);
+  });
+
+  // One page of one named copy of a chapter of this series, for the compare view (#241). Admin only, like the replace it
+  // leads to, and by the API's rule (adminImageRequest); the copy must be one the series' listing holds, of a series the
+  // admin may see (copyPageList).
+  app.get('/img/series/:id/copy-page', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { source, chapter, i } = req.query as { source?: string; chapter?: string; i?: string };
+    if (!(await adminImageRequest(req))) return reply.code(403).send({ error: 'forbidden' });
+    const r = await copyPageList(id, source, chapter, vc(req));
+    if (isRefusal(r)) return reply.code(r.code).send({ error: r.error });
+    const idx = Number(i);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= r.urls.length) return reply.code(404).send({ error: 'not_found' });
+    const buf = await previewGate(r.src.id, () => previewPageBytes(r.src, r.chapter, r.urls, idx)).catch(() => null);
+    const type = buf && buf.length <= PREVIEW_MAX_BYTES ? sniffImage(buf) : null;
+    if (!buf || !type) return reply.code(502).send({ error: 'unavailable' });
+    reply.header('cache-control', 'private, no-store');
+    reply.header('x-content-type-options', 'nosniff');
+    reply.type(type);
+    return reply.send(buf);
+  });
+
+  app.get('/img/sources/cover', async (req, reply) => {
+    const { u, source, w } = req.query as { u?: string; source?: string; w?: string };
+    if (!u) return reply.code(400).send({ error: 'bad' });
+    // 400px is right for a cover tile and wrong for a wide banner: an AniList key-art strip is ~1900px, and
+    // squeezing it to 400 gave the discover hero a 400x84 image stretched across a 1920px box, which reads
+    // as no art at all rather than as a low-quality one. Whitelisted rather than free-form so this cannot
+    // become a request to render someone's 8000px file.
+    const width = w === '1600' ? 1600 : w === '800' ? 800 : 400;
+    // The width is part of the cache key, or the first variant fetched would be served for every size.
+    // ⚠️ `srccover2`, not `srccover`. Every entry written under the old prefix may be a grey placeholder
+    // stored as though it were the cover, and there is no way to tell one from a real cover without decoding
+    // it. Changing the namespace makes the whole poisoned generation unreachable in one line and lets the
+    // cache's own LRU reclaim it; the browser-side copies are dropped by the version token on the URL.
+    return serveImage(req, reply, `srccover2:${width}:${u}`, async () => {
+      let input: Buffer;
+      try {
+        input = await sourceCoverInput(u, source);
+      } catch (e) {
+        // A value that is not a URL is a caller's mistake, not a bad minute on someone's CDN: it cannot be
+        // retried into working, and every affected tile answered 500 with a TypeError in the log. Serve the
+        // placeholder -- a missing cover is what the reader sees either way.
+        //
+        // ONLY for that case. A genuine fetch failure must keep erroring, because `Img` answers a failed
+        // proxy by retrying `fallbackSrc` (the direct URL), and a placeholder served with 200 would look
+        // like a success and take that second chance away.
+        if (!(e instanceof UnfetchableCoverUrl)) throw e;
+        // `store: false` -- serve it, do not remember it. This used to be written under the real cover's key
+        // and served `immutable, max-age=31536000`: a year of grey for what may have been one bad minute on a
+        // CDN, or a single DNS hiccup (ssrfGuard maps a failed lookup to the same refusal).
+        return { buffer: await coverPlaceholder(width), contentType: 'image/webp', store: false };
+      }
+      const buffer = await sharp(input).resize({ width, withoutEnlargement: true }).webp({ quality: 72 }).toBuffer();
+      return { buffer, contentType: 'image/webp' };
+    });
+  });
+}
+
+/** Browser-ish, because several of these sites serve a 403 to anything that does not look like one. */
+const ICON_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
+
+/**
+ * The raw bytes of a source's icon, or null when it has none worth showing.
+ *
+ * Deliberately NOT through the Cloudflare solver. An icon is a nice-to-have, the solver is a shared and
+ * occasionally fragile resource, and spending a challenge solve on a 64px logo would be a poor trade -- a
+ * site that refuses a plain request simply gets a lettered tile.
+ */
+async function sourceIconBytes(src: { id: string; iconUrl?: string; base?: string }): Promise<Buffer | null> {
+  const isIcon = (buf: Buffer | null | undefined): buf is Buffer =>
+    // A 0-byte body, or an HTML "not found" page wearing an image's URL, is not an icon.
+    !!buf && buf.length > 64 && !/^\s*<(?:!doctype|html)/i.test(buf.subarray(0, 40).toString('latin1'));
+  // Every URL here is one a source or its homepage named, so it gets the public-host rule on every hop and a byte cap
+  // (lib/safeFetch.ts). These used to follow redirects with no check: a favicon redirect or a homepage <link rel=icon>
+  // walked the server into the internal network and the answer was served back as the icon. Reintroduce by going back
+  // to fetch(): sourceIconGuard in outboundGuard.test.ts sees the internal server asked.
+  const grab = async (url: string): Promise<Buffer | null> => {
+    const r = await fetchPublic(url, { headers: { 'user-agent': ICON_UA }, timeoutMs: 8000, maxBytes: MAX_ICON_BYTES });
+    return r && r.status >= 200 && r.status < 300 && isIcon(r.body) ? r.body : null;
+  };
+
+  // 1. The extension names its own icon. It lives on the extension server, which a browser cannot reach: fetched there,
+  //    with the engine's login, only when it really is the engine's URL; any other URL is a public one like the rest.
+  if (src.iconUrl) {
+    const abs = /^https?:/i.test(src.iconUrl) ? src.iconUrl : suwayomiUrl(src.iconUrl);
+    if (onEngineOrigin(abs)) {
+      try {
+        const r = await fetch(abs, { headers: { 'user-agent': ICON_UA, ...suwayomiImageHeaders() }, redirect: 'error', signal: AbortSignal.timeout(8000) });
+        const buf = r.ok ? await readCapped(r, MAX_ICON_BYTES) : null;
+        if (isIcon(buf)) return buf;
+      } catch { /* fall through to the site's own icon */ }
+    } else {
+      const hit = await grab(abs);
+      if (hit) return hit;
+    }
+  }
+  if (!src.base) return null;
+
+  // 2. The conventional location, which most sites still honour.
+  const origin = (() => { try { return new URL(src.base).origin; } catch { return null; } })();
+  if (!origin) return null;
+  const direct = await grab(`${origin}/favicon.ico`);
+  if (direct) return direct;
+
+  // 3. Whatever the homepage declares. Takes the last <link rel=icon>, which is conventionally the largest.
+  try {
+    const r = await fetchPublic(origin, { headers: { 'user-agent': ICON_UA }, timeoutMs: 8000, maxBytes: MAX_HTML_BYTES });
+    if (!r || r.status < 200 || r.status >= 300) return null;
+    const html = r.body.toString('utf8').slice(0, 60000);
+    const hrefs = [...html.matchAll(/<link[^>]+rel="[^"]*icon[^"]*"[^>]*>/gi)]
+      .map((m) => (m[0].match(/href="([^"]+)"/i) || [])[1])
+      .filter(Boolean) as string[];
+    for (const href of hrefs.reverse()) {
+      const abs = (() => { try { return new URL(href, origin).toString(); } catch { return null; } })();
+      if (!abs) continue;
+      const hit = await grab(abs);
+      if (hit) return hit;
+    }
+  } catch { /* no homepage, no icon */ }
+  return null;
+}
+
+/**
+ * A lettered tile for a source with no icon of its own.
+ *
+ * Server-side so the route can always answer with an image. The hash matches `iconTint` in the web app so
+ * the two agree on a colour; the client keeps its own copy only as a last resort for when the network is
+ * gone entirely, at which point nothing here would have loaded anyway.
+ */
+async function letterTile(name: string): Promise<Buffer> {
+  const ch = (name.trim()[0] || '?').toUpperCase().replace(/[<&>]/g, '?');
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(${h} 45% 30%)"/><stop offset="100%" stop-color="hsl(${(h + 40) % 360} 45% 18%)"/>
+    </linearGradient></defs>
+    <rect width="64" height="64" rx="14" fill="url(#g)"/>
+    <text x="32" y="33" fill="#e8e8ee" font-family="system-ui,sans-serif" font-size="34" font-weight="700"
+          text-anchor="middle" dominant-baseline="central">${ch}</text>
+  </svg>`;
+  return sharp(Buffer.from(svg)).webp({ quality: 80 }).toBuffer();
+}
+
+/**
+ * The "no cover" tile, in cover proportions.
+ *
+ * Deliberately the same broken-image glyph on the same ink the client's own `Img` error state draws, so a
+ * cover the server could not fetch and one the browser could not load look like one thing rather than two.
+ */
+async function coverPlaceholder(width: number): Promise<Buffer> {
+  const h = Math.round((width * 3) / 2); // 2:3, the aspect every cover tile in the app is laid out at
+  const g = Math.round(width / 5); // glyph box
+  const x = (width - g) / 2, y = (h - g) / 2, s = g / 24; // the 24x24 icon, scaled and centred
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${h}">
+    <rect width="${width}" height="${h}" fill="#111116"/>
+    <g transform="translate(${x} ${y}) scale(${s})" fill="none" stroke="#3a3a45" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="3"/><path d="m4 16 4-4 4 4 3-3 5 5"/>
+    </g>
+  </svg>`;
+  return sharp(Buffer.from(svg)).webp({ quality: 80 }).toBuffer();
+}

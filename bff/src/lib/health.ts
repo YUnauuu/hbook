@@ -1,0 +1,2324 @@
+// Library health checks.
+//
+// The point of this file is to tell the operator about problems they would otherwise only discover by
+// opening a chapter and finding it broken. Every check here was written against the real library and
+// tuned until it stopped producing false positives, because a health page that cries wolf gets ignored
+// and is worse than no health page at all.
+//
+// Two traps found while building it, both preserved as comments where they bite:
+//  * `lib_books.pages` is filled in lazily on first read, so "pages = 0" means "never opened", not "broken".
+//  * decimal chapters (12.5, 44.6) are overwhelmingly legitimate side-stories and "Notice!" pages, which are
+//    genuinely one image long. Only whole-numbered chapters are worth flagging as too short.
+import path from 'path';
+import { realpath } from 'fs/promises';
+import { q, one } from './db';
+import { visibleToAll } from './visibility';
+import { latestSolverVersion } from './solverVersion';
+import { isBehind, latestRelease } from './githubRelease';
+import { appVersion } from './appVersion';
+import { solverPingShared, solverUrl, type SolverAt, type SolverPing } from './sources/flaresolverr';
+import { getSource } from './sources';
+import { keepOrder, type KeepFacts } from './libraryAdmin';
+import { effectiveLang } from './seriesLang';
+import { sameLanguage } from './lang';
+import { suwayomiConfigured } from './sources/suwayomi/client';
+import { mangadexLangOf } from './sources/mangadexLangs';
+import { lastSuwayomiLoad, leftOutByLimit } from './sources/suwayomi/register';
+import { engineState, type EngineState } from './sources/suwayomi/engineState';
+import { extensionEngineCheck } from './engineHealth';
+import { env } from '../env';
+import { gapsOf, splitAtFloor, splitListed } from './fill';
+import { CHAPTER_RETRY_CAP } from './updater';
+import { finishDownloadsOn, REFUSAL_RETRY_CAP } from './finishDownloads';
+import { diagnose, currentError, type DiagnosisCode } from './sourceDiagnosis';
+import { currentFailures, isRateLimit, openFailures, stageLines, type Stage, type StageLine, type Stages } from './sourceEvidence';
+import { haveNumbers, impossibleLimit, listedWholeNumbers, median, plausibleNumbers } from './libraryNumbers';
+import { atHiddenNumber } from './noticeChapters';
+import { specialName } from './specialChapters';
+import { slowStreakNow } from './sourceHealth';
+import { listBudgetFor } from './sources/budget';
+import { cbzPageDims, DL_ROOT, LIBRARY_ROOT, lastScanReport, QUIET_WALK, type WalkIssue, type WalkReason } from './library';
+import { longStrip, type PageDim } from './longStrip';
+import { countsAsMissing, downloadCensus, fsTypeOf, type Census } from './downloadCensus';
+import { applyIgnores, keepIgnoresAlive, loadIgnores, noIgnores, type Finding, type IgnorableCheck, type IgnoreCtx } from './healthIgnore';
+import { chapterFileRel } from './downloader';
+import { slowedSources } from './pace';
+import { forDesktop, isDesktop } from './desktop';
+import { archiveHoles, archiveTakes, type ArchiveHoles } from './archiveBoundaries';
+import { renumberRunning, type NumberingNote } from './numbering';
+import { detailOf, joined, noteOf, own, say, saidOf, summaryOf, type Part, type Said } from './said';
+import { mainSourceCounts } from './findScope';
+import { carries, EXTENSION_OFF, EXTENSION_OFF_BY, standingOf, standingRows, type Standing, type StandingRow } from './sourceStanding';
+import { numKey } from './postingOrder';
+import { heldTwiceSeries } from './heldTwice';
+import type { ListingCopy } from './seriesListing';
+import { ALL_ROWS, DAY_MS, MAX_BOOK_IDS, MAX_ITEMS, allRows, hiddenPart, ignoredPart, truncate, verdict, withAll } from './healthKit';
+import { diskAndFolders } from './healthDisk';
+import { trackerSync } from './healthTrackers';
+import { chapterFiles } from './healthFiles';
+
+export type HealthStatus = 'ok' | 'warn' | 'problem';
+
+/**
+ * What an admin can do about one finding, from the finding itself.
+ *
+ * Every one of these is an EXISTING route the Health page now points at, plus the repair's own steps, and
+ * the split between them is the release's whole argument: `fix_short`, `fill`, `retry` and `solver_reset`
+ * run one step of the nightly repair for one row (reversible or provable, so a button is safe), while
+ * `delete` and `merge` are the two the nightly never does by itself and an admin confirms.
+ * `confirm_short` is the only one that records a JUDGEMENT rather than doing work ("this really is a
+ * two-page chapter"), and it is a toggle: an item that already carries `fixed` is asking to be re-checked.
+ */
+export type HealthAction =
+  | 'fix_short' | 'confirm_short' | 'delete' | 'fill' | 'retry' | 'test' | 'unblock' | 'disable' | 'merge' | 'solver_reset'
+  | 'ignore' | 'unignore'
+  // #72: point the extension engine's own Cloudflare helper at hbook's (POST /api/admin/extensions/solver).
+  | 'engine_solver'
+  // #116, the numbering check: `renumber` shows the file-by-file plan of the series' pending (or proposed)
+  // numbering change and applies it on a confirmation (GET, then POST {mode, confirm: true}, to
+  // /api/admin/series/{id}/numbering); `keep_numbers` records the admin's choice of the source's own numbers
+  // (POST {mode: 'source'}) -- nothing renamed for a proposal, the undo's plan for a series already renumbered.
+  | 'renumber' | 'keep_numbers'
+  // v0.49.1: Find other sources for every series whose MAIN source is the row's `sourceId` (POST
+  // /api/admin/sources/find {sourceId}); `findSeries` is how many series that run would search for.
+  | 'find_sources'
+  // v0.54.0: Replace the row's `sourceId` as the main source of its series -- the Find run in replace mode (POST
+  // /api/admin/sources/find {sourceId, mode: 'replace'}): each series' best working follower becomes its main source,
+  // and the series with none are searched for first. Offered where the source is off or failing and is some series'
+  // main source, before `find_sources`, over the same `findSeries`.
+  | 'replace_source'
+  // v0.52.0 (#72): the duplicates check's pair in two languages -- link them as editions of one work (POST
+  // /api/admin/series/{id}/editions {with}) rather than merge one into the other.
+  | 'link_editions'
+  // v0.55.0: a frozen row whose source is dropped by SUWAYOMI_MAX_SOURCES -- open Admin → Sources on `sourceId` to free
+  // a slot (no server action). Offered in place of Replace there: the source works, the limit is the cause.
+  | 'free_slot'
+  // v0.72.0, the Chapter files card (lib/healthFiles.ts): Fetch again for the row's `bookIds` -- the series page's own
+  // route (POST /api/admin/series/{id}/chapters/refetch), which sets each old file aside until the new copy lands and
+  // puts it back when it does not. Only on files hbook downloaded and named itself.
+  | 'refetch'
+  // The same chapter saved twice, two files of one chapter in one series (lib/heldTwice.ts): Keep one of each, for the
+  // row's series (POST /api/admin/series/{id}/chapters/keep-once). Like a merge's keep-once, never run by itself.
+  | 'keep_one';
+
+export interface HealthItem {
+  seriesId?: string;
+  /** Every series this item is about. The duplicates check needs both, so a merge can act on them. */
+  seriesIds?: string[];
+  titles?: string[];
+  title: string;
+  detail: string;
+  /**
+   * v0.49.1: `detail` as codes the web words in the reader's language (lib/said.ts), and `title` where the server
+   * wrote it in English rather than naming something ("Cloudflare helper", "Downloads / (the folder itself)").
+   * Absent: shown as sent -- a folder's own error, a row from before v0.49.1.
+   */
+  detailSaid?: Said[];
+  titleSaid?: Said;
+  /**
+   * Listed for reference, never a reason to warn. A check's status is decided by the items WITHOUT this
+   * flag, so a source the operator switched off, or a version that is merely behind, can be shown without
+   * turning the page amber. Before this, "no items means ok" was the page's one invariant and both of
+   * those cases quietly broke it.
+   */
+  info?: boolean;
+  /** The one chapter this item is about (short chapters), so its chip can name it to the repair. */
+  bookId?: string;
+  /** Several chapters (impossible numbers), capped: what Delete chapters would act on. */
+  bookIds?: string[];
+  /** The chapter number this item is about, for the sentence the chip's confirmation shows. */
+  number?: number;
+  /** The missing chapter numbers (gaps), capped -- the payload must stay a page, not a library. */
+  numbers?: number[];
+  /** A `keep_one` row: how many chapters the series holds twice, all of them (`bookIds` and `numbers` are capped). */
+  pairs?: number;
+  /** The source this item is about, so Test / Clear block / Turn off / Retry need no parsing of `title`. */
+  sourceId?: string;
+  /**
+   * v0.49.1, beside a `find_sources` action: how many series a Find other sources run over `sourceId` would search
+   * for -- every series whose main source it is (lib/findScope.ts), the run's own `total`.
+   */
+  findSeries?: number;
+  /**
+   * Of `seriesIds`, the one the merge should keep (lib/libraryAdmin.ts keepOrder, v0.57.0): one in a work, then the one
+   * whose main source still works, then more live chapters, more readers, the older.
+   */
+  keep?: string;
+  /**
+   * v0.57.0, beside `seriesIds` on a duplicates row, in the same order: what the merge dialog shows of each copy so the
+   * admin can see why one is suggested -- its live chapters and its main source with how that source stands (null for a
+   * series with no main source: files only).
+   */
+  copies?: Array<{ id: string; chapters: number; source: { id: string; name: string; standing: Standing } | null }>;
+  /** v0.52.0, beside `seriesIds` on a duplicates row: the language each is in, for Link as editions' confirmation. */
+  langs?: string[];
+  /** What an admin can do about this item, in the order the chips are shown. */
+  actions?: HealthAction[];
+  /**
+   * Something has already been decided or done about this finding, and WHEN. It is what turns a row grey
+   * rather than amber: a chapter confirmed short at the source, a gap every reachable source was asked
+   * about. Kept as data rather than folded into `detail` so the page can show it as a state.
+   */
+  fixed?: { at: string; what: string };
+  /**
+   * What an Ignore of this finding is recorded under (lib/healthIgnore.ts): stable across runs, per check --
+   * `series:ID`, `source:ID`, `folder:PATH`, `anilist:ID`. Absent: this finding cannot be ignored.
+   */
+  key?: string;
+  /** An admin chose to stop being told about this, and when. The item is then `info`. */
+  ignored?: { at: string; by: string | null };
+  /**
+   * v0.49.0: what the last attempt at this finding found, as data the page renders in the reader's language
+   * -- "tried today 03:12: 3 sources asked, 2 answered, no longer copy", "still missing 6-8: no other source
+   * lists them", "failing since 12 Sep, reset for another try". The gap `detail` no longer carries the
+   * repair's conclusion as an English suffix; it is here. `fixed` stays, for what greys the row.
+   */
+  outcome?: HealthOutcome;
+  /**
+   * v0.49.0: what an action on this row will and will not do, said BEFORE it is pressed -- "updates are
+   * paused: Fill now fetches these once", "the source is cooling down until 14:20: Retry now resets the
+   * count but cannot ask it yet".
+   */
+  caveats?: HealthCaveat[];
+
+  // ---- #115 (v0.49.0), Source health rows only. Kept together and apart from the fields other workstreams add.
+  /** What each stage was last seen doing (search, chapters, pages, images), from lib/sourceEvidence.ts. */
+  evidence?: StageLine[];
+  /** The last deliberate live check: the Test button ('test') or the daily check ('sweep'). */
+  tested?: { at: string; by: 'test' | 'sweep' | null; state: 'pass' | 'fail' | 'inconclusive' | null; stage: Stage | null };
+  /**
+   * The verdict behind the row, admin half included: one verdict on screen, from the stored evidence. `reason` is
+   * worded by its `code`; `fixSaid` (v0.49.1) is the fix's own code (lib/sourceDiagnosis.ts FixCode).
+   */
+  diagnosis?: { code: DiagnosisCode; reason: string; fix: string; fixSaid?: Said };
+  /** How many series use the source (primaries and followers). */
+  series?: number;
+
+  // ---- v0.53.0, Source health rows only: what the card's groups and each row's one line are made of, as data, so a
+  // client sorts and words a row without reading `detail`.
+  /**
+   * Which part of the card the row belongs to. `affected`: a finding on a source series use. `unused`: a finding on a
+   * source no series uses -- a confirmed failure is a finding whatever uses it (#115), so it is grouped apart, never
+   * hidden. `off`: switched off under Providers, or its language hidden. `quiet`: every other row listed for reference
+   * (a cooldown on a source nothing uses, a test that ran out of time, a failure unchecked for a week, an ignore).
+   */
+  group?: SourceGroup;
+  /** The row's one state, whatever its group: what its words and its one key are chosen by. */
+  state?: SourceState;
+  /** The stage a `failing`, `inconclusive` or `untested` row is about. */
+  stage?: Stage;
+  /** A `blocked` row's status (rate_limited, blocked, down) and when its cooldown ends; `until` null when none is set. */
+  cooldown?: { status: string; until: string | null };
+  /**
+   * v0.55.3: the source downloads at a raised pace -- one chapter at a time, longer gaps -- because its site, or an image
+   * server it shares with another source, answered 429 (lib/pace.ts). On a row of any state; the one thing a `slowed`
+   * row says.
+   */
+  slowed?: boolean;
+  /**
+   * Where an `off` row was switched off: under Providers (`admin`), in Admin -> Extensions (`extension`), or by hiding
+   * its language in every extension (`language`) -- which says where it comes back on.
+   */
+  offBy?: 'admin' | 'extension' | 'language';
+  /** The source has a logo of its own, an extension's: GET /img/sources/icon/{sourceId} serves it. */
+  icon?: boolean;
+}
+
+/** v0.53.0: the Source health card's four groups, in the order the check lists them. */
+export type SourceGroup = 'affected' | 'unused' | 'quiet' | 'off';
+/**
+ * v0.53.0: a source row's one state. `blocked`: a cooldown, or a status other than ok (`cooldown` says which);
+ * `failing`: a confirmed failure at `stage`; `slow` and `empty`: answers too slow, or empty, three times in a row;
+ * `inconclusive`: its last test ran out of time at `stage`; `untested`: a failure at `stage` nothing has checked for a
+ * week; `off`: switched off; `slowed` (v0.55.3): nothing but a raised download pace (`slowed`), listed for reference.
+ */
+export type SourceState = 'blocked' | 'failing' | 'slow' | 'empty' | 'inconclusive' | 'untested' | 'off' | 'slowed';
+
+/**
+ * The last attempt at a finding, per check. Every field comes from a stored row the repair wrote (gaps_result,
+ * lib_books.short_result, chapter_failures), so it survives a reload and a restart.
+ */
+export type HealthOutcome =
+  | {
+      kind: 'gaps';
+      /** When the repair concluded, not when it stamped the series (that is before the search). */
+      at: string | null;
+      /**
+       * huntCandidates' verdict, as lib/repair.ts stores it: followed | no_candidate | cap | off | cooldown | listed |
+       * posting_order (#116: the series is numbered by posting order, and no other source can fill it). Or
+       * `archiving` (#117), from no search at all: every missing number is listed below the boundary of the series'
+       * slow archive, which is fetching them (not paused). `at` is null then, and the counts are zero.
+       */
+      why: string | null;
+      followed: string | null;
+      coverage: number | null;
+      /** Gap chapters that landed, and every chapter the fetch landed. */
+      fetched: number;
+      landed: number;
+      /** Gap chapters a followed source lists, left for the sweep. */
+      sweep: number;
+      capped: number;
+      /** Ranges nobody lists, as "11-13". */
+      unfillable: string[];
+      /** Gap numbers the search was about. */
+      scanned: number;
+    }
+  | {
+      kind: 'short';
+      at: string | null;
+      /**
+       * The repair's verdict (replaced | confirmed | no_longer_copy | source_silent | hunt_cooldown | no_searches |
+       * hunt_off | download_failed), `partial` for a chapter saved with placeholder pages, or `confirmed_by_admin`.
+       */
+      why: string;
+      asked?: number;
+      answered?: number;
+      best?: number;
+      hunt?: string;
+      /** For `partial`: how many pages are placeholders. */
+      missing?: number;
+      by?: string | null;
+    }
+  | {
+      kind: 'failures';
+      /** The oldest first failure among the source's chapters, and the latest attempt. */
+      firstAt: string;
+      lastAt: string;
+      attempts: number;
+      /** Every row is back at zero attempts: a reset is waiting for the sweep (or a re-check) to try them. */
+      resetPending: boolean;
+    };
+
+/**
+ * What an action on a row will not be able to do, and why. `until` for a cooldown. `archiving` (#117): the gap is
+ * being fetched by the series' slow archive, and Fill now fetches it at once, at normal pace, instead.
+ */
+export interface HealthCaveat {
+  action: HealthAction;
+  code: 'updates_paused' | 'source_cooling_down' | 'source_off' | 'archiving';
+  until?: string;
+}
+
+export interface HealthCheck {
+  id: string;
+  title: string;
+  status: HealthStatus;
+  /** one-line human summary, already pluralised */
+  summary: string;
+  /** what this check cannot see — shown so nobody reads more into a green result than it deserves */
+  note?: string;
+  /** v0.49.1: `summary` and `note` as codes the web words in the reader's language (lib/said.ts). */
+  summarySaid?: Said[];
+  noteSaid?: Said[];
+  items: HealthItem[];
+  /** #115, 'sources' only: how long one Test may take (the smoke test's wall plus the homepage probe). */
+  testMs?: number;
+  /** Every row before the cut, for the By series view (lib/healthKit.ts withAll). Never on the wire: a symbol key. */
+  [ALL_ROWS]?: readonly HealthItem[];
+}
+
+/**
+ * One series and everything Health found wrong with it (v0.72.0, the By series view, #254): its findings from every
+ * card that is about one series, each with its card's id, in the cards' order. `status` is the worst of those cards'.
+ */
+export interface SeriesFindings {
+  seriesId: string;
+  title: string;
+  status: Exclude<HealthStatus, 'ok'>;
+  findings: Array<{ check: string; item: HealthItem }>;
+}
+
+export interface HealthReport {
+  generatedAt: string;
+  checks: HealthCheck[];
+  /** Only when asked for (GET /api/admin/health?view=series): every series with a finding, worst first. */
+  bySeries?: SeriesFindings[];
+}
+
+/** The most gap numbers one item carries. A "Fill now" chip needs to NAME them; it does not need 4,000. */
+const MAX_NUMBERS = 100;
+/** How long a repair's conclusion about a gap stays a conclusion rather than a finding again. */
+const GAPS_FRESH_MS = 7 * DAY_MS;
+
+/**
+ * The shape lib/repair.ts stores in `lib_series.gaps_result`.
+ *
+ * Every field is optional on purpose: this is JSON written by another process, possibly by an older
+ * release, and a health page that can throw because a stored row predates a field is a health page that
+ * disappears exactly when something is wrong. Nothing here is trusted beyond being read.
+ */
+export interface StoredGaps {
+  at?: string;
+  have_count?: number;
+  scanned?: number;
+  followed?: string | null;
+  coverage?: number | null;
+  fetched?: number;
+  landed?: number;
+  sweep?: number;
+  capped?: number;
+  unfillable?: string[];
+  why?: string;
+}
+
+/** One series' held chapter numbers, plus what the nightly repair last concluded about its gaps. */
+interface HeldSeries {
+  id: string;
+  title: string;
+  numbers: number[];
+  gapsCheckedAt: string | null;
+  gapsResult: StoredGaps | null;
+  /** Automatic updates on: off, nothing but Fill now will ever fetch its gaps (a caveat on that row). */
+  autoUpdate: boolean;
+  /** What the series' slow archive (#117) is going to fetch of its holes, and whether it is paused; null for none. */
+  archive: ArchiveHoles | null;
+  /** Its "Latest N" start (lib_series.chapter_floor), null for none: holes below it are nobody's to fetch (v0.55.0). */
+  floor: number | null;
+  /** The whole numbers its sources list (lib/fill.ts splitListed), null when no source ever answered for it. */
+  listed: ReadonlySet<number> | null;
+}
+
+/**
+ * What every visible series HOLDS, read once and shared by the two checks that reason about numbering.
+ *
+ * `haveNumbers` (lib/libraryNumbers.ts) is the one definition of that, and it applies two rules this page
+ * used to get wrong in both directions: a chapter an admin renumbered through the series page still had its
+ * old number reported as impossible, and a chapter they deliberately deleted still counted as a hole this
+ * page told them to fill -- a finding that could not be cleared by doing what it asked.
+ *
+ * One small indexed read per series rather than one grouped query, for the same reason the repair's gap
+ * step does it that way: the rules are per series, and quoting the shared definition is worth more than
+ * flattening it into a join nobody can check against it. The gaps and the impossible-number checks share
+ * this one pass, so the cost is paid once per report, not twice.
+ */
+async function heldBySeries(): Promise<HeldSeries[]> {
+  const series = await q<{ id: string; title: string; gaps_checked_at: string | null; gaps_result: StoredGaps | null; auto_update: boolean; floor: number | null }>(
+    `SELECT ls.id, ls.title, ls.gaps_checked_at, ls.gaps_result, ls.auto_update, ls.chapter_floor::float8 AS floor
+       FROM lib_series ls WHERE ${visibleToAll('ls')} ORDER BY ls.title`,
+  );
+  // One read for every archive: a handful of rows, where a per-series query would double the page's cost.
+  const archiving = await archiveHoles(undefined, CHAPTER_RETRY_CAP);
+  // And every series' listed numbers, one grouped read: a hole no source lists is no missing chapter (fill.ts splitListed).
+  const listedBy = await listedWholeNumbers();
+  const out: HeldSeries[] = [];
+  for (const s of series) {
+    out.push({
+      id: s.id,
+      title: s.title,
+      numbers: await haveNumbers(s.id),
+      gapsCheckedAt: s.gaps_checked_at,
+      gapsResult: s.gaps_result ?? null,
+      autoUpdate: s.auto_update !== false,
+      archive: archiving.get(s.id) ?? null,
+      floor: s.floor == null ? null : Number(s.floor),
+      listed: listedBy.get(s.id) ?? null,
+    });
+  }
+  return out;
+}
+
+/** "1, 3-7, 12" from [1,3,4,5,6,7,12] -- how this page has always written a set of chapter numbers. */
+function rangeText(gaps: Array<{ lo: number; hi: number }>): string {
+  return gaps.map((g) => (g.lo === g.hi ? String(g.lo) : `${g.lo}-${g.hi}`)).join(', ');
+}
+
+// ---- individual checks ------------------------------------------------------
+
+/**
+ * What the nightly repair concluded about one series' gaps, in words an admin can act on.
+ *
+ * `why` comes from the search itself (lib/repair.ts stores huntCandidates' verdict), and the three that
+ * mean "asked, and the answer was no" are what turn the finding grey. `listed` is the fourth quiet one for
+ * a different reason: the chapters ARE on a source we follow, so the ordinary chapter sweep will fetch
+ * them and a search would have been wasted requests.
+ *
+ * ⚠️ Each sentence has to describe the verdict it is printed under, and two of them once described the
+ * other one's. `cap` is sourceHunt's "this series already follows as many sources as it may" -- a lasting
+ * fact about the series, nothing to do with the night's budget -- and it was rendered "the nightly ran out
+ * of searches", which invites the admin to wait for tomorrow's run for an answer that will never change.
+ * `cooldown` is the 24 h stamp on this one series, and it is NOT the spent-budget case: the gap step stops
+ * before it asks with an empty budget rather than storing a verdict about a search that never ran
+ * (lib/repair.ts's stepGaps), so "searched too recently" is true of every cooldown that reaches this page.
+ */
+function gapConclusion(g: StoredGaps): string {
+  switch (g.why) {
+    case 'followed':
+      return g.followed
+        ? `now following ${g.followed}${g.fetched ? `, ${g.fetched} fetched` : ''}`
+        : 'a source that can fill them was followed';
+    case 'no_candidate': return 'no other source lists them';
+    case 'cap': return 'this series already follows as many sources as it can';
+    case 'off': return 'searching other sources is switched off';
+    case 'cooldown': return 'searched too recently to search again';
+    case 'listed': return 'a source you already follow lists them, so the next chapter sweep will fetch them';
+    // #116: another site numbers these posts its own way, so nothing is searched for (lib/sourceHunt.ts).
+    case 'posting_order': return 'this series is numbered by posting order, so no other source is searched';
+    default: return 'checked';
+  }
+}
+
+/**
+ * The repair's verdicts that mean "asked, and the answer was no": conditions another run tonight cannot change on
+ * its own -- nobody else lists the chapters, the series already follows as many sources as it may, searching is
+ * switched off, or (#116) the series is numbered by posting order, which no other site's numbers line up with.
+ */
+const ANSWERED = new Set(['no_candidate', 'cap', 'off', 'posting_order']);
+
+/**
+ * When a series' stored gap conclusion was reached: gaps_result.at, else the stamp for a result that predates `at`.
+ * ⚠️ Not the stamp first: it is written before the search (lib/repair.ts stepGaps), so while a run is on the series it
+ * is new and the stored result is still the previous run's -- last week's answer read as tonight's.
+ */
+export function gapsCheckedAt(g: StoredGaps | null | undefined, stamp: string | Date | null | undefined): Date | null {
+  if (g?.at && Number.isFinite(Date.parse(g.at))) return new Date(g.at);
+  return stamp ? new Date(stamp) : null;
+}
+
+/**
+ * "Asked, and the answer was no", and still the answer: one of the ANSWERED verdicts, reached under GAPS_FRESH_MS ago,
+ * with nothing landed since (`haveCount`, what the series holds now). Health greys such a row; the repair's gap step
+ * (v0.55.0) does not ask again until it is no longer fresh -- it used to, every night, for the same few series.
+ */
+export function gapsAnswered(
+  g: StoredGaps | null | undefined, stamp: string | Date | null | undefined, haveCount: number, now = Date.now(),
+): boolean {
+  const checked = gapsCheckedAt(g, stamp);
+  return !!g && !!checked && now - checked.getTime() < GAPS_FRESH_MS && ANSWERED.has(String(g.why)) && g.have_count === haveCount;
+}
+
+/**
+ * Missing runs of chapter numbers: either the source never had them, or a download failed.
+ *
+ * Computed by `gapsOf`, the same function the fill dialog uses, and nothing else. There used to be a second
+ * implementation here in SQL that filtered `WHERE number > 0`, so on a series shaped `0, 93..141` this page
+ * said "no gaps" while "find missing chapters" offered to fetch 92 -- both green in their own tests. Two
+ * definitions of one fact is how that happens; there is now one. The numbers themselves come from
+ * `haveNumbers` for the same reason (see heldBySeries above).
+ */
+/**
+ * v0.81.0: what the scout (lib/sourceScout.ts) last did for each of these series, as the line a Health row ends on:
+ * how many other sources it asked, when, and the one it followed, or that none has it yet. A look that asked nobody (a
+ * series at its follower limit, every source cooling) says nothing. Best effort: a row never fails over it.
+ */
+async function scoutLines(ids: readonly string[]): Promise<Map<string, Part>> {
+  if (!ids.length) return new Map();
+  const rows = await q<{ series_id: string; last_at: Date; verdict: string | null; detail: { asked?: number; followed?: string } | null }>(
+    'SELECT series_id, last_at, verdict, detail FROM series_scout WHERE series_id = ANY($1::text[]) AND last_at IS NOT NULL', [[...ids]],
+  ).catch(() => []);
+  const out = new Map<string, Part>();
+  for (const r of rows) {
+    const n = Number(r.detail?.asked ?? 0);
+    if (!n) continue;
+    const at = new Date(r.last_at).toISOString();
+    const followed = r.verdict === 'followed' && r.detail?.followed ? String(r.detail.followed) : null;
+    out.set(r.series_id, followed
+      ? say('scout.following', { n, at, source: sourceLabel(followed, null) })
+      : say('scout.notFound', { n, at }));
+  }
+  return out;
+}
+
+async function chapterGaps(held: HeldSeries[], ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  const rows = held
+    .map((s) => {
+      // v0.55.0: a hole below the series' "Latest N" start is nobody's to fetch -- the sweep, Fill now and a follow's
+      // fetch all stop there, because the series was added from there on purpose (fill.ts splitAtFloor). It was a
+      // finding the repair then greyed for a week as "the next sweep fetches it", which no sweep ever did; it is
+      // listed for reference now, and only the holes at or above the start are the finding. Reintroduce by counting
+      // every hole: "a hole below a series' Latest N start" in repair.int.test.ts finds a finding with Fill now on it.
+      // Only between plausible numbers: an impossible one is the outliers card's (plausibleNumbers). Reintroduce by
+      // counting every number: "an impossible number is the outliers card's, not a gap of thousands" in
+      // health.int.test.ts finds Odd Walk on this card.
+      const { above: gaps, below } = splitAtFloor(gapsOf(plausibleNumbers(s.numbers)), s.floor);
+      // A hole none of the series' sources lists is not counted as missing (lib/fill.ts splitListed): most often a site
+      // numbered the same chapters another way (split parts counted as chapters), which leaves a run of numbers between
+      // two held ones that nobody offers -- Tales of Demons and Gods read "306 missing" for chapters it had. The row says
+      // those numbers apart, greyed when they are all it has, and Fill now still asks other sites for them. Reintroduce
+      // by counting every hole: "a hole no source lists is not a missing chapter" in finishDownloads.int.test.ts.
+      const { listed, unlisted } = splitListed(gaps, s.listed);
+      const numbers: number[] = [];
+      for (const g of [...listed, ...unlisted]) for (let n = g.lo; n <= g.hi && numbers.length < MAX_NUMBERS; n++) numbers.push(n);
+      return { s, gaps, below, listed, unlisted, missing: listed.reduce((n, g) => n + g.count, 0), before: below.reduce((n, g) => n + g.count, 0),
+        notListed: unlisted.reduce((n, g) => n + g.count, 0), numbers };
+    })
+    .filter((r) => r.missing > 0 || r.before > 0 || r.notListed > 0)
+    .sort((a, b) => b.missing - a.missing || b.notListed - a.notListed || b.before - a.before);
+  /** The first chapter the series was started from: the first whole number at or above its floor. */
+  const startOf = (r: (typeof rows)[number]) => Math.ceil(Number(r.s.floor));
+  const short = (t: string) => (t.length > 90 ? t.slice(0, 90) + '…' : t);
+  // v0.81.0: the scout's last look, ending the row of a series it looked for (scoutLines).
+  const scouted = await scoutLines(rows.map((r) => r.s.id));
+
+  const items: Array<HealthItem & { members?: string[]; beforeStart?: true; notListed?: true }> = rows.map((r) => {
+    if (!r.missing && !r.notListed) {
+      // Every hole is below where the series was started: for reference, with nothing to press -- Fill now cannot
+      // fetch below the start either.
+      return {
+        seriesId: r.s.id,
+        title: r.s.title,
+        ...detailOf([say('gaps.belowFloor', { n: r.before, start: startOf(r), ranges: short(rangeText(r.below)) })]),
+        info: true,
+        beforeStart: true,
+      };
+    }
+    const g = r.s.gapsResult;
+    // ⚠️ When the CONCLUSION was reached (gaps_result.at), not when the series was stamped (gapsCheckedAt says why).
+    const checked = gapsCheckedAt(g, r.s.gapsCheckedAt);
+    const fresh = !!checked && Date.now() - checked.getTime() < GAPS_FRESH_MS;
+    // "Asked, and the answer was no", still fresh, and nothing landed since -- a conclusion is about the library as it
+    // was when the search ran, and one more chapter may have moved the hole (gapsAnswered, which the repair's gap step
+    // reads too). A cooldown is NOT an answer (ANSWERED), for the same reason the repair will not confirm a short
+    // chapter on one: not having asked is not an answer.
+    const answeredFresh = gapsAnswered(g, r.s.gapsCheckedAt, r.s.numbers.length);
+    // Every missing chapter is already listed on a source we follow, so this is the chapter sweep's job.
+    // ⚠️ Still only while the conclusion is fresh: a hole the sweep was going to fetch a fortnight ago and
+    // still has not is a finding again, not a promise.
+    const sweepsIt = !!g && typeof g.sweep === 'number' && r.missing > 0 && g.sweep >= r.missing;
+    // #117: the series' slow archive is fetching the numbers listed below its boundary a few an hour, so a hole it
+    // takes whole is its work in progress, not a finding -- and not a search, which is why the repair's gap step
+    // leaves such a series alone (lib/repair.ts stepGaps). Its outcome says so in place of whatever an older search
+    // concluded. Only what it will really fetch (lib/archiveBoundaries.ts archiveHoles): a hole reaching above the
+    // boundary, or holding a number the source does not list, stays a finding -- the sweep owns the part above, and
+    // nothing fetches the unlisted one. So does every hole of a PAUSED archive: nothing is fetching those now, and
+    // "being archived" over them for weeks hid them. Reintroduce by dropping `archived`: "a gap below an active
+    // archive's boundary is the archive's" in health.int.test.ts finds a live finding; by counting every number
+    // below the boundary, or a paused archive, its "not listed" and "paused" assertions read archiving.
+    const takes = r.gaps.map((x) => archiveTakes(r.s.archive ?? undefined, x.lo, x.hi));
+    const archived = !!r.s.archive && !r.s.archive.paused && r.gaps.every((x, i) => takes[i] === x.count);
+    // Only numbers none of its sources lists: nothing is missing that a site offers (see splitListed above).
+    const onlyUnlisted = !r.missing;
+    const info = archived || answeredFresh || (fresh && sweepsIt) || onlyUnlisted;
+    const what = g ? gapConclusion(g) : null;
+    // What Fill now will do that the row would not otherwise say: fetch at once, at normal pace, numbers the
+    // archive was going to fetch slowly (it passes ignoreArchiveBoundary, lib/repair.ts), and fetch a paused
+    // series' gaps, which nothing else ever will.
+    const caveats: HealthCaveat[] = [
+      ...(!r.s.autoUpdate ? [{ action: 'fill' as const, code: 'updates_paused' as const }] : []),
+      ...(takes.some((n) => n > 0) ? [{ action: 'fill' as const, code: 'archiving' as const }] : []),
+    ];
+    return {
+      seriesId: r.s.id,
+      title: r.s.title,
+      // The conclusion is `outcome` now, rendered by the page in the reader's language; the detail is the
+      // finding alone.
+      ...detailOf([
+        r.missing > 0 && say('gaps.detail', { n: r.missing, ranges: short(rangeText(r.listed)) }),
+        r.notListed > 0 && say('gaps.notListed', { n: r.notListed, ranges: short(rangeText(r.unlisted)) }),
+        r.before > 0 && say('gaps.alsoBelowFloor', { n: r.before, start: startOf(r) }),
+        // Reintroduce by dropping it: "a Health row says what the scout did" in scoutWords.int.test.ts finds no line.
+        scouted.get(r.s.id),
+      ]),
+      numbers: r.numbers,
+      actions: ['fill'] as HealthAction[],
+      ...(archived ? {
+        outcome: {
+          kind: 'gaps' as const, at: null, why: 'archiving', followed: null, coverage: null,
+          fetched: 0, landed: 0, sweep: 0, capped: 0, unfillable: [], scanned: 0,
+        },
+      } : g ? {
+        outcome: {
+          kind: 'gaps' as const,
+          at: checked ? checked.toISOString() : null,
+          why: g.why ?? null,
+          followed: g.followed ?? null,
+          coverage: typeof g.coverage === 'number' ? g.coverage : null,
+          fetched: Number(g.fetched) || 0,
+          landed: Number(g.landed) || 0,
+          sweep: Number(g.sweep) || 0,
+          capped: Number(g.capped) || 0,
+          unfillable: Array.isArray(g.unfillable) ? g.unfillable.map(String) : [],
+          scanned: Number(g.scanned) || 0,
+        },
+      } : {}),
+      // Fill now works on a paused series (it names the series, lib/repair.ts), but nothing else will ever
+      // fetch its gaps: the row says so before anyone presses. Reintroduce by dropping it: "a paused series'
+      // gap carries the updates_paused caveat" in health.int.test.ts fails.
+      ...(caveats.length ? { caveats } : {}),
+      // Ignored while every missing run lies inside a run that was missing when it was ignored: a gap that
+      // shrinks (or splits) stays quiet, a newly missing chapter is a new finding. As runs, not one entry per
+      // number: a single chapter numbered 9001 by mistake is a gap of nine thousand (lib/healthIgnore.ts).
+      key: `series:${r.s.id}`,
+      members: r.gaps.map((g) => `${g.lo}-${g.hi}`),
+      // An older search's answer is not what is happening to an archived hole: the outcome above is.
+      ...(checked && what && !archived ? { fixed: { at: checked.toISOString(), what } } : {}),
+      ...(info ? { info: true } : {}),
+      ...(onlyUnlisted && !archived && !answeredFresh ? { notListed: true as const } : {}),
+    };
+  });
+  const ignored = applyIgnores('chapter-gaps', items, ctx);
+  const { items: shown, hidden } = truncate(items);
+  const live = items.filter((i) => !i.info).length;
+  const archiving = items.filter((i) => i.info && !i.ignored && i.outcome?.kind === 'gaps' && i.outcome.why === 'archiving').length;
+  const beforeStart = items.filter((i) => i.beforeStart).length;
+  const notListed = items.filter((i) => i.notListed && !i.ignored).length;
+  const quiet = items.length - live - ignored - archiving - beforeStart - notListed;
+  return withAll({
+    id: 'chapter-gaps',
+    title: 'Chapter gaps',
+    status: verdict(items),
+    ...summaryOf([
+      live ? say('gaps.live', { n: live }) : say('gaps.none'),
+      quiet > 0 && say('gaps.quiet', { n: quiet }),
+      archiving > 0 && say('gaps.archiving', { n: archiving }),
+      beforeStart > 0 && say('gaps.beforeStart', { n: beforeStart }),
+      notListed > 0 && say('gaps.notListedSeries', { n: notListed }),
+      ignoredPart(ignored),
+    ]),
+    ...noteOf([say('gaps.note'), rows.some((r) => r.notListed > 0) && joined('sentence', say('gaps.notListedNote')), hiddenPart(hidden)]),
+    items: shown.map(({ beforeStart: _b, notListed: _n, ...it }) => it),
+  }, items.map(({ beforeStart: _b, notListed: _n, ...it }) => it));
+}
+
+/** How long a series numbered by posting order on its own is listed (for reference) after the change. */
+const NUMBERED_SHOWN_MS = 14 * DAY_MS;
+
+/**
+ * Chapter numbering (#116): series whose chapters wait for a numbering change an admin has to see first, and the
+ * ones hbook numbered by posting order on its own lately.
+ *
+ * A series in a library is never renamed unattended (the owner's rule for v0.49.0, lib/numbering.ts): the detector
+ * finding a source that gives many different posts one number marks it `numbering_pending`, and from then on it
+ * downloads nothing until someone reviews the plan -- which, before this check, only its own series page said. So
+ * each waiting series is a finding here, by name, with `renumber` (the plan, then its confirmation) and, for a
+ * change nobody asked for, `keep_numbers` (the source's numbers, as a choice the detector never undoes). A renumber
+ * a crash interrupted and the next check could not finish holds the series the same way, and is a finding with no
+ * key to press: the check that finishes it is the way out. Numbered automatically in the last two weeks and a
+ * detector's hint on a source-numbered series are listed too; a strong verdict an admin chose to ignore, for
+ * reference. Absent when no series has anything to say about its numbering.
+ */
+async function numberingCheck(): Promise<HealthCheck | null> {
+  const rows = await q<{
+    id: string; title: string; source_name: string | null; source_id: string | null;
+    numbering: 'source' | 'posting_order' | 'titles' | null; numbering_by: 'auto' | 'manual' | null; numbering_source: string | null;
+    numbering_pending: 'posting_order' | 'titles' | 'source' | 'remap' | null; numbering_note: NumberingNote | null;
+    journal: boolean; changed_at: string | null;
+  }>(
+    `SELECT ls.id, ls.title, ls.source AS source_name, ls.source_id, ls.numbering, ls.numbering_by, ls.numbering_source,
+            ls.numbering_pending, ls.numbering_note, (ls.renumber_plan IS NOT NULL) AS journal, ls.numbering_changed_at AS changed_at
+       FROM lib_series ls
+      WHERE ${visibleToAll('ls')}
+        AND (ls.numbering IS NOT NULL OR ls.numbering_pending IS NOT NULL OR ls.renumber_plan IS NOT NULL
+             OR ls.numbering_note->>'verdict' IN ('strong', 'hint'))
+      ORDER BY ls.title`,
+  ).catch(() => []);
+  if (!rows.length) return null;
+  const now = Date.now();
+  const items: HealthItem[] = [];
+  for (const r of rows) {
+    const note = r.numbering_note;
+    const src = r.numbering_source ?? note?.source ?? r.source_id;
+    // The source as a person knows it: the loaded adapter's name, else the name the series was added under when
+    // this is its own source (an extension the engine is not serving right now), else the id. Null when there is no
+    // source to name at all: the English says "Its source", the web its own words for it.
+    const name = (src && getSource(src)?.name) || (src && src === r.source_id ? r.source_name : null) || src || null;
+    const shared = note && note.posts
+      ? note.biggest
+        ? say('numbering.sharedMost', { name, extras: note.extras, posts: note.posts, most: note.biggest.posts, number: note.biggest.number })
+        : say('numbering.shared', { name, extras: note.extras, posts: note.posts })
+      : say('numbering.sharedMany', { name });
+    const base = { seriesId: r.id, title: r.title, ...(src ? { sourceId: src } : {}) };
+    const held = joined('sentence', say('numbering.held'));
+    const auto = r.numbering_by !== 'manual';
+    let item: HealthItem | null = null;
+    if (r.journal && renumberRunning(r.id)) {
+      // Its journal is on the row from the first rename to the commit, and Health read every journal as a crash's
+      // (v0.49.1): "interrupted" while the confirmed renumber was still applying. A greyed line while it runs: nothing
+      // waits for anyone, and it ends by itself.
+      // Reintroduce by answering "interrupted" for it: "while a confirmed renumber applies" in numbering.int.test.ts.
+      item = { ...base, ...detailOf([say('numbering.applying'), held]), info: true };
+    } else if (r.journal) {
+      item = { ...base, ...detailOf([say('numbering.interrupted'), held]) };
+    } else if (r.numbering_pending === 'remap') {
+      item = { ...base, ...detailOf([say('numbering.remap', { name }), held]), actions: ['renumber'] };
+    } else if (r.numbering_pending === 'posting_order') {
+      item = auto
+        ? { ...base, ...detailOf([shared, say('numbering.reviewWaits'), held]), actions: ['renumber', 'keep_numbers'] }
+        : { ...base, ...detailOf([say('numbering.askedWaits'), held]), actions: ['renumber'] };
+    } else if (r.numbering_pending === 'titles') {
+      // #379: the source counts its specials as chapters. "Keep the source's numbers" is the admin's to say, as for posting order.
+      const ex = note?.titles?.example;
+      item = { ...base, ...detailOf([say('numbering.titles', { name, ...(ex ? { title: ex.title, number: ex.from } : {}) }), say('numbering.titlesWaits'), held]),
+        actions: ['renumber', 'keep_numbers'] };
+    } else if (r.numbering_pending === 'source') {
+      item = { ...base, ...detailOf([say('numbering.sourceWaits', { name }), held]), actions: ['renumber'] };
+    } else if (r.numbering === 'posting_order' && auto) {
+      const at = r.changed_at ? Date.parse(r.changed_at) : NaN;
+      if (Number.isFinite(at) && now - at < NUMBERED_SHOWN_MS) {
+        item = { ...base, ...detailOf([shared, say('numbering.since', { at: new Date(at).toISOString() })]), actions: ['keep_numbers'], info: true };
+      }
+    } else if (r.numbering !== 'posting_order' && note?.verdict === 'hint' && auto) {
+      item = { ...base, ...detailOf([shared, say('numbering.hint')]), actions: ['renumber', 'keep_numbers'] };
+    } else if (r.numbering === 'source' && !auto && note?.verdict === 'strong') {
+      item = { ...base, ...detailOf([shared, say('numbering.kept')]), actions: ['renumber'], info: true };
+    }
+    if (item) items.push(item);
+  }
+  if (!items.length) return null;
+  const live = items.filter((i) => !i.info).length;
+  const numbered = items.filter((i) => i.info && i.actions?.includes('keep_numbers')).length;
+  const { items: shown, hidden } = truncate(items);
+  return withAll({
+    id: 'numbering',
+    title: 'Chapter numbering',
+    status: verdict(items),
+    ...summaryOf([
+      live ? say('numbering.live', { n: live }) : say('numbering.none'),
+      numbered > 0 && say('numbering.lately', { n: numbered }),
+    ]),
+    ...noteOf([say('numbering.note'), hiddenPart(hidden)]),
+    items: shown,
+  }, items);
+}
+
+/**
+ * The most chapters one report reads page sizes from: the rest are measured by the next report (the cache keeps them).
+ * The repair's short step takes the same share per run (repair.ts stepShort, v0.60.1).
+ */
+export const MEASURE_PER_REPORT = 100;
+
+/**
+ * A short chapter's page sizes: the reader's cache (lib_books.page_dims, lib/ownedCatalog.ts bookPages), else read from
+ * the file and cached the same way, so the next report and the reader open nothing. Null for a file that cannot be read,
+ * or past this report's share of reads (`budget`): a chapter not measured stays a finding.
+ */
+export async function measured(
+  r: { id: string; root: string | null; file: string; page_dims: PageDim[] | null }, budget: { left: number },
+): Promise<PageDim[] | null> {
+  if (Array.isArray(r.page_dims) && r.page_dims.length) return r.page_dims;
+  if (budget.left <= 0) return null;
+  budget.left--;
+  const dims = await cbzPageDims(`${r.root || LIBRARY_ROOT}/${r.file}`).catch(() => []);
+  if (!dims.length) return null;
+  // Only an empty cache: the reader may have written the same thing meanwhile.
+  await q('UPDATE lib_books SET page_dims = $1 WHERE id = $2 AND page_dims IS NULL', [JSON.stringify(dims), r.id]).catch(() => {});
+  return dims;
+}
+
+/**
+ * Whole-numbered chapters that turned out to be one or two images: almost always a failed download.
+ *
+ * Not a chapter stitched into one or two long strips (v0.55.10, lib/longStrip.ts): on the live server 6 of the 20 were,
+ * Eleceed 215 two 689 × 54,000 strips among them, and a file in the read library is never the repair's to look at, so
+ * they stayed findings until somebody pressed "It's fine" on each. Reintroduce by dropping the `longStrip` test: "a
+ * chapter stitched into long strips is not short" in health.int.test.ts finds it listed.
+ */
+async function shortChapters(): Promise<HealthCheck> {
+  // Decimal chapters are excluded on purpose: ".5" entries are usually author notices, legitimately 1 page.
+  // A tombstone is excluded too -- those bytes are gone on purpose (or already reported as missing by the
+  // verify task), and a page count taken before they went says nothing about anything anybody can fix.
+  const found = await q<{
+    id: string; series_id: string; title: string; folder: string; number: number; pages: number;
+    root: string | null; file: string; short_confirmed_at: string | null; missing_pages: number[] | null;
+    short_result: { at?: string; why?: string; asked?: number; answered?: number; best?: number; hunt?: string; by?: string | null } | null;
+    page_dims: PageDim[] | null; chapter_name: string | null; book_title: string | null; listed_title: string | null;
+  }>(
+    `SELECT b.id, b.series_id, ls.title, ls.folder, b.number::float8 AS number, b.pages, b.root, b.file,
+            b.short_confirmed_at, b.missing_pages, b.short_result, b.page_dims,
+            b.chapter_name, b.title AS book_title, sl.title AS listed_title
+       FROM lib_books b JOIN lib_series ls ON ls.id = b.series_id AND ${visibleToAll('ls')}
+       LEFT JOIN series_listing sl ON sl.series_id = b.series_id AND sl.number = b.number
+      WHERE b.pages BETWEEN 1 AND 2 AND b.number = floor(b.number) AND b.pruned_at IS NULL
+        -- Not a chapter at a number an admin hid (#240): no chapter here, and its Fix would be refused.
+        AND NOT ${atHiddenNumber('b')}
+      ORDER BY ls.title, b.number`,
+  );
+  // A chapter whose title names a special -- a Q&A, a giveaway, an author's note -- is short on purpose, as a half-chapter
+  // notice is (lib/specialChapters.ts), and is counted in the summary rather than listed. Before the measuring, so a
+  // special spends none of this report's reads. Reintroduce by dropping the test: "a chapter titled as a special is not
+  // short" in health.int.test.ts finds it listed.
+  let specials = 0;
+  const budget = { left: MEASURE_PER_REPORT };
+  const rows: typeof found = [];
+  for (const r of found) {
+    if (!r.short_confirmed_at && specialName(Number(r.number), r.chapter_name, r.book_title, r.listed_title)) { specials++; continue; }
+    if (!longStrip(await measured(r, budget))) rows.push(r);
+  }
+  const item = (r: typeof rows[number]): HealthItem => {
+    // "Fix" replaces the file, so it is offered ONLY for a file this server downloaded and named itself:
+    // the download root, under exactly the name chapterFileRel writes. Somebody's own copy in the read
+    // library is never ours to replace -- for that, the only honest chip is "It's fine".
+    const owned = r.root === DL_ROOT && r.file === chapterFileRel(r.folder, Number(r.number));
+    const confirmed = r.short_confirmed_at ? new Date(r.short_confirmed_at) : null;
+    // Saved with placeholder pages (lib/partial.ts): the chapter sweep re-fetches those, up to 10 a night,
+    // and the repair's short step skips the chapter (`missing_pages IS NULL`), so "Fix" on it did nothing at
+    // all. Offered "It's fine" only, and the outcome says why. Reintroduce by offering fix_short again:
+    // "a chapter with placeholder pages is not offered Fix" in health.int.test.ts fails.
+    const partial = Array.isArray(r.missing_pages) && r.missing_pages.length > 0;
+    const res = r.short_result;
+    const byAdmin = res?.why === 'confirmed_by_admin';
+    const outcome: HealthOutcome | null = partial
+      ? { kind: 'short', at: null, why: 'partial', missing: r.missing_pages!.length }
+      : res?.why
+      ? {
+          kind: 'short', at: res.at ?? null, why: String(res.why),
+          ...(typeof res.asked === 'number' ? { asked: res.asked } : {}),
+          ...(typeof res.answered === 'number' ? { answered: res.answered } : {}),
+          ...(typeof res.best === 'number' ? { best: res.best } : {}),
+          ...(res.hunt ? { hunt: String(res.hunt) } : {}),
+          ...(res.by !== undefined ? { by: res.by } : {}),
+        }
+      : null;
+    return {
+      seriesId: r.series_id,
+      bookId: r.id,
+      number: Number(r.number),
+      title: r.title,
+      ...detailOf([say('short.detail', { number: Number(r.number), pages: r.pages })]),
+      // Confirmed rows keep exactly one chip, and it is the one that undoes the confirmation: the repair
+      // skips a chapter somebody has already called short, so "Fix" on one would do nothing at all.
+      actions: confirmed || partial ? ['confirm_short'] : owned ? ['fix_short', 'confirm_short'] : ['confirm_short'],
+      ...(outcome ? { outcome } : {}),
+      ...(confirmed
+        ? {
+            info: true,
+            fixed: { at: confirmed.toISOString(), what: byAdmin ? 'marked fine by an admin' : 'confirmed short at the source' },
+          }
+        : {}),
+    };
+  };
+  const items = rows.map(item);
+  const { items: shown, hidden } = truncate(items);
+  const live = items.filter((i) => !i.info).length;
+  const quiet = items.length - live;
+  return withAll({
+    id: 'short-chapters',
+    title: 'Suspiciously short chapters',
+    status: verdict(items, 'problem'),
+    ...summaryOf([
+      live ? say('short.live', { n: live }) : say('short.none'),
+      quiet > 0 && say('short.quiet', { n: quiet }),
+      specials > 0 && say('short.specials', { n: specials }),
+    ]),
+    ...noteOf([say('short.note'), joined('sentence', say('short.specialNote')), hiddenPart(hidden)]),
+    items: shown,
+  }, items);
+}
+
+/** Sources that are failing or blocked, and how much of the library depends on them. */
+/**
+ * Chapters the updater or a fill could not save, by source.
+ *
+ * Rows clear themselves when the chapter lands (persistScan), so what is listed here is what is STILL
+ * failing, and how many times it has been tried. Before the ledger existed one night's sweep lost 164 of 226
+ * series to a single chapter and no surface, not even the log, said so.
+ */
+async function chapterFailures(ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  let readFailed = false;
+  // "Left alone" is the sweep's own cap (lib/finishDownloads.ts retryCapFor): with "Finish downloads on their own" on, a
+  // site's refusal is still being tried until REFUSAL_RETRY_CAP, and the card said it was left alone after three.
+  // Reintroduce by counting every status at CHAPTER_RETRY_CAP: "Health says a refused chapter is still being tried" in
+  // finishDownloads.int.test.ts finds one left alone.
+  const finish = await finishDownloadsOn();
+  const refusalCap = Math.max(CHAPTER_RETRY_CAP, REFUSAL_RETRY_CAP);
+  const rows = await q<{
+    source_id: string; chapters: number; series: number; since: string; last_at: string; attempts: number; capped: number;
+    latest_title: string; latest_number: number; latest_status: string; latest_reason: string | null; failing: string[]; limited: number;
+    blocked_until: string | null; disabled: boolean;
+  }>(
+    // `since` is the FIRST failure (first_at, v0.49.0; `at` is the latest attempt and a Retry now moves it
+    // to now). COALESCE for rows from before the column, and rows a v0.48.4 rollback writes.
+    // The source's own health row joins for the Retry caveats: a cooldown (and until when) or switched off.
+    `SELECT f.source_id,
+            -- What an ignore of this source's row covers: a newly failing chapter is a new finding.
+            array_agg(f.series_id || ':' || f.number ORDER BY f.series_id, f.number) AS failing,
+            count(*)::int AS chapters,
+            count(DISTINCT f.series_id)::int AS series,
+            min(COALESCE(f.first_at, f.at)) AS since,
+            max(f.at) AS last_at,
+            max(f.attempts)::int AS attempts,
+            count(*) FILTER (WHERE f.attempts >= CASE WHEN $2 AND f.status IN ('rate_limited', 'blocked') THEN $3::int ELSE $4::int END)::int AS capped,
+            -- v0.55.1: refused for room (HTTP 429, lib/downloader.ts records it as rate_limited). A source whose every
+            -- failing chapter is one of these is waiting, not failing: Fix everything says it clears by itself.
+            -- v0.55.3: so is a chapter filed here from a source its series no longer uses (status moved,
+            -- lib/chapterFailures.ts refileFailures) while this source rests -- rate-limited, or in a cooldown: never
+            -- tried here, it waits for the same pause. The owner's 32 AllManga chapters, on a rate-limited Natomanga.
+            -- Or while it downloads at a raised pace (the ids passed in, lib/pace.ts slowedSources): a 429 at it, or at
+            -- another source on its image server, holds the pace for an hour and more after its own status reads ok
+            -- again -- one chapter at a time, the moved ones in the queue with the rest.
+            count(*) FILTER (WHERE f.status = 'rate_limited'
+                                OR (f.status = 'moved' AND (h.status = 'rate_limited' OR h.blocked_until > now()
+                                                            OR f.source_id = ANY($1::text[]))))::int AS limited,
+            (array_agg(ls.title  ORDER BY f.at DESC))[1] AS latest_title,
+            (array_agg(f.number  ORDER BY f.at DESC))[1] AS latest_number,
+            (array_agg(f.status  ORDER BY f.at DESC))[1] AS latest_status,
+            (array_agg(f.reason  ORDER BY f.at DESC))[1] AS latest_reason,
+            max(h.blocked_until) FILTER (WHERE h.blocked_until > now()) AS blocked_until,
+            COALESCE(bool_or(h.disabled), false) AS disabled
+       FROM chapter_failures f JOIN lib_series ls ON ls.id = f.series_id AND ${visibleToAll('ls')}
+       LEFT JOIN source_health h ON h.source_id = f.source_id
+      GROUP BY f.source_id ORDER BY chapters DESC`,
+    [slowedSources(), finish, refusalCap, CHAPTER_RETRY_CAP],
+  ).catch(() => { readFailed = true; return [] as any[]; });
+  const all: Array<HealthItem & { members?: string[] }> = rows.map((r) => ({
+    title: sourceLabel(r.source_id),
+    sourceId: r.source_id,
+    key: `source:${r.source_id}`,
+    members: r.failing ?? [],
+    // Every chapter here was refused for room, or waits for this source's pause (v0.55.3): a statement, not a finding,
+    // as Fix everything's "clears by itself" says it. One chapter failing any other way keeps the row a finding.
+    // Reintroduce by dropping it: "chapters refused only for room are waiting, not failing" in health.int.test.ts finds
+    // the card amber; by dropping the `moved` clause above, "failures follow the series" in autofix.int.test.ts finds
+    // the new main's row a finding; by dropping its `ANY($1)`, "a failed chapter moved onto a main that rests or
+    // downloads slowly waits" in health.int.test.ts finds the slowed main's row a finding.
+    ...(r.limited > 0 && r.limited === r.chapters ? { info: true } : {}),
+    // One chip, and it is the repair's failures step for THIS source: it clears the attempt counts whatever
+    // their age and re-checks up to ten of the source's series. The nightly does the same thing on its own
+    // for rows that have sat at the cap for a week -- this is "the site is back up, try now".
+    actions: ['retry'] as HealthAction[],
+    outcome: {
+      kind: 'failures' as const,
+      firstAt: new Date(r.since).toISOString(),
+      lastAt: new Date(r.last_at).toISOString(),
+      attempts: r.attempts,
+      resetPending: r.attempts === 0,
+    },
+    // What Retry now will not be able to do right now: it resets the counts either way, but it asks nothing
+    // of a source in a cooldown or switched off (lib/repair.ts stepFailures). Said before it is pressed.
+    ...(r.blocked_until
+      ? { caveats: [{ action: 'retry' as const, code: 'source_cooling_down' as const, until: new Date(r.blocked_until).toISOString() }] }
+      : r.disabled ? { caveats: [{ action: 'retry' as const, code: 'source_off' as const }] } : {}),
+    ...detailOf([say('failures.detail', {
+      n: r.chapters, series: r.series, since: new Date(r.since).toISOString(), tries: r.attempts, capped: r.capped, cap: CHAPTER_RETRY_CAP,
+      title: r.latest_title, number: Number(r.latest_number), status: r.latest_status,
+      // 160, not 80: since v0.40.0 the reason ends with the evidence -- ` (page 80: 200 image/webp 88 B;
+      // page 12: 404)` -- and that tail is the part that says WHICH theory is right. At 80 it was cut. The
+      // downloader's own words, which the web shows as they are.
+      reason: r.latest_reason ? String(r.latest_reason).slice(0, 160) : null,
+    })]),
+  }));
+  const ignored = applyIgnores('chapter-failures', all, ctx, !readFailed);
+  const live = rows.filter((_, i) => !all[i].info);
+  const items = [...all].sort((a, b) => Number(!!a.info) - Number(!!b.info)).slice(0, 20);
+  const total = live.reduce((n, r) => n + r.chapters, 0);
+  // Waiting, and not ignored: an ignored row is said as ignored.
+  const waiting = rows.filter((r, i) => all[i].info && !all[i].ignored).reduce((n, r) => n + r.chapters, 0);
+  return {
+    id: 'chapter-failures',
+    title: 'Chapters that would not download',
+    status: verdict(all),
+    ...summaryOf([
+      live.length ? say('failures.live', { n: total, m: live.length })
+        : waiting ? say('failures.waiting', { n: waiting }) : say('failures.none'),
+      live.length > 0 && waiting > 0 && say('failures.alsoWaiting', { n: waiting }),
+      ignoredPart(ignored),
+    ]),
+    // The note's last sentence is not about a failure row: a chapter saved short is on disk and readable, so it is
+    // not in this ledger at all. Said here because this is where an admin looks for "why is a chapter not whole".
+    ...noteOf([say('failures.note', { cap: CHAPTER_RETRY_CAP }), finish && joined('sentence', say('failures.noteRefusals', { cap: refusalCap })), hiddenPart(rows.length - 20)]),
+    items,
+  };
+}
+
+/**
+ * Series whose source no longer exists, so the updater and the fill can never reach them.
+ *
+ * `updateSeries` returns `unrouted` for these every night and the sweep prints the count and discards it.
+ * Their chapters read fine, their health row (if any) says `ok` because nothing ever failed -- nothing was
+ * ever asked -- and the fill scan never even pins them. Live: one series, 31 chapters, frozen since its
+ * extension was uninstalled twelve days earlier, and no surface anywhere said so.
+ *
+ * v0.54.0: and series whose main source is loaded but cannot update them either -- switched off, or failing at a step
+ * an update needs (lib/sourceStanding.ts) -- with no follower that can. aqua went offline, was switched off, and stayed
+ * the main source of 195 series while this card read "Every series has a working source": only a source that was not
+ * loaded counted. A main that is only cooling down is not listed: that ends by itself.
+ */
+export async function frozenSeries(
+  ctx: IgnoreCtx = noIgnores(), engine: EngineState = engineState(),
+  /** v0.55.0: every row, not the first twenty -- Fix everything's extensions phase reads them all (lib/autofix.ts). */
+  o: { all?: boolean } = {},
+): Promise<HealthCheck> {
+  let readFailed = false;
+  const now = Date.now();
+  // The loaded main sources that cannot update a series now, and how: `off` or `failing`.
+  const mains = await q<{ source_id: string }>(
+    `SELECT DISTINCT ls.source_id FROM lib_series ls WHERE ls.auto_update AND ls.source_id IS NOT NULL AND ${visibleToAll('ls')}`,
+  ).catch(() => { readFailed = true; return [] as { source_id: string }[]; });
+  const loadedMains = mains.map((r) => r.source_id).filter((id) => getSource(id));
+  const mainRows = await standingRows(loadedMains).catch(() => { readFailed = true; return new Map<string, StandingRow>(); });
+  const down = new Map<string, Standing>();
+  for (const id of loadedMains) {
+    const st = standingOf(id, mainRows.get(id), now);
+    if (st === 'off' || st === 'failing') down.set(id, st);
+  }
+  const rows = await q<{
+    id: string; title: string; source_id: string | null; books_count: number; switched_off: boolean; still_enabled: boolean;
+    engine_name: string | null;
+  }>(
+    // A source that is still installed but switched off (by hand, or by hiding its language) is a different
+    // finding from one that is gone: the fix is a button, not a reinstall.
+    `SELECT ls.id, ls.title, ls.source_id, ls.books_count,
+            EXISTS (SELECT 1 FROM suwayomi_sources ss WHERE 'sw:' || ss.source_id = ls.source_id AND NOT ss.enabled) AS switched_off,
+            EXISTS (SELECT 1 FROM suwayomi_sources ss WHERE 'sw:' || ss.source_id = ls.source_id AND ss.enabled) AS still_enabled,
+            -- The engine's name for an extension source that is not registered now (sourceLabel): over the limit, switched
+            -- off, or waiting for the engine -- the sources of this check that read as sw:2522… otherwise.
+            (SELECT sn.name FROM suwayomi_sources sn WHERE 'sw:' || sn.source_id = ls.source_id LIMIT 1) AS engine_name
+       FROM lib_series ls
+      WHERE ls.auto_update AND ${visibleToAll('ls')}
+        AND (ls.source_id IS NULL OR ls.source_series_id IS NULL OR ls.source_id NOT IN (SELECT source_id FROM suwayomi_sources WHERE enabled)
+             OR ls.source_id LIKE 'sw:%')
+      ORDER BY ls.books_count DESC`,
+  ).catch(() => { readFailed = true; return [] as any[]; });
+  // The SQL over-selects on purpose (it cannot know which adapters are loaded); the loaded registry decides. It selects
+  // every series a loaded source that is off or failing could be the main source of, too: those are told apart here.
+  const unrouted = (r: typeof rows[number]) => !r.source_id || !getSource(r.source_id);
+  // v0.54.0: the main is loaded, and off or failing. Reintroduce by keeping the unrouted rows alone (dropping
+  // `|| stalled(r)`): "a series whose loaded main is off or failing" in health.int.test.ts finds the series on the
+  // switched-off main absent.
+  const stalled = (r: typeof rows[number]): Standing | undefined => (r.source_id && !unrouted(r) ? down.get(r.source_id) : undefined);
+  const affected = rows.filter((r) => unrouted(r) || stalled(r));
+  // A series whose primary cannot update it but which follows another source that CAN still updates: the updater
+  // merges the followers' lists, so a dead primary costs it nothing but that one listing. Reported as reference, not as
+  // a fault -- and since v0.54.0 with Replace, which makes that follower the main source. A follower counts only while
+  // it carries the series itself (usable, or cooling down): one switched off, failing or not loaded updates nothing.
+  // Reintroduce by dropping this read (every row frozen): "a dead primary with a live follower is not frozen" in
+  // health.int.test.ts fails -- the fixture is listed as a warning. Reintroduce "any loaded follower counts": "a
+  // series whose loaded main is off or failing" reads the series whose follower is switched off as covered.
+  const followed = new Map<string, string[]>();
+  if (affected.length) {
+    const extra = await q<{ series_id: string; source_id: string }>(
+      'SELECT series_id, source_id FROM series_sources WHERE series_id = ANY($1::text[]) ORDER BY created_at',
+      [affected.map((r) => r.id)],
+    ).catch(() => [] as { series_id: string; source_id: string }[]);
+    const fols = await standingRows(extra.map((e) => e.source_id)).catch(() => new Map<string, StandingRow>());
+    for (const e of extra) {
+      const src = getSource(e.source_id);
+      if (!src || !carries(standingOf(e.source_id, fols.get(e.source_id), now))) continue;
+      followed.set(e.series_id, [...(followed.get(e.series_id) ?? []), src.name]);
+    }
+  }
+  const frozen = affected.filter((r) => !followed.has(r.id));
+  const covered = affected.filter((r) => followed.has(r.id));
+  // Why a series' source cannot reach it. Enabled yet unregistered is the third case: dropped by
+  // SUWAYOMI_MAX_SOURCES, which the cap check names but a series page cannot see -- since v0.55.1 only when the last
+  // load says it left that source out (register.ts leftOutByLimit), which the sources overview reads too: switched on
+  // and unregistered alone also reads an extension the engine no longer offers as over the limit, and its Free a slot
+  // then landed on a sheet that offered Replace. A MangaDex language comes first
+  // (v0.52.0): its adapter is unregistered only by switching the language off, so "no longer installed" was wrong
+  // and sent the admin looking for an extension; the reason names the language and where it is switched back on.
+  // A loaded main that is switched off says so as one that is unloaded does; one that is failing says whether it is
+  // the site's own offline notice (v0.54.0).
+  const why = (r: typeof rows[number], p: { n: number; source: string }): Part => {
+    const stall = stalled(r);
+    if (stall === 'off') return say('frozen.switchedOff', p);
+    if (stall === 'failing') {
+      const offline = currentFailures(mainRows.get(r.source_id!)?.stages, now).some((f) => f.kind === 'site_offline');
+      return say('frozen.failing', { ...p, offline });
+    }
+    const mdOff = mangadexLangOf(r.source_id);
+    if (mdOff) return say('frozen.mangadexOff', { n: p.n, lang: mdOff });
+    return r.switched_off ? say('frozen.switchedOff', p)
+      : r.still_enabled && leftOutByLimit(r.source_id) ? say('frozen.overLimit', p)
+      : say('frozen.uninstalled', p);
+  };
+  // #72: with no engine answering, EVERY extension series is unrouted, and the rules above then blamed the source
+  // limit (enabled, so "over the limit") or a missing install. The engine is the reason, and the fix is the
+  // engine: its own row (engineHealth.ts) and Admin → Sources say how to bring it back.
+  const engineWhy = (r: typeof rows[number]): boolean => !!r.source_id?.startsWith('sw:') && engine !== 'up' && unrouted(r);
+  // v0.49.1: when the reason is the source itself (uninstalled, switched off, over the limit, and since v0.54.0
+  // failing) -- not the engine, whose fix is the engine -- the row offers Replace and Find other sources for every
+  // series of that source, with the count. A covered row offers Replace: its follower can be made the main source.
+  const bySource = await mainSourceCounts(affected.filter((r) => r.source_id && !engineWhy(r)).map((r) => r.source_id!))
+    .catch(() => new Map<string, number>());
+  const sourceKeys = (r: typeof rows[number], actions: HealthAction[]) =>
+    (r.source_id && !engineWhy(r) && bySource.get(r.source_id)
+      ? { sourceId: r.source_id, actions, findSeries: bySource.get(r.source_id) }
+      : {});
+  // v0.55.0: dropped by SUWAYOMI_MAX_SOURCES -- an extension's source, switched on, the engine answering, and still not
+  // registered -- is a slot to free, not a source to replace: the source works, and Replace would move every series off
+  // it for a setting. `free_slot` opens Admin → Sources on it (no server action), where an unused source can be
+  // switched off. Reintroduce by offering Replace again: "the engine being off is the reason" in health.int.test.ts
+  // finds replace_source on the over-limit row.
+  const overLimit = (r: typeof rows[number]): boolean =>
+    unrouted(r) && !engineWhy(r) && !mangadexLangOf(r.source_id) && !r.switched_off && r.still_enabled && leftOutByLimit(r.source_id);
+  const keysFor = (r: typeof rows[number], actions: HealthAction[]) =>
+    (overLimit(r) && r.source_id ? { sourceId: r.source_id, actions: ['free_slot'] as HealthAction[] } : sourceKeys(r, actions));
+  // v0.55.1: the source by name, as the rest of Health names it (sourceLabel): the row of a source over the limit read
+  // "its source sw:2522… is over the source limit", and a switched-off one "its source sw:4709… is switched off".
+  // Reintroduce `source: r.source_id`: "a switched-off source is said to be switched off" and "the engine is the
+  // reason" in health.int.test.ts read the id.
+  const named = (r: typeof rows[number]): string => (r.source_id ? sourceLabel(r.source_id, r.engine_name) : '');
+  // v0.81.0: the scout's last look, ending the row of a series it looked for (scoutLines).
+  const scouted = await scoutLines(frozen.map((r) => r.id));
+  const found: HealthItem[] = frozen.map((r) => {
+    const p = { n: r.books_count, source: named(r) };
+    return {
+      seriesId: r.id,
+      title: r.title,
+      key: `series:${r.id}`,
+      ...detailOf([!r.source_id
+        ? say('frozen.noSource', { n: r.books_count })
+        : engineWhy(r)
+          ? say(engine === 'unreachable' ? 'frozen.engineDown' : engine === 'incompatible' ? 'frozen.engineIncompatible' : 'frozen.engineOff', p)
+          : why(r, p), scouted.get(r.id)]),
+      ...keysFor(r, ['replace_source', 'find_sources']),
+    };
+  });
+  const ignored = applyIgnores('frozen-series', found, ctx, !readFailed);
+  const stuck = found.filter((i) => !i.info).length;
+  const items = [...found].sort((a, b) => Number(!!a.info) - Number(!!b.info)).slice(0, o.all ? undefined : 20);
+  for (const r of covered.slice(0, o.all ? undefined : 20)) {
+    const stall = stalled(r);
+    items.push({
+      seriesId: r.id,
+      title: r.title,
+      ...detailOf([stall
+        ? say('frozen.followingDown', { source: named(r), state: stall, names: followed.get(r.id)! })
+        : say('frozen.following', { source: r.source_id ? named(r) : null, names: followed.get(r.id)! })]),
+      info: true,
+      ...keysFor(r, ['replace_source']),
+    });
+  }
+  return withAll({
+    id: 'frozen-series',
+    title: 'Series that can no longer update',
+    status: stuck ? 'warn' : 'ok',
+    ...summaryOf([
+      stuck ? say('frozen.live', { n: stuck }) : say('frozen.none'),
+      covered.length > 0 && say('frozen.covered', { n: covered.length }),
+      ignoredPart(ignored),
+    ]),
+    ...noteOf([
+      frozen.some((r) => engineWhy(r)) && say('frozen.engineNote'),
+      joined('sentence', say('frozen.note')),
+      hiddenPart(frozen.length - 20),
+    ]),
+    items,
+  }, found);
+}
+
+/**
+ * A source as a person knows it: its name, not `sw:2499…` (#115: a raw id reads as "no problems" to someone
+ * looking for Manga Ball). The registered adapter's name, then the name the engine gave it when it was
+ * registered (`suwayomi_sources.name`, for one that is not loaded now), then the id. `sourceId` stays the key
+ * every action uses.
+ */
+export function sourceLabel(id: string, engineName?: string | null): string {
+  return getSource(id)?.name || engineName || id;
+}
+
+const iso = (t: string | number | Date) => new Date(t).toISOString();
+
+/** v0.53.0: the Source health card's groups in its order, and how bad a state is among rows with as many series. */
+const GROUP_ORDER: Record<SourceGroup, number> = { affected: 0, unused: 1, quiet: 2, off: 3 };
+const SEVERITY: Record<SourceState, number> = { blocked: 0, failing: 0, slow: 1, empty: 1, inconclusive: 2, untested: 2, slowed: 2, off: 3 };
+
+/** Source health (#115, v0.53.0's groups). Exported for the sources overview (v0.54.0), which reads its rows. */
+export async function sourceTrouble(ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  // v0.55.3: the sources downloading at a raised pace (lib/pace.ts), listed whether or not anything else is wrong: the
+  // row is where an admin learns why their chapters come one at a time.
+  const slowed = slowedSources();
+  const rows = await q<{
+    source_id: string; status: string; consecutive: number; disabled: boolean; off_in: 'language' | 'extension' | null;
+    blocked_until: string | null; last_error: string | null; empty_streak: number; last_ok_at: string | null;
+    last_fail_at: string | null; last_slow_at: string | null; slow_streak: number;
+    stages: Stages | null; live_at: string | null; live_by: 'test' | 'sweep' | null;
+    live_state: 'pass' | 'fail' | 'inconclusive' | null; live_code: string | null; live_stage: Stage | null;
+    engine_name: string | null;
+    series: number;
+  }>(
+    `SELECT sh.source_id, sh.status, sh.consecutive,
+            -- Two ways a source is off on purpose: the Providers button (source_health.disabled) and a hidden
+            -- language (suwayomi_sources.enabled = false, which also unregisters it, so nothing ever probes
+            -- it again and a stale 'down' row would otherwise keep this check amber for good).
+            (sh.disabled OR ${EXTENSION_OFF('sh.source_id')}) AS disabled,
+            -- v0.53.0: where an extension's source was switched off, for the row's words and the way back: its language
+            -- hidden in every extension, or the source itself switched off in Admin -> Extensions. NULL: neither, so it
+            -- was turned off under Providers. (lib/sourceStanding.ts, v0.54.0: the sources overview says it the same way.)
+            ${EXTENSION_OFF_BY('sh.source_id')} AS off_in,
+            sh.blocked_until, sh.last_error,
+            sh.empty_streak, sh.last_ok_at,
+            -- When the stored error was written, so a success that came AFTER it can be told apart from one
+            -- that came before (reportFail and reportSlow stamp these; nothing ever clears last_error).
+            sh.last_fail_at, sh.last_slow_at, sh.slow_streak,
+            -- #115: what Test, the daily check and ordinary use have seen, per stage (lib/sourceEvidence.ts).
+            sh.stages, sh.live_at, sh.live_by, sh.live_state, sh.live_code, sh.live_stage,
+            -- The engine's name for an extension source that is not registered right now (sourceLabel).
+            (SELECT sn.name FROM suwayomi_sources sn WHERE 'sw:' || sn.source_id = sh.source_id LIMIT 1) AS engine_name,
+            -- ls.source_id, NOT ls.source: the former is the adapter id ('aqua'), the latter is the
+            -- display name as it was at add time ('Aqua Manga (EN)'). This compared a name to an id, so it
+            -- matched nothing and every row of this check has always reported "0 series use it".
+            -- Followers count as well as primaries (series_sources), and a series counts ONCE however many
+            -- ways it reaches this source: since v0.31.0 a series can follow several sources, so counting
+            -- primaries alone called a source nobody-uses while it was the only one carrying ten series --
+            -- and this check now greys a source on exactly that number.
+            (SELECT count(*) FROM lib_series ls
+              WHERE ${visibleToAll('ls')}
+                AND (ls.source_id = sh.source_id
+                     OR EXISTS (SELECT 1 FROM series_sources ss2
+                                 WHERE ss2.series_id = ls.id AND ss2.source_id = sh.source_id)))::int AS series
+       FROM source_health sh
+      WHERE sh.status <> 'ok' OR sh.disabled = true OR sh.empty_streak >= 3 OR sh.slow_streak >= 3
+         OR sh.live_state IN ('fail', 'inconclusive') OR sh.stages::text LIKE '%failAt%'
+         OR EXISTS (SELECT 1 FROM suwayomi_sources ss WHERE 'sw:' || ss.source_id = sh.source_id AND NOT ss.enabled)
+         OR sh.source_id = ANY($1::text[])
+      -- Any order: the card's is set below, once each row's group is known. This was ORDER BY disabled DESC, which
+      -- put thirty switched-off sources at the top of the card and the ones the library depends on at its very end.
+      ORDER BY sh.source_id`,
+    [slowed],
+  );
+  const now = Date.now();
+  // v0.49.1: how many series each source is the MAIN source of -- what Find other sources on its row would search for.
+  const mainCounts = await mainSourceCounts(rows.map((r) => r.source_id)).catch(() => new Map<string, number>());
+  // A source the operator switched off themselves is not a fault, and reading it as one is how a health
+  // page trains people to ignore it. Contributor PR #39 spotted this while adding language hiding: turning
+  // off thirty Russian sources made the page amber with thirty "problems" that were the operator's own
+  // decision. They stay listed, greyed, so the count is still visible; the verdict comes from the rest.
+  //
+  // The second quiet case, and the bigger one on the live server: a source NOTHING uses that only has TRAFFIC
+  // trouble. Ten of twelve not-ok rows there were sources that only ever appeared in Discover, failed once, and
+  // held this check amber ever since. Still listed, and still a finding the moment it is in a cooldown or
+  // somebody adds a series to it. ⚠️ Since v0.49.0 (#115) that greying no longer covers a CONFIRMED failure --
+  // a failed Test or daily check, or three failures in a row at one stage: those are findings whether or not a
+  // series uses the source, because "source health must reflect failing sources" and the one-off Discover blips
+  // that made the page cry wolf are exactly what the streak rule filters out.
+  const unused = (r: typeof rows[number]) =>
+    !r.disabled && r.series === 0 && !(r.blocked_until && new Date(r.blocked_until).getTime() > now);
+  // A slow streak counts while somebody is still running into it (lib/sourceHealth.ts slowStreakNow, v0.55.10): one
+  // evening's slow searches held the card amber for six days of fast answers.
+  const traffic = (r: typeof rows[number]) => r.status !== 'ok' || r.empty_streak >= 3 || slowStreakNow(r, now) >= 3;
+  const WEEK = 7 * DAY_MS;
+  const items: Array<HealthItem & { members?: string[] }> = [];
+  for (const row of rows) {
+    // Evidence counts only for a source that is loaded: an uninstalled extension's series are the frozen-series
+    // check's business, and its last test is about something that no longer exists here.
+    const src = getSource(row.source_id);
+    const loaded = !!src;
+    const open = loaded ? openFailures(row.stages, now).filter((f) => f.confirmed) : [];
+    // v0.55.1: a site asking us to slow down (HTTP 429) is a cooldown, never a failure (lib/sourceEvidence.ts
+    // isRateLimit). Its row is the cooldown's, `rate_limited`, as it is while the cooldown runs -- also once the cooldown
+    // ran out, or a passing Test cleared it, with the evidence still open (a Test fetches no image). Read as a failure,
+    // Mangakakalot's image server answering 429 made it "failing" here, and a Replace target for Fix everything.
+    // Reintroduce by counting it among `failing`: "images failing with 429 are a cooldown" in health.int.test.ts reads
+    // failing, with Replace offered.
+    const limited = open.some((f) => !f.stale && isRateLimit(f));
+    const r = limited && row.status === 'ok' ? { ...row, status: 'rate_limited' } : row;
+    const failing = open.filter((f) => !f.stale && !isRateLimit(f));
+    const inconclusive = loaded && r.live_state === 'inconclusive' && !!r.live_at && now - new Date(r.live_at).getTime() < WEEK;
+    const stale = open.length > 0 && !failing.length && !limited;
+    // v0.55.3: downloading at a raised pace, whatever else is true: said on every row, and the row's one state when
+    // nothing else is. Reintroduce by dropping it: "a source downloading at a raised pace says so" in
+    // health.int.test.ts finds no row.
+    const paced = !r.disabled && slowed.includes(r.source_id);
+    if (!r.disabled && !failing.length && !traffic(r) && !inconclusive && !stale && !paced) continue; // nothing to say
+
+    const until = r.blocked_until ? new Date(r.blocked_until).getTime() : 0;
+    // A block whose deadline has passed is not actually holding anything back; say so rather than
+    // leaving the operator thinking the source is still down.
+    const state = r.disabled
+      ? say('sources.turnedOff')
+      : until && until < now
+        ? say('sources.expired', { status: r.status })
+        : until
+          ? say('sources.until', { status: r.status, until: iso(until) })
+          : say('sources.status', { status: r.status });
+    // The plain-language cause and its fix, rather than the raw string. This page is admin-only, so it gets the
+    // operator half of the diagnosis, which is the half that names what to actually go and do.
+    //
+    // `last_error` outlives the failure it describes: `reportOk` never clears it, so a source listed here for an
+    // empty streak, with a success more recent than its last failure, would otherwise be diagnosed from the words
+    // of its last bad afternoon and the operator sent to fix a Cloudflare problem that ended days ago.
+    // currentError() is that rule, shared with the Test button and the daily check.
+    const lead = failing[0];
+    const d = diagnose(
+      {
+        status: r.status as any, lastError: currentError(r), consecutive: r.consecutive,
+        lastOkAt: r.last_ok_at, emptyStreak: r.empty_streak ?? 0, blockedUntil: r.blocked_until, disabled: r.disabled,
+        slowStreak: slowStreakNow(r, now), budgetMs: listBudgetFor(src),
+      },
+      // The confirmed failure is live evidence of the most specific kind: its stage and its own error.
+      lead && !r.disabled ? { adapterOk: false, failure: { stage: lead.stage, kind: lead.kind, error: lead.error } } : undefined,
+    );
+    const uses = say('sources.uses', { n: r.series });
+    const tested = r.live_at ? say('sources.tested', { at: iso(r.live_at), by: r.live_by }) : null;
+    // v0.55.3: the pace, as a sentence of its own after the rest -- before a diagnosis's fix, which ends the line.
+    const paceLine = paced ? [joined('period', say('sources.paced'))] : [];
+    let detail: Part[];
+    let info = false;
+    let members: string[] = [];
+    if (r.disabled) {
+      info = true;
+      detail = [state, uses];
+    } else if (failing.length) {
+      // Leads with the stage: "Search failing since …" is what an admin looking for Manga Ball needs first. The
+      // reason is a sentence of its own, so what follows it starts the next one: appended as "; last tested",
+      // it read "…needs a check from an admin.; last tested …".
+      const rest = [tested, uses].filter((p): p is Part => !!p);
+      detail = [
+        say('sources.failing', { stage: lead.stage, since: iso(lead.since), also: failing.slice(1).map((f) => f.stage) }),
+        ...(d.reason ? [joined('dash', say('sources.reason', { diagnosis: d.code }))] : []),
+        joined(d.reason ? 'sentence' : 'dashCap', rest[0]),
+        ...rest.slice(1),
+        ...paceLine,
+      ];
+      // What an Ignore covers: the failing stages. A NEW stage failing is a new finding (healthIgnore covered()).
+      members = failing.map((f) => f.stage);
+    } else if (traffic(r)) {
+      info = unused(r);
+      detail = [
+        state, uses, ...paceLine,
+        ...(d.code === 'ok' ? [] : [joined('dash', d.fix ? own(d.fixSaid, d.fix) : say('sources.reason', { diagnosis: d.code }))]),
+      ];
+    } else if (inconclusive) {
+      info = true;
+      detail = [say('sources.inconclusive', { stage: r.live_stage ?? 'search' }), tested, uses, ...paceLine].filter((p): p is Part => !!p);
+    } else if (stale) {
+      info = true;
+      const days = Math.floor((now - new Date(open[0].at).getTime()) / DAY_MS);
+      detail = [say('sources.stale', { stage: open[0].stage, at: iso(open[0].at), days }), uses, ...paceLine];
+    } else {
+      // Only the pace: nothing to fix, and nothing to press -- it comes back up by itself as chapters land.
+      info = true;
+      detail = [say('sources.paced'), uses];
+    }
+    // v0.53.0: the row's one state and what its words need, as data (HealthItem.state). The same branches as the
+    // detail above, in the same order, so the two can never tell one row two ways.
+    const sourceState: SourceState = r.disabled ? 'off'
+      : failing.length ? 'failing'
+      : traffic(r) ? (r.status !== 'ok' ? 'blocked' : r.empty_streak >= 3 ? 'empty' : 'slow')
+      : inconclusive ? 'inconclusive'
+      : stale ? 'untested'
+      : 'slowed';
+    const stage = sourceState === 'failing' ? lead.stage
+      : sourceState === 'inconclusive' ? (r.live_stage ?? 'search')
+      : sourceState === 'untested' ? open[0].stage
+      : null;
+    const findHere = (r.disabled || !info) && (mainCounts.get(r.source_id) ?? 0) > 0;
+    // v0.54.0: off or failing, and some series' main source: Replace moves those series to a source that works -- the
+    // usable follower most already have, a search for the rest. Not for a cooldown (minutes, and it clears itself), nor
+    // a failure only at search, which stops no update (lib/sourceStanding.ts). Reintroduce by dropping it: "a source
+    // that is off or failing and is some series' main offers Replace" in health.int.test.ts finds no chip.
+    const standing = standingOf(r.source_id, r, now);
+    const replaceHere = (standing === 'off' || standing === 'failing') && (mainCounts.get(r.source_id) ?? 0) > 0;
+    items.push({
+      title: sourceLabel(r.source_id, r.engine_name),
+      sourceId: r.source_id,
+      ...detailOf(detail),
+      // Test always: it is the one action that answers "is this still true?", and it records, never escalates.
+      // Clear block whenever there is a block to clear, expired or not -- clearing also wipes the escalation
+      // memory (consecutive), which is what makes the next cooldown fifteen minutes instead of seventy-five.
+      // Turn off only for a source that is not already off, by either of the two routes.
+      actions: [
+        'test',
+        ...(r.blocked_until ? ['unblock' as const] : []),
+        ...(r.disabled ? [] : ['disable' as const]),
+        // v0.49.1: its series need another source while it fails -- or while it is off, which is the same for them.
+        // Not on a quiet row (untested, inconclusive, used by nothing): nothing there is failing its series.
+        ...(replaceHere ? ['replace_source' as const] : []),
+        ...(findHere ? ['find_sources' as const] : []),
+      ] as HealthAction[],
+      ...(findHere || replaceHere ? { findSeries: mainCounts.get(r.source_id) } : {}),
+      // Only a real finding can be ignored: a source switched off, used by nothing, or merely untested is quiet.
+      ...(info ? { info: true } : { key: `source:${r.source_id}`, members }),
+      evidence: stageLines(r.stages),
+      ...(r.live_at ? { tested: { at: new Date(r.live_at).toISOString(), by: r.live_by, state: r.live_state, stage: r.live_stage } } : {}),
+      diagnosis: { code: d.code, reason: d.reason, fix: d.fix, ...(d.fixSaid ? { fixSaid: d.fixSaid } : {}) },
+      series: r.series,
+      state: sourceState,
+      ...(stage ? { stage } : {}),
+      ...(sourceState === 'blocked' ? { cooldown: { status: r.status, until: r.blocked_until ? iso(r.blocked_until) : null } } : {}),
+      ...(paced ? { slowed: true } : {}),
+      // Switched off in Extensions as well as under Providers: Extensions is where it comes back on.
+      ...(r.disabled ? { offBy: r.off_in ?? 'admin' as const } : {}),
+      // An extension's own logo, which /img/sources/icon/:id serves while the source is loaded. Not a site's favicon:
+      // that is a request to the site for every row on every visit.
+      ...(src?.iconUrl ? { icon: true } : {}),
+    });
+  }
+  const ignored = applyIgnores('sources', items, ctx);
+  // v0.53.0: the card's groups, AFTER the ignores -- an ignored finding is `info` from here on, and quiet -- and the
+  // card's order: what the library depends on first, the most series first and the worst first among equals; then
+  // what fails with nothing on it; then the quiet rows and the switched-off ones, by name. Only the first two groups
+  // are findings, so the summary below counts them and the status says the same thing.
+  for (const it of items) {
+    it.group = it.state === 'off' ? 'off' : it.info ? 'quiet' : (it.series ?? 0) > 0 ? 'affected' : 'unused';
+  }
+  items.sort((a, b) => GROUP_ORDER[a.group!] - GROUP_ORDER[b.group!]
+    || (a.group === 'affected' ? (b.series ?? 0) - (a.series ?? 0) || SEVERITY[a.state!] - SEVERITY[b.state!] : 0)
+    || a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })
+    || (a.sourceId ?? '').localeCompare(b.sourceId ?? ''));
+  const affected = items.filter((i) => i.group === 'affected').length;
+  const failingUnused = items.filter((i) => i.group === 'unused').length;
+  const live = items.filter((i) => !i.info).length;
+  return {
+    id: 'sources',
+    title: 'Source health',
+    status: live ? 'warn' : 'ok',
+    ...summaryOf([
+      affected > 0 && say('sources.affected', { n: affected }),
+      failingUnused > 0 && joined('dot', say('sources.failingUnused', { n: failingUnused })),
+      // Never "all working" over a row listed for reference: a source nobody could test to the end, a cooldown on one
+      // nothing uses, an ignore.
+      !live && (items.some((i) => i.group === 'quiet') ? say('sources.unused') : say('sources.working')),
+      ignored > 0 && joined('dot', say('ignored', { n: ignored })),
+    ]),
+    ...noteOf([say('sources.note')]),
+    testMs: env.SOURCE_TEST_TIMEOUT_MS + 8000,
+    items,
+  };
+}
+
+/**
+ * The same manga added twice, spotted by two local series resolving to one AniList entry.
+ *
+ * Counted in WORKS, not series (v0.52.0, #72): the language editions of one work share their entry on purpose (the
+ * link copies it), so an English and a Spanish edition are one work and no finding. A work and a series outside it
+ * on the same entry are, and each side is then named by one row: the edition in the other side's language when there
+ * is one -- a second English copy beside an English and Spanish work is a duplicate of the English edition, to merge
+ * -- else the oldest. Two sides whose languages differ are the same work in two languages, and the chip is Link as
+ * editions instead of Merge. Reintroduce by grouping by series again: "two editions of one work are no duplicate" in
+ * editions.int.test.ts finds the pair.
+ *
+ * Only links that are known to be the series' (v0.55.7, #168): a person's, or an automatic one held to the title check
+ * (series_trackers.checked_at, lib/onlineMatch.ts). Before that check, a title search gave unrelated series one wrong
+ * entry, this grouped them, and Fix everything could merge them; a link stored before it waits for the background
+ * recheck (lib/matchCheck.ts) before it groups anything. Reintroduce by reading every link: "an unchecked link groups
+ * nothing" in onlineMatch.int.test.ts finds the pair.
+ */
+export async function duplicateSeries(ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  const found = await q<{ external_id: string; members: Array<{ id: string; title: string; work: string; lang: string | null; source_id: string | null }> }>(
+    `SELECT t.external_id,
+            json_agg(json_build_object('id', ls.id, 'title', ls.title, 'work', COALESCE(ls.work_id::text, ls.id),
+                                       'lang', ls.lang, 'source_id', ls.source_id) ORDER BY ls.title, ls.created_at, ls.id) AS members
+       FROM series_trackers t JOIN lib_series ls ON ls.id = t.series_id AND ${visibleToAll('ls')}
+      WHERE t.provider = 'anilist' AND (t.linked_by IS NOT NULL OR t.checked_at IS NOT NULL)
+      GROUP BY t.external_id HAVING count(DISTINCT COALESCE(ls.work_id::text, ls.id)) > 1
+      ORDER BY count(DISTINCT COALESCE(ls.work_id::text, ls.id)) DESC`,
+  );
+  const rows = found.map((f) => {
+    const members = f.members.map((m) => ({ ...m, lang: effectiveLang(m.lang, m.source_id) }));
+    const works = [...new Set(members.map((m) => m.work))].map((w) => members.filter((m) => m.work === w));
+    // Two sides: name each by the edition in a language the other side has, else by its first row.
+    let pick = works.map((w) => w[0]);
+    let languages = false;
+    if (works.length === 2) {
+      const [a, b] = works;
+      const match = a.flatMap((x) => b.filter((y) => sameLanguage(x.lang, y.lang)).map((y) => [x, y] as const))[0];
+      if (match) pick = [...match];
+      else languages = true;
+    }
+    return { external_id: f.external_id, ids: pick.map((m) => m.id), titles: pick.map((m) => m.title).join(' + '), langs: pick.map((m) => m.lang), languages };
+  });
+  // Which copy should survive a merge. A merge is ONE-WAY and it moves everything (progress, bookmarks, trackers,
+  // chapters) into the survivor. Since v0.57.0 the suggestion is the owner's own rule ("keep the series with the
+  // healthier source and more chapters", lib/libraryAdmin.ts keepOrder): one in a work, then the copy whose main source
+  // can still update it -- the absorbed copy's chapters come across anyway, and the survivor's source is the one that
+  // keeps the series going -- then most live chapters, the one people have read, and the older row as the tie-break.
+  // Each copy's facts go with the row, so the dialog can say why.
+  // ⚠️ A suggestion only. The merge itself is never automatic -- an admin confirms it, naming both titles.
+  // Reintroduce chapters-first: "Health suggests keeping the copy whose source works" in extraCopies.int.test.ts finds
+  // the bigger copy on a failing source suggested.
+  const ids = [...new Set(rows.flatMap((r) => r.ids))];
+  const rank = new Map<string, KeepFacts & { sourceId: string | null }>();
+  const standing = new Map<string, Standing>();
+  if (ids.length) {
+    const stats = await q<{ id: string; books: number; readers: number; created_at: string; source_id: string | null; work_id: string | null }>(
+      `SELECT ls.id, ls.created_at, ls.source_id, ls.work_id::text AS work_id,
+              (SELECT count(*) FROM lib_books b WHERE b.series_id = ls.id AND b.pruned_at IS NULL)::int AS books,
+              (SELECT count(*) FROM read_progress rp WHERE rp.series_id = ls.id)::int AS readers
+         FROM lib_series ls WHERE ls.id = ANY($1::text[])`,
+      [ids],
+    ).catch(() => []);
+    const sources = [...new Set(stats.map((s) => s.source_id).filter((x): x is string => !!x))];
+    const standingRowsOf = await standingRows(sources).catch(() => new Map<string, StandingRow>());
+    for (const id of sources) standing.set(id, standingOf(id, standingRowsOf.get(id)));
+    for (const s of stats) {
+      const st = s.source_id ? standing.get(s.source_id) : undefined;
+      rank.set(s.id, {
+        inWork: !!s.work_id, works: !!st && carries(st), chapters: Number(s.books), readers: Number(s.readers),
+        created: new Date(s.created_at).getTime(), sourceId: s.source_id,
+      });
+    }
+  }
+  const none: KeepFacts = { inWork: false, works: false, chapters: 0, readers: 0, created: 0 };
+  const keepOf = (group: string[]): string => [...group].sort((a, b) => keepOrder(rank.get(a) ?? none, rank.get(b) ?? none))[0];
+  const copyOf = (id: string) => {
+    const r = rank.get(id);
+    const sid = r?.sourceId ?? null;
+    return {
+      id, chapters: r?.chapters ?? 0,
+      source: sid ? { id: sid, name: getSource(sid)?.name ?? sid, standing: standing.get(sid) ?? 'not_loaded' as Standing } : null,
+    };
+  };
+  const items: Array<HealthItem & { members?: string[] }> = rows.map((r) => {
+      const keep = keepOf(r.ids);
+      return {
+        seriesId: r.ids[0],
+        seriesIds: r.ids,
+        titles: r.titles.split(' + '),
+        title: r.titles,
+        keep,
+        copies: r.ids.map(copyOf),
+        langs: r.langs,
+        // Ignored while the copies are the same ones: a third copy of the entry is a new finding.
+        key: `anilist:${r.external_id}`,
+        members: [...r.ids].sort(),
+        // Only a pair gets the chip. Three copies of one entry is two merges in an order somebody has to
+        // choose, and a button that quietly picks one is how a library loses a series it cannot get back.
+        // A pair in two languages is linked, never merged: a merge would put two languages' chapters in one list.
+        ...(r.ids.length === 2 ? { actions: [r.languages ? 'link_editions' as const : 'merge' as const] } : {}),
+        ...detailOf(r.languages
+          ? [say('dupes.languages', { a: r.langs[0], b: r.langs[1] })]
+          : [say('dupes.same'), r.ids.length > 2 && say('dupes.copies', { n: r.ids.length })]),
+      };
+    });
+  const ignored = applyIgnores('duplicates', items, ctx);
+  const live = items.filter((i) => !i.info).length;
+  return {
+    id: 'duplicates',
+    title: 'Duplicate series',
+    status: verdict(items),
+    ...summaryOf([live ? say('dupes.live', { n: live }) : say('dupes.none'), ignoredPart(ignored)]),
+    ...noteOf([say('dupes.note')]),
+    items,
+  };
+}
+
+// median, impossibleLimit and plausibleNumbers live beside the held numbers they judge (lib/libraryNumbers.ts, #240):
+// a number hidden by hand closes a hole only between plausible numbers. Exported from here too, as they always were.
+export { impossibleLimit, plausibleNumbers } from './libraryNumbers';
+
+/** Chapter numbers far beyond the rest of the series: the sidebar-widget scraping bug's signature. */
+async function outlierChapters(held: HeldSeries[], ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  const rows = held
+    .map((s) => {
+      const limit = impossibleLimit(s.numbers);
+      if (limit === null) return null;
+      const nums = s.numbers.filter((n) => n > 0).sort((a, b) => a - b);
+      return { s, med: median(nums), hi: nums[nums.length - 1], limit };
+    })
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .sort((a, b) => b.hi - a.hi);
+
+  const items: Array<HealthItem & { members?: string[] }> = [];
+  let readFailed = false;
+  for (const r of rows) {
+    // The rows behind the numbers, so the Delete chip can name them. Same override rule as haveNumbers
+    // (the same COALESCE, spelled out only because HAVE_SQL answers with numbers and a delete needs ids),
+    // and one deliberate difference: `pruned_at IS NULL`, not `heldBooks`.
+    //
+    // ⚠️ The two checks mean different things by a tombstone, and this is the one place it shows. For a GAP
+    // a deliberate deletion is HELD -- the bytes went on purpose and the sweep must not fetch them back. For
+    // an impossible chapter number, deleting the chapter IS the fix: keeping the row in the finding would
+    // mean the Delete chip could never clear the thing it was pressed on, which is precisely the complaint
+    // this release started from ("a renumber or a delete does not clear the finding"). A series whose only
+    // out-of-range chapters are already deleted therefore drops out of the check entirely.
+    const books = await q<{ id: string; number: number }>(
+      `SELECT b.id, COALESCE(o.number, b.number)::float8 AS number
+         FROM lib_books b LEFT JOIN book_overrides o ON o.book_id = b.id
+        WHERE b.series_id = $1 AND b.pruned_at IS NULL AND COALESCE(o.number, b.number) > $2
+          -- Not a chapter at a number an admin hid (#240): haveNumbers leaves it out, and so does the Delete chip.
+          AND NOT ${atHiddenNumber('b')}
+        ORDER BY 2 DESC`,
+      [r.s.id, r.limit],
+    ).catch(() => { readFailed = true; return [] as Array<{ id: string; number: number }>; });
+    if (!books.length) continue;
+    items.push({
+      seriesId: r.s.id,
+      title: r.s.title,
+      ...detailOf([say('outliers.detail', { n: books.length, top: Number(books[0].number), median: Math.round(r.med) })]),
+      bookIds: books.slice(0, MAX_BOOK_IDS).map((b) => b.id),
+      numbers: books.slice(0, MAX_BOOK_IDS).map((b) => Number(b.number)),
+      actions: ['delete'],
+      // Ignored while the chapters are these ones -- a chapter numbered 9001 that really is 9001 (a
+      // hundred-volume series' specials), say. Another out-of-range chapter is a new finding.
+      key: `series:${r.s.id}`,
+      members: books.map((b) => b.id).sort(),
+    });
+  }
+  const ignored = applyIgnores('outliers', items, ctx, !readFailed);
+  const live = items.filter((i) => !i.info).length;
+  items.sort((a, b) => Number(!!a.info) - Number(!!b.info));
+  return withAll({
+    id: 'outliers',
+    title: 'Impossible chapter numbers',
+    status: verdict(items, 'problem'),
+    ...summaryOf([live ? say('outliers.live', { n: live }) : say('outliers.none'), ignoredPart(ignored)]),
+    ...noteOf([say('outliers.note'), hiddenPart(items.length - MAX_ITEMS)]),
+    items: items.slice(0, MAX_ITEMS),
+  }, items);
+}
+
+/**
+ * The same chapter saved twice (v0.50.0): files at one whole chapter number from two sources, in two different
+ * splits of it, the later group arriving after the earlier one -- what updates downloaded before the sweep compared
+ * parts (lib/partAlias.ts): mangaread's 335.1 and 335.6 beside mangapill's 335 and 335.5, natomanga's 78.6 ... 78.9
+ * beside a 78 held whole. Each row names the later files and offers Delete chapters, the existing route: it keeps
+ * their rows as tombstones, so reading history stays and the sweep, which holds a tombstone, never fetches them
+ * back. NOTHING here deletes on its own (lib/libraryAdmin.ts): which copy goes is the admin's call. Its rows are
+ * findings, so the check warns while it has any and is ok once they are gone: with every row `info` it read "All
+ * good" beside "1 series has chapters saved twice" (the v0.50.0 browser check). Reintroduce by marking the rows
+ * `info`: "a card with something to look at reads All good" in health.int.test.ts fails.
+ *
+ * Both sources known -- a file scanned in from elsewhere has no origin to tell apart -- and the later group's
+ * first file after the earlier group's last. And it is another split only when the earlier group's source does
+ * not list its numbers: a part the main source failed and a follower supplied under the same numbering
+ * (lib/chapterFallback.ts) is a part of that source's own split, and must not be offered for deletion.
+ * Reintroduce by dropping the listing test: "the chip names the later files, and only them" in health.int.test.ts
+ * finds the fallback's 336.5 among them.
+ */
+/** One chapter file of a saved-twice group: its row, its number (the override's when there is one) and where it came from. */
+export interface TwiceBook { series_id: string; title: string; id: string; number: number; source_id: string; mtime: string | number }
+
+/**
+ * Every series with a chapter saved twice, and per whole number the group that arrived first (`earlier`, which stays)
+ * and the later group in another split (`later`, which the row offers for deletion): savedTwice's finding, whole --
+ * Health lists it, and Fix everything's files phase (v0.55.0, lib/autofix.ts) deletes the later copy only where the
+ * earlier one is complete.
+ */
+export async function savedTwiceGroups(): Promise<Array<{ seriesId: string; title: string; groups: Array<{ whole: number; earlier: TwiceBook[]; later: TwiceBook[] }> }>> {
+  const rows = await q<TwiceBook>(
+    `WITH mixed AS (
+       SELECT series_id FROM lib_books WHERE pruned_at IS NULL AND source_id IS NOT NULL
+        GROUP BY series_id HAVING count(DISTINCT source_id) > 1)
+     SELECT b.series_id, s.title, b.id, COALESCE(o.number, b.number)::float8 AS number, b.source_id, b.mtime
+       FROM lib_books b JOIN mixed m ON m.series_id = b.series_id JOIN lib_series s ON s.id = b.series_id
+       LEFT JOIN book_overrides o ON o.book_id = b.id
+      WHERE b.pruned_at IS NULL AND b.source_id IS NOT NULL AND ${visibleToAll('s')}
+        AND s.numbering IS DISTINCT FROM 'posting_order' AND s.numbering_pending IS NULL AND s.renumber_plan IS NULL
+        -- A chapter at a number an admin hid (#240) is no chapter here, and Fix everything deletes from this list.
+        AND NOT ${atHiddenNumber('b')}
+      ORDER BY s.title, b.series_id, 4`,
+  );
+  type Book = (typeof rows)[number];
+  const bySeries = new Map<string, Book[]>();
+  for (const r of rows) {
+    const list = bySeries.get(r.series_id);
+    if (list) list.push(r);
+    else bySeries.set(r.series_id, [r]);
+  }
+  const out: Array<{ seriesId: string; title: string; groups: Array<{ whole: number; earlier: TwiceBook[]; later: TwiceBook[] }> }> = [];
+  for (const [seriesId, books] of bySeries) {
+    // Per whole number, per source: which group came first, and which came after it.
+    const wholes = new Map<number, Map<string, Book[]>>();
+    for (const b of books) {
+      const w = Math.floor(numKey(Number(b.number)));
+      let groups = wholes.get(w);
+      if (!groups) wholes.set(w, (groups = new Map()));
+      const g = groups.get(b.source_id);
+      if (g) g.push(b);
+      else groups.set(b.source_id, [b]);
+    }
+    const later: Array<{ whole: number; from: string; first: Book[]; source: string; books: Book[] }> = [];
+    for (const [whole, groups] of wholes) {
+      if (groups.size < 2) continue;
+      const spans = [...groups].map(([source, list]) => {
+        const times = list.map((b) => Number(b.mtime));
+        return { source, list, first: Math.min(...times), last: Math.max(...times) };
+      }).sort((a, b) => a.first - b.first);
+      for (const g of spans.slice(1)) {
+        if (g.first > spans[0].last) later.push({ whole, from: spans[0].source, first: spans[0].list, source: g.source, books: g.list });
+      }
+    }
+    if (!later.length) continue;
+    const listing = await q<{ number: number; source_id: string; copies: ListingCopy[] | null }>(
+      'SELECT number::float8 AS number, source_id, copies FROM series_listing WHERE series_id = $1', [seriesId]).catch(() => []);
+    const listers = new Map<number, Set<string>>();
+    for (const l of listing) {
+      const who = new Set([l.source_id, ...(l.copies ?? []).map((c) => c.source)]);
+      listers.set(numKey(Number(l.number)), who);
+    }
+    const kept = later.filter((g) => !g.books.some((b) => listers.get(numKey(Number(b.number)))?.has(g.from)));
+    if (!kept.length) continue;
+    out.push({ seriesId, title: books[0].title, groups: kept.map((g) => ({ whole: g.whole, earlier: g.first, later: g.books })) });
+  }
+  return out;
+}
+
+async function savedTwice(ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  const items: HealthItem[] = [];
+  for (const { seriesId, title, groups } of await savedTwiceGroups()) {
+    const twice = groups
+      .flatMap((g) => g.later.map((b) => ({ ...b, n: numKey(Number(b.number)) })))
+      .sort((a, b) => a.n - b.n);
+    if (!twice.length) continue;
+    const sources = [...new Set(twice.map((b) => b.source_id))].map((id) => getSource(id)?.name ?? id);
+    items.push({
+      seriesId,
+      title,
+      ...detailOf([say('twice.detail', {
+        n: twice.length, numbers: twice.slice(0, 5).map((b) => b.n), more: Math.max(0, twice.length - 5), source: sources.join(', '),
+      })]),
+      bookIds: twice.slice(0, MAX_BOOK_IDS).map((b) => b.id),
+      numbers: twice.slice(0, MAX_BOOK_IDS).map((b) => b.n),
+      actions: ['delete'],
+    });
+  }
+  const split = items.length;
+  // Two files of one chapter in one series (lib/heldTwice.ts), one row per series: Keep one of each, which an admin
+  // presses. Ignorable while the copies that would go are these ones, as the split rows above are not: a series may hold
+  // two versions somebody wants to keep. Reintroduce by leaving them out: "Health lists a chapter held twice, and never a
+  // part, another chapter or a posting-order series" in heldTwice.int.test.ts finds no row.
+  const held: Array<HealthItem & { members?: string[] }> = [];
+  let heldFailed = false;
+  for (const t of await heldTwiceSeries().catch(() => { heldFailed = true; return []; })) {
+    const n = t.pairs.length;
+    held.push({
+      seriesId: t.seriesId,
+      title: t.title,
+      ...detailOf([say('twice.held', { n, numbers: t.pairs.slice(0, 5).map((p) => numKey(p.number)), more: Math.max(0, n - 5) })]),
+      bookIds: t.pairs.slice(0, MAX_BOOK_IDS).map((p) => p.other.id),
+      numbers: t.pairs.slice(0, MAX_BOOK_IDS).map((p) => numKey(p.number)),
+      pairs: n,
+      actions: ['keep_one'],
+      key: `series:${t.seriesId}`,
+      members: t.pairs.map((p) => p.other.id).sort(),
+    });
+  }
+  const ignored = applyIgnores('saved-twice', held, ctx, !heldFailed);
+  const heldLive = held.filter((i) => !i.info).length;
+  items.push(...held);
+  items.sort((a, b) => Number(!!a.info) - Number(!!b.info));
+  return withAll({
+    id: 'saved-twice',
+    title: 'The same chapter saved twice',
+    status: verdict(items),
+    ...summaryOf([
+      split ? say('twice.live', { n: split }) : null,
+      heldLive ? say('twice.heldLive', { n: heldLive }) : null,
+      split || heldLive ? null : say('twice.none'),
+      ignoredPart(ignored),
+    ]),
+    ...noteOf([say('twice.note'), say('twice.heldNote'), hiddenPart(items.length - MAX_ITEMS)]),
+    items: items.slice(0, MAX_ITEMS),
+  }, items);
+}
+
+/**
+ * The Cloudflare solver, as its own line.
+ *
+ * When it dies, every source behind it fails and each records the failure against ITSELF, so the operator
+ * sees four broken websites and nothing pointing at the one container they all share. On this install it
+ * ran for 62 days with Docker's default 64 MB of shared memory, which is far too little for Chrome: it kept
+ * crashing mid-challenge, and the app dutifully reported that the sites were blocking us.
+ */
+/**
+ * Sources whose own recorded failure blames the solver: the correlation that turns "four sites are broken"
+ * into "one container is broken".
+ *
+ * Exported because the nightly repair's solver step asks the same question before it clears anything --
+ * resetting the solver's remembered sessions is only worth doing when something is actually failing inside
+ * it. Two copies of this query is how the gap check and the fill dialog once ended up disagreeing about
+ * what a gap was, so there is one.
+ */
+export async function solverBlaming(): Promise<string[]> {
+  const rows = await q<{ source_id: string }>(
+    `SELECT source_id FROM source_health
+      WHERE disabled = false AND last_error ILIKE '%flaresolverr%'
+        AND (status <> 'ok' OR blocked_until > now())`,
+  ).catch(() => []);
+  return rows.map((r) => r.source_id);
+}
+
+/** Lives in lib/said.ts now, with the sentence it is part of; re-exported for the callers that import it here. */
+export { solverVersionLabel } from './said';
+
+/**
+ * A solver's newest release, bare ('3.5.2'), when its kind publishes the ones it is compared with -- FlareSolverr's own,
+ * trawl's own (v0.55.3) -- else null.
+ *
+ * ⚠️ Advisory only, and it must stay that way: `latestSolverVersion` answers null when GitHub is
+ * unreachable, rate-limited or unrecognisable, and `isBehind` answers false whenever either side cannot be
+ * parsed. Being out of date is worth SAYING; it is never worth turning a working solver into a warning,
+ * and a health page must not be able to fail because github.com is having an afternoon.
+ * The release's tag ('v3.5.2': githubRelease.ts reads tag_name), bare. The summary and the row's title put their
+ * own "v" before it, and read "vv3.5.2". Reintroduce the tag as it is: "the solver's newer release is named with
+ * one v" in health.int.test.ts fails.
+ * Compared only with the solver's own releases: another solver's version (Byparr, #144) is not FlareSolverr's, and would
+ * read as years behind. Reintroduce the comparison for every kind: "…never behind FlareSolverr's releases" fails. trawl
+ * (v0.55.3) is held against its own: against FlareSolverr's, "trawl answering at its root is trawl" fails.
+ */
+async function latestOf(p: SolverPing): Promise<string | null> {
+  return p.kind === 'flaresolverr' || p.kind === 'trawl'
+    ? (await latestSolverVersion(Date.now(), p.kind))?.replace(/^v/i, '') ?? null
+    : null;
+}
+
+/**
+ * One solver's row when there are two (v0.55.3, FLARESOLVERR_FALLBACK_URL): titled by what it is, the main or the
+ * backup, with its state and its address. Answering, it is listed for reference (`info`), with its kind, its version
+ * and a newer release when there is one; not answering, it is a finding. The desktop app never has a backup, and its
+ * helper's address carries its token: no address is printed there.
+ */
+async function solverRow(p: SolverAt, role: 'main' | 'backup'): Promise<HealthItem> {
+  const head = say(role === 'main' ? 'solver.main' : 'solver.backup');
+  const where = isDesktop() ? null : joined('dot', say('text', { text: p.url }));
+  if (!p.ok) return { title: head.text, titleSaid: saidOf(head), ...detailOf([say('solver.notAnswering', { error: p.error || null }), where]) };
+  const latest = await latestOf(p);
+  return {
+    title: head.text,
+    titleSaid: saidOf(head),
+    ...detailOf([say('solver.ready', { version: p.version ?? null, latest: isBehind(p.version, latest) ? latest : null, kind: p.kind }), where]),
+    info: true,
+  };
+}
+
+export async function solverHealth(): Promise<HealthCheck> {
+  // The ping the extension engine row reads too (engineHealth.ts): the two rows cannot disagree about the solver.
+  const ping = await solverPingShared();
+  const blaming = await solverBlaming();
+  // v0.55.3: with a backup the card lists both solvers, the main first, and says which one is not answering: the main
+  // (amber, "the backup is solving"), the backup (amber, a backup that would not answer when needed), or both (the
+  // solver-down card it always was). Without one it is the card it always was. Reintroduce the card without the rows:
+  // "with a backup, the card lists both solvers" in health.int.test.ts finds none.
+  const rows = ping.backup ? await Promise.all([solverRow(ping.main, 'main'), solverRow(ping.backup, 'backup')]) : [];
+  const backupQuiet = ping.backup && !ping.backup.ok ? say('solver.backupQuiet') : null;
+
+  const url = solverUrl();
+  if (!ping.ok) {
+    const error = ping.error || null;
+    return {
+      id: 'solver',
+      title: 'Cloudflare solver',
+      status: blaming.length ? 'problem' : 'warn',
+      // ⚠️ Desktop: the helper's address carries its access token as the path, so it is named, never
+      // printed (a screenshot in a bug report would hand the token to anyone who reads it) -- nor sent as a
+      // parameter for the page to print.
+      ...summaryOf([say('solver.down', { url: isDesktop() ? undefined : url, error }), backupQuiet]),
+      ...noteOf([say('solver.downNote')]),
+      // The solver itself is the first item, not just the sources blaming it. Every other check on this page
+      // holds "no items means ok", and a solver that is simply absent has nothing to list -- so without this
+      // it would report a warning with an empty body, which reads as a page bug rather than a finding.
+      items: [
+        ...(rows.length ? rows : [{
+          title: forDesktop(url, 'Cloudflare helper'),
+          ...(isDesktop() ? { titleSaid: saidOf(say('solver.helper')) } : {}),
+          ...detailOf([say('solver.notAnswering', { error })]),
+        }]),
+        // No "Reset solver sessions" chip while it is down. The reset clears what THIS process remembers
+        // about a solver that is answering; on one that is not, it would be a button that reports success
+        // and changes nothing, which is worse than no button. The repair's solver step refuses for the
+        // same reason.
+        ...blaming.map((id) => ({ title: sourceLabel(id), sourceId: id, ...detailOf([say('solver.names')]) })),
+      ],
+    };
+  }
+  // The solver that would solve now (the main, or the backup while the main does not answer), compared with its releases.
+  const latest = await latestOf(ping);
+  const behind = isBehind(ping.version, latest);
+  const mainQuiet = !ping.main.ok;
+  return {
+    id: 'solver',
+    title: 'Cloudflare solver',
+    // A row that does not answer is a finding (solverRow), and turns the card amber with the sources blaming it.
+    status: blaming.length || rows.some((r) => !r.info) ? 'warn' : 'ok',
+    ...summaryOf(mainQuiet
+      ? [say('solver.backupSolving')]
+      : [blaming.length
+        ? say('solver.blaming', { n: blaming.length })
+        // Named by its kind (v0.55.3), except on the desktop app: its helper greets as FlareSolverr and is hbook's own.
+        : say('solver.ready', { version: ping.version ?? null, latest: behind ? latest : null, kind: isDesktop() ? undefined : ping.kind }),
+      backupQuiet]),
+    ...noteOf(mainQuiet
+      ? [say('solver.backupNote'), blaming.length > 0 && joined('sentence', say('solver.failingNote'))]
+      : [blaming.length > 0 && say('solver.failingNote')]),
+    items: [
+      ...rows,
+      // `info`: this row and `status: 'ok'` coexist on purpose, see latestOf. Without the flag it
+      // contradicted the page's "no items means ok" rule, and the health test could only hold that rule
+      // because no test machine ever had an out-of-date solver. With two solvers each row says its own.
+      ...(behind && !rows.length
+        ? [{ title: `v${ping.version} → v${latest}`, ...detailOf([say('solver.behind')]), info: true }]
+        : []),
+      // The solver answers, so the stale part is what this process remembers about it: a cf_clearance
+      // cookie Cloudflare has since rotated, and origins stamped unsolvable. That is what the chip clears,
+      // along with this source's cooldown. It cannot restart the container -- hbook has no access to
+      // other containers, by design -- so the note above still names the restart as the operator's job.
+      ...blaming.map((id) => ({
+        title: sourceLabel(id),
+        sourceId: id,
+        ...detailOf([say('solver.inside')]),
+        actions: ['solver_reset' as const],
+      })),
+    ],
+  };
+}
+
+/** The repo releases are published from. A constant, not a setting: a "check for updates" pointed at an
+ *  operator-supplied url is an arbitrary outbound request wearing a friendly name. */
+const APP_REPO = 'YUnauuu/hbook';
+
+/**
+ * Is there a newer hbook?
+ *
+ * ⚠️ ADVISORY ONLY, exactly like the solver's version row: `status` is always `ok`, because being a version
+ * behind is not a fault and an update notice that turns the admin page amber trains people to ignore it.
+ * The same rule is written at solverHealth().
+ *
+ * ⚠️ THIS SENDS NOTHING ABOUT THIS INSTALL. It is a GET of a public GitHub releases URL; GitHub learns an
+ * IP, which is unavoidable for any update check, and the answer is compared locally. The opt-in install
+ * count is a separate switch to a separate host -- see lib/installPing.ts for why they must never merge.
+ *
+ * Off is genuinely off: `update_check = false` makes no request at all, and says so rather than pretending
+ * to be up to date.
+ */
+async function updateCheck(): Promise<HealthCheck> {
+  const running = appVersion();
+  const row = await one<{ on: boolean }>('SELECT update_check AS on FROM server_settings WHERE id = 1')
+    .catch(() => null);
+  const on = row?.on !== false;
+
+  if (!on) {
+    return {
+      id: 'update', title: 'Version', status: 'ok',
+      ...summaryOf([running ? say('version.offRunning', { version: running }) : say('version.off')]),
+      ...noteOf([say('version.offNote')]),
+      items: [],
+    };
+  }
+
+  const latest = await latestRelease(APP_REPO);
+  const behind = isBehind(running, latest);
+  return {
+    id: 'update', title: 'Version', status: 'ok',
+    ...summaryOf([!running ? say('version.unknown')
+      : behind ? say('version.behind', { version: running, latest: latest! })
+      : latest ? say('version.current', { version: running })
+      : say('version.running', { version: running })]),
+    // ⚠️ Said out loud, because "up to date" and "we could not ask" look identical on a page and only one of
+    // them is a reason to relax. GitHub being unreachable or rate-limited is a normal Tuesday.
+    ...noteOf([!latest && say('version.unasked')]),
+    // `info` for the same reason as the solver's version row: advisory, and never the reason the page is amber.
+    items: behind
+      ? [{ title: `v${running} → ${latest}`, ...detailOf([say('version.newer')]), info: true }]
+      : [],
+  };
+}
+
+/**
+ * Enabled extension sources that are NOT registered because SUWAYOMI_MAX_SOURCES was reached.
+ *
+ * The cap is the right default -- search fans out to every registered source -- but hitting it used to be
+ * one console.warn at boot and nothing else: the panel counted the enabled sources, search reached fewer,
+ * and the difference was nowhere. Only runs when there is an engine; without one the check would be a
+ * permanent green line about a limit that cannot be reached.
+ */
+async function extensionCap(): Promise<HealthCheck> {
+  const load = lastSuwayomiLoad();
+  const skipped = load?.skipped ?? 0;
+  const cap = env.SUWAYOMI_MAX_SOURCES;
+  const title = say('cap.title');
+  return {
+    id: 'extension-cap',
+    title: 'Extension source limit',
+    status: skipped ? 'warn' : 'ok',
+    // "0 of 25" is a measurement only when the engine answered; after a failed load it is the absence of
+    // one, and the cap warning would silently vanish for the length of an outage.
+    ...summaryOf([skipped
+      ? say('cap.over', { n: skipped, cap })
+      : load && !load.reachable
+        ? say('cap.unreachable', { cap })
+        : say('cap.inUse', { n: load?.registered ?? 0, cap })]),
+    ...noteOf([say('cap.note')]),
+    items: skipped
+      ? [{ title: title.text, titleSaid: saidOf(title), ...detailOf([say('cap.detail', { n: skipped, cap })]) }]
+      : [],
+  };
+}
+
+/**
+ * Folders the last library scan could not index (#109).
+ *
+ * The scan now steps over a folder it cannot index instead of stopping (lib/library.ts persistScan), which
+ * keeps the rest of the library current -- and would leave that one folder's chapters silently missing, on
+ * disk and absent from the series page, if nothing said so. The error is the scanner's own, so the admin
+ * has something to act on (a file to replace, a permission to fix) rather than a symptom.
+ *
+ * v0.48.2: and what the WALK left out, before any folder reached the database -- a folder it could not read,
+ * entries it could not check, the folder cap. v0.48.0 reported the database's refusals only, so a download
+ * the walk dropped left this check green while the chapters stayed missing.
+ */
+async function libraryScan(): Promise<HealthCheck> {
+  const r = lastScanReport();
+  const where = await rootsNote();
+  if (!r) {
+    return { id: 'library-scan', title: 'Library scan', status: 'ok', ...summaryOf([say('scan.none')]), ...noteOf([where]), items: [] };
+  }
+  const n = r.skippedTotal;
+  const w = r.walkProblems;
+  // A folder as the rows name it: which root, and where under it.
+  const label = (root: 'library' | 'downloads', folder: string) => {
+    const t = say('folder', { root, folder });
+    return { title: t.text, titleSaid: saidOf(t) };
+  };
+  return {
+    id: 'library-scan',
+    title: 'Library scan',
+    status: n || w ? 'problem' : 'ok',
+    ...summaryOf([n || w ? say('scan.problems', { n, w }) : say('scan.indexed', { series: r.series, books: r.books })]),
+    ...noteOf([
+      say('scan.note'),
+      r.sharedIds > 0 && joined('sentence', say('scan.shared', { n: r.sharedIds })),
+      r.removed > 0 && joined('sentence', say('scan.removed', { n: r.removed })),
+      where && joined('sentence', where),
+    ]),
+    items: [
+      // The database's own refusal, which only it can word: shown as sent.
+      ...r.skipped.map((k) => ({ ...label(k.root, k.folder), detail: k.error })),
+      ...r.walk.map((i) => ({
+        ...label(i.root, i.folder),
+        ...detailOf([walkPart(i)]),
+        ...(QUIET_WALK.has(i.reason) ? { info: true } : {}),
+      })),
+    ].slice(0, MAX_ITEMS),
+  };
+}
+
+/**
+ * What the walk said about one folder (lib/library.ts WalkIssue), in Health's words. An issue without its
+ * `params` (built before v0.49.1, or by a test by hand) says its own `detail`.
+ */
+function walkPart(i: { reason: WalkReason; detail: string; params?: WalkIssue['params'] }): Part {
+  const p = i.params ?? {};
+  switch (i.reason) {
+    case 'unreadable': return p.failed !== undefined ? say('walk.failed', { error: p.failed }) : say('walk.unreadable', { error: i.detail });
+    case 'stat': return say('walk.stat', { error: i.detail });
+    case 'loop': return say('walk.loop', p.ancestor !== undefined ? { ancestor: p.ancestor } : { detail: i.detail });
+    case 'unchecked': return p.n !== undefined ? say('walk.unchecked', { n: p.n, names: p.names ?? [] }) : say('text', { text: i.detail });
+    case 'depth': return p.n !== undefined && p.max !== undefined ? say('walk.depth', { n: p.n, max: p.max }) : say('text', { text: i.detail });
+    case 'limit': return p.max !== undefined ? say('walk.limit', { max: p.max }) : say('text', { text: i.detail });
+  }
+}
+
+/** Which filesystem each root is on: the first thing anyone needs to know about a folder that goes missing. */
+async function rootsNote(): Promise<Part | null> {
+  const [lib, dl] = await Promise.all([fsTypeOf(LIBRARY_ROOT), fsTypeOf(DL_ROOT)]);
+  return lib || dl ? say('roots', { library: lib, downloads: dl }) : null;
+}
+
+/**
+ * The downloads check's notes: what it compared, and what the numbers leave out. Apart so a test can hand it a
+ * census; the check itself needs a disk and a database.
+ */
+export function downloadsNotes(
+  c: Pick<Census, 'root' | 'fsType' | 'noScan' | 'scanCapped' | 'pending' | 'removed' | 'truncated'>, strays: number,
+): string[] {
+  return downloadsNoteParts(c, strays).map((p) => p.text);
+}
+
+/** downloadsNotes' sentences, with their codes for the web: one part each, joined as sentences. */
+function downloadsNoteParts(
+  c: Pick<Census, 'root' | 'fsType' | 'noScan' | 'scanCapped' | 'pending' | 'removed' | 'truncated'>, strays: number,
+): Part[] {
+  return [
+    say('missing.compared', { root: c.root, fs: c.fsType ?? null }),
+    // v0.49.0: the card has its own Scan now. Reintroduce the Tasks route: "the downloads check points at its own
+    // Scan now" in healthNotes.test.ts reads Admin → Settings → Maintenance.
+    ...(c.noScan ? [say('missing.noScan')] : []),
+    ...(c.scanCapped ? [say('missing.capped')] : []),
+    ...(c.pending ? [say('missing.pending', { n: c.pending })] : []),
+    ...(c.removed ? [say('missing.removed', { n: c.removed })] : []),
+    ...(strays ? [say('missing.strays', { n: strays })] : []),
+    ...(c.truncated ? [say('missing.truncated')] : []),
+  ].map((p, i) => (i ? joined('sentence', p) : p));
+}
+
+/**
+ * Every chapter file in the downloads folder that is not in the library (#109), with the reason when the scan
+ * knows one. Compares the disk with the database directly (lib/downloadCensus.ts), so it does not depend on the
+ * scanner having noticed what it dropped -- which is exactly what it failed to do for #109, twice.
+ */
+async function downloadsMissing(ctx: IgnoreCtx = noIgnores()): Promise<HealthCheck> {
+  const base = { id: 'downloads-missing', title: 'Downloads missing from the library' };
+  const c = await downloadCensus().catch((e) => e as Error);
+  if (c instanceof Error) {
+    return { ...base, status: 'warn', ...summaryOf([say('missing.error', { error: String(c.message).slice(0, 160) })]), items: [] };
+  }
+  // What needs someone: everything but a stray file of the person's own where the scan never reads chapters
+  // (lib/downloadCensus.ts countsAsMissing). Those are listed, dimmed, and never turn the check red -- the only
+  // way to clear one would be to move the person's own file.
+  const strays = c.missing.filter((m) => !countsAsMissing(m)).length;
+  const title = (folder: string) => {
+    const t = say('folder', { root: 'downloads', folder });
+    return { title: t.text, titleSaid: saidOf(t) };
+  };
+  const all: Array<HealthItem & { members?: string[] }> = [
+    ...c.unreadable.map((u) => ({
+      ...title(u.folder), ...detailOf([say('missing.folderUnreadable', { error: u.error })]),
+      key: `unreadable:${u.folder}`,
+    })),
+    ...c.missing.map((m) => ({
+      ...title(m.folder),
+      ...detailOf([
+        say('missing.files', { n: m.files.length, files: m.files.slice(0, 3), cut: m.files.length > 3 }),
+        m.reason ? joined('colon', own(m.reasonSaid, m.reason)) : null,
+      ]),
+      ...(m.seriesId ? { seriesId: m.seriesId } : {}),
+      // Ignored while the files are these ones: another chapter landing in the folder unseen is a new finding.
+      ...(countsAsMissing(m) ? { key: `folder:${m.folder}`, members: m.files } : { info: true }),
+    })),
+  ];
+  const ignored = applyIgnores('downloads-missing', all, ctx);
+  const live = c.missing.filter((m) => countsAsMissing(m) && all.some((it) => it.key === `folder:${m.folder}` && !it.info));
+  const n = live.reduce((k, m) => k + m.files.length, 0);
+  const unread = all.filter((it) => it.key?.startsWith('unreadable:') && !it.info).length;
+  const { items } = truncate(all);
+  return withAll({
+    ...base,
+    status: n || unread ? 'problem' : 'ok',
+    ...summaryOf([
+      n ? say('missing.live', { n, m: live.length })
+        : unread ? say('missing.unreadable', { n: unread })
+        : say('missing.none', { checked: c.files }),
+      ignoredPart(ignored),
+    ]),
+    ...noteOf(downloadsNoteParts(c, strays)),
+    items,
+  }, all);
+}
+
+/**
+ * Where one library root sits inside the other, by path (v0.52.0, #134), or null when they are side by side: the
+ * download folder inside the library (`root: 'library'`, `folder` its place under it, '' when the two are one folder)
+ * or the library inside the download folder (`root: 'downloads'`). Pure, for the configured roots after realpath.
+ * Case counts, as it does on the server's disks; the desktop app refuses nested roots before the server starts
+ * (lib/desktop.ts rootsOverlap).
+ */
+export function nestedRoots(library: string, downloads: string, impl: typeof path = path): { root: 'library' | 'downloads'; folder: string } | null {
+  const under = (child: string, parent: string): string | null => {
+    const rel = impl.relative(parent, child);
+    return rel === '..' || rel.startsWith(`..${impl.sep}`) || impl.isAbsolute(rel) ? null : rel.split(impl.sep).join('/');
+  };
+  const d = under(downloads, library);
+  if (d !== null) return { root: 'library', folder: d };
+  const l = under(library, downloads);
+  return l === null ? null : { root: 'downloads', folder: l };
+}
+
+/**
+ * The download folder inside the library, or the library inside it (v0.52.0, discussion #134). hbook scans both
+ * roots, so every chapter in the inner one is read twice -- in its own root, as a series with its source, and again
+ * inside the other, as a series with none -- and the library shows each downloaded series twice. @Kedryn mounted
+ * /epaper at /library while his download folder, /epaper/hbook_manga, was /library-dl.
+ *
+ * Found two ways: the configured roots by path (realpath, so a symlink counts), and the last scan, whose walk meets
+ * one root's own folder inside the other however it was mounted (lib/library.ts findSeriesDirs `watch`) -- two
+ * mounts of one folder share no path. Null while they are side by side: there is nothing to say, so no card.
+ * Reintroduce by leaving it out of runHealthChecks: "the download folder inside the library" in
+ * foldersTwice.int.test.ts finds no card.
+ */
+async function foldersScannedTwice(): Promise<HealthCheck | null> {
+  const real = (p: string) => realpath(p).catch(() => path.resolve(p));
+  const byPath = nestedRoots(await real(LIBRARY_ROOT), await real(DL_ROOT));
+  const found = byPath ?? lastScanReport()?.nested ?? null;
+  if (!found) return null;
+  const where = say('folder', { root: found.root, folder: found.folder });
+  return {
+    id: 'folders-twice',
+    title: 'Folders scanned twice',
+    status: 'warn',
+    ...summaryOf([
+      found.folder === '' ? say('nested.same')
+        : found.root === 'library' ? say('nested.downloadsInside', { folder: found.folder })
+        : say('nested.libraryInside', { folder: found.folder }),
+    ]),
+    ...noteOf([say('nested.note', { lib: LIBRARY_ROOT, dl: DL_ROOT })]),
+    items: [{ title: where.text, titleSaid: saidOf(where), ...detailOf([say(byPath ? 'nested.byPath' : 'nested.byScan')]) }],
+  };
+}
+
+// ---- report -----------------------------------------------------------------
+
+/**
+ * Every check, worst first. `bySeries` (v0.72.0, the page's By series view): also every series with a finding, grouped
+ * from each check's FULL list (groupBySeries) -- asked for by GET /api/admin/health?view=series only, never by the
+ * header's six-hourly refresh, which needs the cards alone.
+ */
+export async function runHealthChecks(opts: { bySeries?: boolean } = {}): Promise<HealthReport> {
+  // The two checks that reason about chapter NUMBERS share one read of what every series holds, because
+  // that read applies the override and tombstone rules per series and is the expensive part of this page.
+  const held = await heldBySeries();
+  // What an admin chose to ignore (lib/healthIgnore.ts), read once for the whole run.
+  const ctx = await loadIgnores();
+  // Independent read-only queries: run them together rather than serially.
+  const checks = (await Promise.all([
+    chapterGaps(held, ctx),
+    // #116: null when no series has anything to say about its numbering.
+    numberingCheck(),
+    shortChapters(),
+    outlierChapters(held, ctx),
+    savedTwice(ctx),
+    duplicateSeries(ctx),
+    sourceTrouble(ctx),
+    chapterFailures(ctx),
+    frozenSeries(ctx),
+    solverHealth(),
+    updateCheck(),
+    libraryScan(),
+    downloadsMissing(ctx),
+    // v0.52.0 (#134): null while the library and the download folder sit side by side.
+    foldersScannedTwice().catch(() => null),
+    ...(suwayomiConfigured() ? [extensionCap()] : []),
+    // #72: the engine itself; null when there is none and nothing depends on one (lib/engineHealth.ts).
+    extensionEngineCheck().catch(() => null),
+    // v0.72.0 (#253, #252): the downloads disk and the library's folders, members' tracker sign-ins, and the chapter
+    // files the nightly count could read no page of. A statfs, an opendir and a few queries: never a walk of the
+    // library and never reading_events, because this runs every six hours and after every scan (lib/healthSummary.ts).
+    diskAndFolders(ctx).catch(() => null),
+    trackerSync(ctx).catch(() => null),
+    chapterFiles(ctx).catch(() => null),
+  ])).filter((c): c is HealthCheck => c !== null);
+  await keepIgnoresAlive(ctx);
+  // worst first, so the page opens on whatever needs attention
+  checks.sort((a, b) => RANK[a.status] - RANK[b.status]);
+  return { generatedAt: new Date().toISOString(), checks, ...(opts.bySeries ? { bySeries: await groupBySeries(checks) } : {}) };
+}
+
+const RANK: Record<HealthStatus, number> = { problem: 0, warn: 1, ok: 2 };
+
+/**
+ * Cards that are about one series per row but stay out of By series: a duplicate pair is about two series at once, and
+ * its Merge acts on both, so it keeps its own card.
+ */
+const NOT_BY_SERIES: ReadonlySet<string> = new Set(['duplicates']);
+
+/**
+ * Health turned around (v0.72.0, @Squeaks72's idea in #254): every series with a finding, and each of its findings with
+ * its card, worst series first, then the one with most findings, then by title. Built on the server, from each card's
+ * FULL list (lib/healthKit.ts allRows): #254 grouped the fifty rows each card sends, so a series past a card's fifty was
+ * missing, and the count, Select all and Remove acted on part of the library. A greyed row is not a finding, and a row
+ * about no single series (a source, a folder) has no series to go under. Reintroduce the cut lists: "By series has every
+ * series, past the fifty a card shows" in healthBySeries.int.test.ts finds series missing.
+ */
+export async function groupBySeries(checks: readonly HealthCheck[]): Promise<SeriesFindings[]> {
+  const by = new Map<string, SeriesFindings>();
+  for (const c of checks) {
+    if (c.status === 'ok' || NOT_BY_SERIES.has(c.id)) continue;
+    for (const item of allRows(c)) {
+      if (!item.seriesId || item.info) continue;
+      const g = by.get(item.seriesId) ?? { seriesId: item.seriesId, title: item.title, status: 'warn' as const, findings: [] };
+      g.findings.push({ check: c.id, item });
+      if (c.status === 'problem') g.status = 'problem';
+      by.set(item.seriesId, g);
+    }
+  }
+  if (!by.size) return [];
+  // A row's title is its series' on every card but Downloads missing, whose rows are titled by their folder.
+  const titles = new Map((await q<{ id: string; title: string }>('SELECT id, title FROM lib_series WHERE id = ANY($1)', [[...by.keys()]])
+    .catch(() => [])).map((r) => [r.id, r.title]));
+  for (const g of by.values()) g.title = titles.get(g.seriesId) ?? g.title;
+  return [...by.values()].sort((a, b) =>
+    RANK[a.status] - RANK[b.status] || b.findings.length - a.findings.length || a.title.localeCompare(b.title));
+}
+
+/**
+ * One finding, as its check sees it right now: what the Ignore route records. Recomputed rather than taken from
+ * the page, because the page carries at most a hundred of a gap's numbers and an ignore must cover all of them.
+ * Null when the finding is no longer there.
+ */
+export async function findingOf(check: IgnorableCheck, key: string): Promise<Finding | null> {
+  const ctx = noIgnores();
+  switch (check) {
+    case 'chapter-gaps': await chapterGaps(await heldBySeries(), ctx); break;
+    case 'outliers': await outlierChapters(await heldBySeries(), ctx); break;
+    case 'chapter-failures': await chapterFailures(ctx); break;
+    case 'sources': await sourceTrouble(ctx); break;
+    case 'frozen-series': await frozenSeries(ctx); break;
+    case 'duplicates': await duplicateSeries(ctx); break;
+    case 'saved-twice': await savedTwice(ctx); break;
+    case 'downloads-missing': await downloadsMissing(ctx); break;
+    case 'disk': await diskAndFolders(ctx); break;
+    case 'trackers': await trackerSync(ctx); break;
+    case 'files': await chapterFiles(ctx); break;
+  }
+  return ctx.found.get(`${check}\u0000${key}`) ?? null;
+}

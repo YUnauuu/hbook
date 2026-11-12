@@ -1,0 +1,61 @@
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { t as tr } from '@/lib/i18n';
+import { alertTone, bannerWanted, headlineText, prunedSeen, readSeen, seenValue, writeSeen, type HealthSummary } from '@/lib/healthAlert';
+import { IcAlert } from './icons';
+
+// lib/healthAlert.ts says what this is for and why it never runs the checks itself (#101).
+
+export const HEALTH_HREF = '/admin/?tab=Health';
+
+/** The stored summary, for admins only. `enabled`, not a conditional hook: the order of hooks must not change. */
+export function useHealthSummary() {
+  const { isAdmin, status } = useAuth();
+  return useQuery({
+    queryKey: ['health-summary'],
+    queryFn: () => api<{ summary: HealthSummary | null }>('/api/admin/health/summary').then((r) => r.summary),
+    enabled: isAdmin && status === 'authed',
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+const countLine = (n: number) => (n === 1 ? tr('1 check found something') : tr('{n} checks found something', { n }));
+
+/** Once per finding set, on any page but the admin console, at every screen size (the header is desktop-only). */
+export function HealthBanner() {
+  const { data } = useHealthSummary();
+  const path = usePathname();
+  // Read after mount: storage is not there during the static export's render.
+  const [seen, setSeen] = useState<string | null | undefined>(undefined);
+  useEffect(() => { setSeen(readSeen()); }, []);
+  const wanted = seen !== undefined && !!data && bannerWanted(data, seen, path);
+  // While it stays away, the dismissal follows the checks down (never up): one that went quiet leaves it.
+  useEffect(() => {
+    if (seen === undefined || wanted) return;
+    const next = prunedSeen(data, seen);
+    if (next) { writeSeen(next); setSeen(next); }
+  }, [data, seen, wanted]);
+  if (!wanted || !data) return null;
+  const tone = alertTone(data)!;
+  const dismiss = () => { const v = seenValue(data); writeSeen(v); setSeen(v); };
+  return (
+    <div role="status" data-health-banner
+      // safe-top: on a phone the banner is the first thing on the page, under an installed app's status bar.
+      // z-[1], the same layer as <main> (AppShell), which comes after it: every dialog is a `fixed inset-0`
+      // inside main, so it covers the banner the way it covers the rest of the page. At z-[2] (v0.48.0) the
+      // banner painted over every dialog, on a phone over a tall one's title and close button.
+      className={`safe-top relative z-[1] flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 pb-2 text-xs lg:ps-[calc(var(--rail-w)+1rem)] lg:pt-2 ${tone === 'problem' ? 'bg-red-500/10 text-red-200' : 'bg-amber-400/10 text-amber-100'}`}>
+      <IcAlert width={14} height={14} className="shrink-0" />
+      <span dir="auto" className="min-w-0">{headlineText(data) ?? countLine(data.count)}</span>
+      {data.count > 1 && <span className="text-fog-400">{countLine(data.count)}</span>}
+      <Link href={HEALTH_HREF} onClick={dismiss} className="font-semibold underline-offset-2 hover:underline">{tr('Take a look')}</Link>
+      <button type="button" onClick={dismiss} className="text-fog-400 hover:text-fog-100">{tr('Not now')}</button>
+    </div>
+  );
+}

@@ -1,0 +1,231 @@
+# hbook — the SPLIT layout: the API and the web app as two containers.
+#
+# This is not the layout the install instructions use any more. hbook ships as ONE container
+# (deploy/docker-compose.yml), which is smaller, uses less memory, has one less network hop on every API
+# call and no redirect on deep links.
+#
+# It is kept, still built and still published, because people are running it. Nothing about it has stopped
+# working and you are not required to move. When you want to, docs/MIGRATING.md is four commands: both
+# layouts use the SAME named volumes and the same Postgres image, so nothing is copied or converted.
+#
+#   curl -O https://raw.githubusercontent.com/YUnauuu/hbook/main/deploy/docker-compose.split.yml
+#   docker compose -f docker-compose.split.yml up -d
+#
+# Then open http://localhost:8080 and create your admin account in the browser.
+# No secrets to generate, no config file to edit.
+#
+# To UPDATE later:
+#   docker compose pull      <- required; `up -d` alone will not fetch a newer :latest
+#   docker compose up -d
+#
+# Optional overrides (put them in a .env file next to this one — it is picked up automatically):
+#   LIBRARY_PATH=/mnt/media/comics   your existing CBZ/CBR library (default: ./library)
+#   PUID= / PGID=                    run as the user that OWNS your library, so hbook can rename and
+#                                    delete files in it. Find them with `id -u` / `id -g`. Leave both unset
+#                                    and nothing changes: the app runs as uid 10002 and treats your library
+#                                    as read-only, exactly as before. Removing :ro from the mount alone does
+#                                    NOT grant write access; the uid has to match.
+#   WEB_PORT=8080                    host port to serve on
+#   DB_PASSWORD=...                  only used inside the private network; the DB has no published port
+#   PUBLIC_ORIGIN=https://manga.example.com   set this if you put it behind a reverse proxy
+#   BACKUP_PATH=/mnt/backups/hbook   where nightly backups go — ideally a different disk than your Docker
+#                                       volumes, so a dead drive doesn't take the backups with it.
+#                                       IF YOU SET THIS to a host path, create it and give it to uid 10002
+#                                       first, or backups fail silently — Docker makes a bind mount
+#                                       root-owned and the app does not run as root:
+#                                         sudo mkdir -p /mnt/backups/hbook
+#                                         sudo chown 10002:10002 /mnt/backups/hbook
+#                                       (named volumes, the default, need none of this)
+#   SOURCES_PATH=/path/to/sources/dist  a built source pack, mounted read-only (optional; none by default)
+#   EXTENSION_ENGINE=0               don't run the extension engine (Mihon/Tachiyomi extensions, about 800 MB);
+#                                    its data is kept, and deleting the line brings it back
+#   VAPID_PUBLIC_KEY= / VAPID_PRIVATE_KEY= / VAPID_SUBJECT=   enable web push (see docs/USAGE.md)
+
+services:
+  hbook-db:
+    image: postgres:16-alpine
+    container_name: hbook-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hbook
+      POSTGRES_USER: hbook
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hbook}
+    volumes:
+      - hbook_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hbook -d hbook"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [hbook_internal]
+
+  hbook-bff:
+    image: ghcr.io/yunauuu/hbook-bff:latest
+    container_name: hbook-bff
+    restart: unless-stopped
+    environment:
+      # Run as the owner of your library so file operations work. Unset = uid 10002, library read-only.
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
+      NODE_ENV: production
+      # How much the log says (v0.92.0): info, warn, or debug for what Find other sources searched and why.
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      PORT: "3000"
+      DATABASE_URL: postgres://hbook:${DB_PASSWORD:-hbook}@hbook-db:5432/hbook
+      LIBRARY_BACKEND: ${LIBRARY_BACKEND:-owned}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      SOURCES_DIR: /sources
+      CUSTOM_SITES_FILE: /config/sites.json
+      # Generated and persisted to /config on first boot when left empty; set JWT_SECRET in .env to pin it.
+      JWT_SECRET: ${JWT_SECRET:-}
+      # Web push is off unless you supply keys (see docs/USAGE.md).
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # Optional single sign-on. Leave OIDC_ISSUER empty and nothing changes; set it plus a client id
+      # and a "Continue with ..." button appears on the login screen. See docs/api.md.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-SSO}
+      OIDC_ALLOW_SIGNUP: ${OIDC_ALLOW_SIGNUP:-false}
+      OIDC_LINK_BY_USERNAME: ${OIDC_LINK_BY_USERNAME:-false}
+      OIDC_ADMIN_GROUP: ${OIDC_ADMIN_GROUP:-}
+      # SSO-only sign-in (v0.63.0): AUTH_MODE=oidc-only makes the provider the only way in. See docs/api.md, SSO-only mode.
+      AUTH_MODE: ${AUTH_MODE:-local}
+      OIDC_BOOTSTRAP_ADMIN_SUB: ${OIDC_BOOTSTRAP_ADMIN_SUB:-}
+      AUTH_RESCUE_ADMIN: ${AUTH_RESCUE_ADMIN:-}
+      # Extension engine (Mihon/Tachiyomi extensions), wired up by default. EXTENSION_ENGINE=0 in .env turns it
+      # off and drops its container; SUWAYOMI_URL points at a Suwayomi you run yourself instead. The single dash
+      # is deliberate: `:-` treats an empty value as unset, so the documented `SUWAYOMI_URL=` never turned
+      # anything off. See docs/extensions.md.
+      SUWAYOMI_URL: ${SUWAYOMI_URL-http://hbook-suwayomi:4567}
+      EXTENSION_ENGINE: ${EXTENSION_ENGINE:-1}
+      SUWAYOMI_USERNAME: ${SUWAYOMI_USERNAME:-}
+      SUWAYOMI_PASSWORD: ${SUWAYOMI_PASSWORD:-}
+      SUWAYOMI_MAX_SOURCES: ${SUWAYOMI_MAX_SOURCES:-25}
+      SUWAYOMI_PAGE_CONCURRENCY: ${SUWAYOMI_PAGE_CONCURRENCY:-4}
+    volumes:
+      - ${LIBRARY_PATH:-./library}:/library     # your existing comics (see PUID below)
+      - ${SOURCES_PATH:-./sources}:/sources:ro   # optional built source pack
+      - hbook_downloads:/library-dl           # chapters hbook downloads
+      - hbook_config:/config                  # secrets, custom sites, art overrides
+      - hbook_cache:/cache                    # image cache (safe to delete)
+      - ${BACKUP_PATH:-hbook_backups}:/backups # nightly database + config backups
+    depends_on:
+      hbook-db:
+        condition: service_healthy
+    networks:
+      hbook_internal:
+      hbook_app:
+        # the web image's nginx proxies to this hostname
+        aliases: [hbook-bff]
+
+  hbook-web:
+    image: ghcr.io/yunauuu/hbook-web:latest
+    container_name: hbook-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - hbook-bff
+    networks: [hbook_app]
+
+  # Only used when you add a source that sits behind Cloudflare. Harmless to leave running.
+  hbook-flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: hbook-flaresolverr
+    restart: unless-stopped
+    # Chrome writes its shared-memory segments here, and Docker's default /dev/shm is 64 MB. Under that,
+    # chromedriver dies mid-challenge and FlareSolverr reports "Service /app/chromedriver unexpectedly
+    # exited" or fails to reach its own session -- which looks, from the app's side, exactly like the manga
+    # site blocking us. Measured on one install: seven such failures in 24 hours across four sources.
+    shm_size: 1gb
+    # The leak is the other half of the problem. FlareSolverr grew to 2.5 GB over 62 days of uptime on one
+    # install, and a bloated solver starts failing mid-challenge rather than dying cleanly, which reads from
+    # the app's side as the SITES being broken. A cap plus `restart: unless-stopped` turns an unbounded leak
+    # into an automatic restart: idle it sits around 150 MB, so 2 GB is generous headroom for a real solve.
+    mem_limit: 2g
+    # It had no healthcheck at all, so `docker ps` said "Up 2 months" while it was crashing on every request.
+    # The root endpoint answers with a readiness sentence, which is the only honest signal it offers.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/ | grep -q 'FlareSolverr is ready' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    environment:
+      LOG_LEVEL: warning
+    networks: [hbook_app]
+
+  # Extension engine (Mihon/Tachiyomi extensions on the JVM). Browse and install them from hbook's own
+  # admin panel. Pinned rather than :stable: it upgrades its data one way when a newer version first starts, so the
+  # tag moves only with a release that says so (back up first: docs/extensions.md#updating-the-engine). It is a JVM and
+  # sits around 800MB of RAM.
+  hbook-suwayomi:
+    image: ghcr.io/suwayomi/suwayomi-server:v2.4.2366
+    container_name: hbook-suwayomi
+    # The switch. EXTENSION_ENGINE=0 in .env, then `docker compose up -d`: this container is not run, and the app
+    # (which reads the same variable) treats extensions as off. Its data stays in the volume; delete the line and
+    # run the same command to bring it back where it left off. Never `docker compose down -v`, which deletes it.
+    deploy:
+      replicas: ${EXTENSION_ENGINE:-1}
+    restart: unless-stopped
+    # The engine is a JVM, and a JVM with no limit sizes its heap from the HOST's memory -- a quarter of it:
+    # 15.7 GiB on a 62 GB machine, measured 2026-09-25 against this image -- so without a cap a small NAS is at
+    # its mercy (discussion #72). JAVA_TOOL_OPTIONS below caps the heap at 768 MB with the serial collector, as
+    # the desktop app does (desktop/src/engine.js). This ceiling has to hold the rest as well: Java's own native
+    # memory, and the Chromium (the engine's WebView) and Xvfb that this image runs and the desktop app turns
+    # off. Measured for #275, with 45 extensions on 12 cores: 1.4 GB after two days, 630 MB of it heap. Under
+    # the old 1.5 GB ceiling it kept going only by swapping; a host with no swap (Unraid's default) kills it
+    # there. The ceiling still turns a runaway into a restart, which the restart policy above handles.
+    # SUWAYOMI_MEM_LIMIT and SUWAYOMI_JAVA_OPTS raise both; keep the ceiling at least 1.25 GB above -Xmx.
+    mem_limit: ${SUWAYOMI_MEM_LIMIT:-2048m}
+    environment:
+      TZ: ${TZ:-UTC}
+      # The heap cap itself. The image's startup script runs a bare `java -jar` with no options of its own, so
+      # JAVA_TOOL_OPTIONS -- which every JVM reads when it starts -- is the way in.
+      JAVA_TOOL_OPTIONS: "${SUWAYOMI_JAVA_OPTS:--Xmx768m -XX:+UseSerialGC}"
+      # Two malloc arenas instead of glibc's up to eight per CPU. Each thread that allocates gets an arena of its
+      # own, and what it frees stays there: in #275's engine 94 arenas held 428 MB, and side by side under the
+      # same load two held 120 MB less (measured 2026-10-16). Read by the C library, not the startup script.
+      MALLOC_ARENA_MAX: "2"
+      # hbook owns the library and does the downloading; this must never write into it.
+      AUTO_DOWNLOAD_CHAPTERS: "false"
+      DOWNLOAD_AS_CBZ: "true"
+      # The engine shares the bundled Cloudflare solver. Suwayomi has no browser of its own: a challenged
+      # site makes it throw "Cloudflare bypass currently disabled" unless it is pointed at a FlareSolverr,
+      # and it ships with that off. The image maps exactly these two variables into its server.conf.
+      FLARESOLVERR_ENABLED: "true"
+      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+    volumes:
+      - hbook_suwayomi:/home/suwayomi/.local/share/Tachidesk
+    # hbook_app only: the bff reaches it there, and the solver its FLARESOLVERR_URL names lives there. Never
+    # hbook_internal (v0.69.1): the engine runs third-party extension code, and that network is the database's,
+    # whose password is a default unless DB_PASSWORD is set -- an extension could have opened the whole database.
+    networks: [hbook_app]
+    expose:
+      - "4567"
+    healthcheck:
+      # The image has bash but no curl, wget or nc, so bash opens the socket itself. 401 counts as alive:
+      # the engine is up, it just has authentication switched on. A JVM takes a while to come up, hence the
+      # long start period; before this `docker ps` could not tell "still starting" from "broken".
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4567; printf 'GET /api/v1/settings/about HTTP/1.0\\r\\n\\r\\n' >&3; head -1 <&3 | grep -qE ' (200|401) '"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+networks:
+  hbook_internal:   # database only — deliberately not reachable from outside the stack
+  hbook_app:
+
+volumes:
+  hbook_suwayomi:   # optional extension engine's own data
+  hbook_pgdata:
+  hbook_downloads:
+  hbook_config:
+  hbook_cache:
+  hbook_backups:

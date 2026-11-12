@@ -1,0 +1,523 @@
+// Finding a source for a chapter the followed ones could not serve, and following it.
+//
+// The owner's ask: "find a source automatically with full pages and continue". The add-time auto-follow
+// (lib/autoFollow.ts) never searches -- its candidates are the pairs the dialog already found -- and the
+// sweep had no way to reach a source the series does not follow, so a chapter whose every followed copy
+// was broken stayed broken. This module is the one place the server searches on its own initiative, and
+// because every search is a real request to a site, it is bounded on every axis at once:
+//
+//   - the admin switch (`server_settings.auto_follow_on_failure`, on by default);
+//   - once per series per HUNT_COOLDOWN_MS, stamped on `lib_series.source_hunt_at` BEFORE the search, so a
+//     crash mid-hunt never re-hunts the same series every sweep;
+//   - at most HUNT_MAX_PER_SWEEP hunts per sweep (the caller's `budget`), HUNT_MAX_SOURCES searched per
+//     hunt, under the fill scan's concurrency slots and a HUNT_WALL_MS wall;
+//   - never past the follower limit (lib/followLimit.ts), never a source the series already follows, never one that is disabled,
+//     in a cooldown, or outside the caller's `allowed` rule -- for the sweep, that rule is "no adult source
+//     on a clean series": a server-initiated follow must not attach one where no person would have.
+//
+// The identity judgement is autoFollow's `judgeCandidate`, unchanged: the candidate's own title must be
+// ours and its numbering must line up, both ways unless the title is exact on a listing of at least ten.
+// "Tokyo Ghoul:re" is still refused for "Tokyo Ghoul". The follow is `followJudged`, the same atomic
+// write under the same cap, and the copy of the wanted number comes out of the chapter list the judgement
+// already fetched (`Judgement.chapters`) -- so a hunt costs one search per candidate and two lookups per
+// candidate judged, and nothing more.
+//
+// Since v0.41.0 the search and the follow are two calls, because the nightly repair (lib/repair.ts) wants
+// a candidate for a different reason than the sweep does: `huntCandidates` runs the bounded search and
+// judges candidates until the caller's `wants()` accepts one (the sweep wants "lists this number"; the gap
+// step wants "brackets this hole"), and `followHunted` writes the follow and its audit row with the
+// caller's `reason`. `huntSource` is the two of them composed the way the sweep always used them.
+import { q, one } from './db';
+import { getSource, listSources, type SourceAdapter, type SourceChapter, type SourceSeries } from './sources';
+import { budgetFor } from './sources/budget';
+import { SOLVER_CONCURRENCY } from './sources/flaresolverr';
+import { healthAll } from './sourceHealth';
+import { scanOrder } from './scanOrder';
+import { pickBest } from './titleMatch';
+import { judgeCandidate, followJudged, bounded, MIN_TRY_MS, type PrimaryFacts, type Judgement } from './autoFollow';
+import { followerLimit } from './followLimit';
+import { chooseReleases, type ReleasePrefs } from './releases';
+import { effectivePrefsFor, readSeriesPrefs } from './scanlatorPrefs';
+import { MIN_HAVE } from './fill';
+import { logAudit } from './audit';
+import { ADULT_RATING, adultFilter } from './visibility';
+import { altTitlesFor, exactHit, SEARCH_NAMES } from './altTitles';
+import { followGuard, seriesLanguage } from './seriesLang';
+import { aliasParts, partRulesApply, type HeldPart } from './partAlias';
+import { numKey } from './postingOrder';
+import { heldBooks } from './chapterCleanup';
+import { notCarrying } from './sourceStanding';
+import { sourcesToSkip, recordVerdict } from './scoutMemory';
+
+/** How long after one hunt a series may be hunted for again, whatever became of the first. */
+export const HUNT_COOLDOWN_MS = 24 * 3600_000;
+/** The whole hunt's wall: searches and judgements together. What has not answered by then is not tried. */
+export const HUNT_WALL_MS = 60_000;
+/** How many sources one hunt may search. */
+export const HUNT_MAX_SOURCES = 6;
+/** How many hunts one sweep may run (the caller's `budget.left` starts here). */
+export const HUNT_MAX_PER_SWEEP = 5;
+/** What one search gets before budgetFor raises it for a source behind the solver; capped by the wall. */
+const HUNT_SEARCH_MS = 20_000;
+/** The fill scan's slot count (routes/sources.ts SCAN_CONCURRENCY), so a hunt never out-runs the solver. */
+const HUNT_CONCURRENCY = Math.max(1, Number(process.env.SCAN_CONCURRENCY || SOLVER_CONCURRENCY));
+
+// One pool for the process, not one pool per hunt. Several series can reach the completion/fallback pass
+// together; a limiter allocated inside huntSource lets every one of them run HUNT_CONCURRENCY searches,
+// defeating the cap precisely when a source is already struggling. A released slot is handed directly to
+// the oldest waiter so a newcomer cannot slip in and take the pool over width.
+// Exported (v0.49.1) for the Find other sources run (lib/findSources.ts), which searches on the server's own
+// initiative too and must share this pool rather than add a second one beside it.
+let huntInFlight = 0;
+const huntWaiting: Array<() => void> = [];
+export async function takeHuntSlot(): Promise<void> {
+  if (huntInFlight < HUNT_CONCURRENCY) { huntInFlight++; return; }
+  await new Promise<void>((go) => huntWaiting.push(go));
+}
+export function releaseHuntSlot(): void {
+  const next = huntWaiting.shift();
+  if (next) next();
+  else huntInFlight--;
+}
+
+/**
+ * The hit on one source that may be this series, by the title and then by each of its other names (v0.49.1, lib/
+ * altTitles.ts): the title by the fill scan's rule (pickBest), an other name only EXACTLY, so a search for one
+ * never picks what merely contains it. One search per name, in order, stopping at the first hit, each bounded by
+ * what is left of `left()`. Nothing reports: a search that throws or outruns its budget is a source that did not
+ * answer -- never a health event, so a bulk search cannot put a source into a cooldown or mark it failing (#115
+ * confirms a failure after three in a row, and a run over many series would be three in a row by itself).
+ * `answered` is false when no search on this source answered at all.
+ *
+ * `tied` (#316), only when nothing matched: the one result this source gave FIRST under two or more of the names. A
+ * site often files a series under a name the series does not have here -- TIGamingTV's "Revenge of the Iron-Blooded
+ * Sword Hound" is "Revenge of the Baskerville Bloodhound" on Atsumaru, Manga Ball and MangaFire, each of which
+ * answered with it for the title and for its other names -- and no rule here may guess that it is this series:
+ * Find other sources only PROPOSES it, for a person to check by its cover (lib/findSources.ts findFor). One name's
+ * first result is not enough, ever: a site's first answer for a title it does not carry is an unrelated series (the
+ * header of lib/titleMatch.ts).
+ */
+export async function searchByNames(
+  src: Pick<SourceAdapter, 'search' | 'requiresCloudflare'>,
+  title: string,
+  names: readonly string[],
+  left: () => number,
+  searchMs = HUNT_SEARCH_MS,
+  admit?: () => Promise<boolean>,
+  // What each name brought back -- null when the source did not answer -- and the hit taken from it: Find other
+  // sources' log at LOG_LEVEL=debug (#316).
+  heard?: (term: string, results: readonly SourceSeries[] | null, hit: SourceSeries | null) => void,
+): Promise<{ hit: SourceSeries | null; answered: boolean; paused: boolean; tied: SourceSeries | null }> {
+  let answered = false;
+  const firsts: SourceSeries[] = [];
+  for (const [i, term] of [title, ...names].entries()) {
+    const ms = left();
+    if (ms < MIN_TRY_MS) break;
+    // Each spelling is a separate provider request. An unattended series can be unmonitored while the
+    // preceding spelling is in flight, so admission is deliberately re-read for every one.
+    if (admit && !(await admit().catch(() => false))) return { hit: null, answered, paused: true, tied: null };
+    const results = await bounded(src.search(term), Math.min(budgetFor(src, searchMs), ms)).catch(() => null);
+    // A throw on one name is a throw on the next: the site, the solver or the extension is down for all of them.
+    if (!results) { heard?.(term, null, null); break; }
+    answered = true;
+    const hit = i === 0 ? pickBest(results, term) : exactHit(results, term);
+    heard?.(term, results, hit?.sourceId ? hit : null);
+    if (hit?.sourceId) return { hit, answered, paused: false, tied: null };
+    if (results[0]?.sourceId) firsts.push(results[0]);
+  }
+  return { hit: null, answered, paused: false, tied: tiedFirst(firsts) };
+}
+
+/** The result that came first under two or more names, or null (#316, searchByNames' `tied`). */
+export function tiedFirst(firsts: readonly SourceSeries[]): SourceSeries | null {
+  const seen = new Set<string>();
+  for (const r of firsts) {
+    if (seen.has(r.sourceId)) return r;
+    seen.add(r.sourceId);
+  }
+  return null;
+}
+
+export interface HuntResult {
+  /** The source this hunt followed, when it followed one. */
+  followed: { source: string; sourceSeriesId: string } | null;
+  /** That source's copy of the wanted number, tagged with `source`, when it lists one. */
+  chapter: SourceChapter | null;
+  why:
+    | 'off'          // the admin switch is off
+    | 'cooldown'     // hunted within HUNT_COOLDOWN_MS, or the sweep's budget is spent (nothing searched)
+    | 'cap'          // the series already follows as many sources as it may (lib/followLimit.ts)
+    | 'no_candidate' // nothing to search, or no searched source both carries the title and is this series
+    | 'no_copy'      // followed, but the new source does not list the wanted number
+    | 'posting_order' // numbered by posting order (#116): no other source's numbers line up, so none is searched
+    | 'followed';
+}
+
+/**
+ * The effective rating rule of lib/visibility.ts (`visible()`): the admin's override, then what the scan
+ * read, then the library's own rating; NULL is not adult. Asked once per series by the sweep, before the
+ * download loop, so the rule below can be a plain predicate.
+ */
+export async function seriesIsAdult(seriesId: string): Promise<boolean> {
+  const r = await one<{ adult: boolean | null }>(
+    `SELECT COALESCE(
+       (SELECT o.age_rating FROM series_overrides o WHERE o.series_id = s.id),
+       s.age_rating,
+       (SELECT l.age_rating FROM libraries l WHERE l.id = s.library_id)) >= $2 AS adult
+     FROM lib_series s WHERE s.id = $1`, [seriesId, ADULT_RATING],
+  ).catch(() => null);
+  return r?.adult === true;
+}
+
+/**
+ * The sweep's rule for which sources it may reach on a series' behalf: any source for an adult series,
+ * and for every other only sources that are not adult -- neither declared so by their extension nor named so
+ * by the admin (Admin -> Settings -> 18+ filter). The admin's list used to be ignored here, so a source named
+ * adult could still be followed onto a clean series by the failure hunt or the nightly repair. A viewer-driven
+ * path passes the viewer's own cap (visibility.sourceAllowedFor) instead; this is for paths with no viewer.
+ */
+export async function sweepAllowedFor(adult: boolean): Promise<(sourceId: string) => boolean> {
+  if (adult) return () => true;
+  const named = new Set((await adultFilter().catch(() => ({ sources: [] as string[] }))).sources);
+  return (id) => !getSource(id)?.isNsfw && !named.has(String(id).toLowerCase());
+}
+
+async function huntOn(): Promise<boolean> {
+  const row = await one<{ on: boolean }>('SELECT auto_follow_on_failure AS "on" FROM server_settings WHERE id = 1').catch(() => null);
+  return row?.on !== false;
+}
+
+export type HuntReason = 'failed_chapter' | 'short_chapter' | 'gap' | 'scout';
+
+/** v0.80.0: a series the scout (lib/sourceScout.ts) looked at less than this long ago is not hunted for: it just was. */
+export const HUNT_AFTER_SCOUT_MS = 3600_000;
+
+export interface HuntOpts {
+  /** Which sources may be reached on this series' behalf (sweepAllowedFor, or a viewer's own cap). */
+  allowed: (sourceId: string) => boolean;
+  /** How many hunts the caller's run may still start; charged the moment a search begins. */
+  budget: { left: number };
+  /** The cooldown clock, for tests. Not the wall clock: the hunt's own deadline is never derived from it. */
+  now?: number;
+  /** What the follow is for. Reaches the audit row and the log line; defaults to `failed_chapter`. */
+  reason?: HuntReason;
+  /**
+   * Search even inside HUNT_COOLDOWN_MS of the last hunt. Still stamped and still charged to the budget:
+   * a person pressing "Fix" on one chapter overrides the once-a-day rule for that press, not the bound on
+   * what one run may cost. The switch, the cap and the budget are not overridden by it.
+   */
+  force?: boolean;
+  /** Last-responsible-moment admission for unattended work. Omitted for actions a person requested. */
+  admit?: () => Promise<boolean>;
+}
+
+/** What huntCandidates found: the judgement the caller wanted, the first `ok` one it did not, and why it stopped. */
+export interface HuntCandidates {
+  /** The first judgement that is this series AND that `wants()` accepted; the caller follows it. */
+  chosen: Judgement | null;
+  /** The first judgement that is this series but that `wants()` refused, when there was one. */
+  fallback: Judgement | null;
+  /**
+   * `followed` when `chosen` is set (nothing is written here -- it is the verdict a follow of `chosen`
+   * earns); otherwise why the hunt found nothing to choose: `off`, `cooldown`, `cap`, `no_candidate`.
+   */
+  why: HuntResult['why'];
+  /** The series title, for the caller's audit and log lines; empty when the row was never read. */
+  title: string;
+}
+
+/**
+ * Search the sources this series does not follow for one that is this series and that `wants`, and hand
+ * back the judgement -- following it is the caller's next call (followHunted). Every early return is a
+ * `why`; nothing throws for a source's sake.
+ *
+ * Order: the switch; the sweep's budget (before anything is stamped, so a series the budget turned away
+ * is hunted by the next sweep and not tomorrow's); the series row and its stamp (skipped by `force`, never
+ * the stamp itself); the follower cap; the listing (under MIN_HAVE numbers there is nothing to judge
+ * against, and no source is asked); THEN the stamp, and only then the network. Searches run in parallel
+ * under the slots, judgements in scan order one at a time, stopping at the first candidate that is this
+ * series AND that `wants()` accepts. A candidate that is this series but that `wants()` refused is
+ * remembered as `fallback`: for the sweep that is a source lacking the wanted number, which will serve the
+ * next chapter and is worth following anyway; for the gap step it is a source that does not bracket the
+ * hole, which is not.
+ *
+ * `wants` is handed the release preferences the judgement was made under, so a caller deciding by "does
+ * it list this number" applies the same blocked-group rule the sweep will, without a second read.
+ */
+export async function huntCandidates(
+  seriesId: string,
+  opts: HuntOpts & { wants: (j: Judgement, prefs: ReleasePrefs) => boolean },
+): Promise<HuntCandidates> {
+  let title = '';
+  const none = (why: HuntResult['why']): HuntCandidates => ({ chosen: null, fallback: null, why, title });
+  const admitted = () => opts.admit ? opts.admit().catch(() => false) : Promise.resolve(true);
+  if (!(await admitted())) return none('no_candidate');
+  if (!(await huntOn())) return none('off');
+  if (opts.budget.left <= 0) return none('cooldown');
+
+  const s = await one<{ id: string; title: string; source_id: string | null; deleted_at: string | null; merged_into: string | null; source_hunt_at: string | null; numbering: string | null }>(
+    'SELECT id, title, source_id, deleted_at, merged_into, source_hunt_at, numbering FROM lib_series WHERE id = $1', [seriesId]).catch(() => null);
+  if (!s || s.deleted_at || s.merged_into) return none('no_candidate');
+  title = s.title;
+  // Before the stamp and the budget: a series that cannot be hunted for costs nothing, today or any day.
+  // Reintroduce by dropping it: "followers are not merged under posting order" in numbering.int.test.ts reads
+  // another why than posting_order.
+  if (s.numbering === 'posting_order') return none('posting_order');
+  const now = opts.now ?? Date.now();
+  if (!opts.force && s.source_hunt_at && now - new Date(s.source_hunt_at).getTime() < HUNT_COOLDOWN_MS) return none('cooldown');
+  // v0.80.0: the scout looked for this series within the hour -- it asked more sources than a hunt would, and what they
+  // said is remembered (lib/scoutMemory.ts). Reintroduce by dropping it: "a series the scout just looked at is not
+  // hunted for" in sourceScout.int.test.ts finds a search.
+  if (!opts.force) {
+    const scouted = await one<{ at: string | null }>('SELECT last_at AS at FROM series_scout WHERE series_id = $1', [seriesId]).catch(() => null);
+    if (scouted?.at && Date.now() - new Date(scouted.at).getTime() < HUNT_AFTER_SCOUT_MS) return none('cooldown');
+  }
+
+  const followers = (await q<{ source_id: string }>('SELECT source_id FROM series_sources WHERE series_id = $1', [seriesId]).catch(() => []))
+    .map((r) => r.source_id);
+  // The same count followHunted applies under its lock; checked here so a capped series costs no search. A follower
+  // that cannot carry the series now (v0.80.0: failing, switched off, not loaded) is not counted.
+  const notCounted = new Set(await notCarrying(followers).catch(() => [] as string[]));
+  if (followers.filter((id) => id !== s.source_id && !notCounted.has(id)).length >= await followerLimit()) return none('cap');
+  const numbers = (await q<{ number: number }>('SELECT DISTINCT number FROM series_listing WHERE series_id = $1', [seriesId]).catch(() => []))
+    .map((r) => Number(r.number)).filter((n) => Number.isFinite(n));
+  if (numbers.length < MIN_HAVE) return none('no_candidate');
+  // What sources already said about this series (v0.80.0, lib/scoutMemory.ts): one that said "not this series" lately,
+  // or that an admin unfollowed from it, is not searched again. Shared with the scout and the nightly repair.
+  // Reintroduce by searching them anyway: "the hunt skips a source that already said no" in sourceScout.int.test.ts
+  // counts a search.
+  const saidNo = await sourcesToSkip(seriesId, numbers.length).catch(() => new Set<string>());
+
+  // ⚠️ Stamped BEFORE the search and charged to the budget BEFORE the search: whatever happens from here
+  // on -- a crash, a wall, six sources that all say no -- this series is not searched for again today.
+  // `force` skips the check above, never this write: a forced hunt is still today's hunt.
+  if (!(await admitted())) return none('no_candidate');
+  const stamped = await one<{ at: string }>(
+    // Millisecond precision round-trips through the JS Date parser exactly, so paused() can compare this
+    // hunt's stamp without accidentally clearing a newer concurrent one.
+    `UPDATE lib_series SET source_hunt_at = date_trunc('milliseconds', clock_timestamp())
+      WHERE id = $1 RETURNING source_hunt_at AS at`, [seriesId],
+  );
+  opts.budget.left--;
+  // Clear only this hunt's stamp if Unmonitor stops it. A forced/manual hunt may have re-stamped the same
+  // series concurrently; timestamp equality prevents this cleanup from erasing that newer work.
+  const paused = async (): Promise<HuntCandidates> => {
+    if (stamped?.at) {
+      await q('UPDATE lib_series SET source_hunt_at = NULL WHERE id = $1 AND source_hunt_at = $2', [seriesId, stamped.at]).catch(() => {});
+    }
+    return none('no_candidate');
+  };
+
+  const health = new Map((await healthAll().catch(() => [])).map((h) => [h.source_id, h]));
+  const followed = new Set([...(s.source_id ? [s.source_id] : []), ...followers]);
+  // The series' language (v0.52.0, #123) orders the search -- its own language first -- and the guard keeps every
+  // source in another language out of it: never searched, not even when it is the only one listing the number, so it
+  // takes none of the HUNT_MAX_SOURCES. Reintroduce by dropping `fits` here: "the hunt never searches a source in
+  // another language" in languageGuard.int.test.ts finds it searched.
+  const lang = await seriesLanguage(seriesId);
+  // v0.62.0: nor a source in every language (`mixed: false`). Reintroduce by dropping it: "the hunt never searches a
+  // source in every language" in languageGuard.int.test.ts finds it searched.
+  const fits = await followGuard(seriesId, { mixed: false });
+  const candidates = scanOrder(listSources().filter((src) => opts.allowed(src.id)), { id: s.source_id ?? '', lang: lang.lang })
+    .filter(fits)
+    .filter((id) => {
+      if (followed.has(id) || saidNo.has(id)) return false;
+      const h = health.get(id);
+      if (h?.disabled) return false;
+      if (h?.blocked_until && new Date(h.blocked_until).getTime() > now) return false;
+      return !!getSource(id);
+    })
+    .slice(0, HUNT_MAX_SOURCES);
+  if (!candidates.length) return none('no_candidate');
+
+  // `opts.now` is the cooldown clock seam, not a wall-clock replacement. Tests may put it in the past;
+  // deriving this deadline from it would make every candidate time out without ever being searched.
+  const deadline = Date.now() + HUNT_WALL_MS;
+  const remaining = () => deadline - Date.now();
+  // A slot is held before a search's clock starts, as the fill scan holds one, so the budget measures the
+  // source and not the queue; the wall is checked once the slot is held, so a source that waited its turn
+  // out is simply not tried rather than charged for the wait.
+  const hits: Array<{ source: string; sourceId: string } | null> = new Array(candidates.length).fill(null);
+  let stopped = false;
+  // The other names the series goes by (v0.49.1): a source that files it under one of them is searched under it
+  // too, and matched exactly (searchByNames). Reintroduce by searching the title alone: "the hunt searches under
+  // the other names" in altTitles.int.test.ts finds no candidate.
+  const names = await altTitlesFor(seriesId, SEARCH_NAMES);
+  await Promise.all(candidates.map(async (id, i) => {
+    await takeHuntSlot();
+    try {
+      const src = getSource(id);
+      if (!src || remaining() < MIN_TRY_MS) return;
+      if (!(await admitted())) { stopped = true; return; }
+      // A search that throws or outruns its budget is a source that did not answer -- not a health event:
+      // a hunt must never be what puts a source into a cooldown, so nothing here reports.
+      const searched = await searchByNames(src, s.title, names, remaining, HUNT_SEARCH_MS, opts.admit);
+      if (searched.paused) { stopped = true; return; }
+      const { hit } = searched;
+      if (hit?.sourceId) hits[i] = { source: id, sourceId: hit.sourceId };
+      else if (searched.answered) void recordVerdict(seriesId, id, 'no_hit', { ourCount: numbers.length });
+    } catch { /* not this series' problem */ } finally { releaseHuntSlot(); }
+  }));
+  if (stopped || !(await admitted())) return paused();
+
+  const prefs = await effectivePrefsFor(await readSeriesPrefs(seriesId), 0);
+  const primary: PrimaryFacts = { title: s.title, altTitles: names, numbers, lang: lang.lang, exactLang: lang.sameBaseSibling };
+  // Judged in scan order, one at a time: the first that is this series and that the caller wants wins,
+  // and nothing past it is asked. One that is this series but not wanted is kept as the fallback.
+  let fallback: Judgement | null = null;
+  for (const hit of hits) {
+    if (!hit) continue;
+    const left = remaining();
+    if (left < MIN_TRY_MS) break;
+    if (!(await admitted())) return paused();
+    const j = await bounded(judgeCandidate(primary, hit, { prefs, health, admit: opts.admit }), left).catch(() => null);
+    if (!(await admitted())) return paused();
+    if (j) await rememberJudgement(seriesId, j, numbers.length);
+    if (!j || j.why !== 'ok') continue;
+    if (opts.wants(j, prefs)) return { chosen: j, fallback, why: 'followed', title };
+    fallback ??= j;
+  }
+  return { chosen: null, fallback, why: 'no_candidate', title };
+}
+
+/**
+ * What a judgement says about a source for this series, kept for the scout and the next hunt (v0.80.0,
+ * lib/scoutMemory.ts). `unavailable` and `too_few_listed` say nothing about the source: not kept.
+ */
+export async function rememberJudgement(seriesId: string, j: Judgement, ourCount: number): Promise<void> {
+  if (j.why === 'unavailable' || j.why === 'too_few_listed' || j.why === 'posting_order') return;
+  await recordVerdict(seriesId, j.source, j.why, {
+    theirTitle: j.theirTitle, sourceSeriesId: j.sourceSeriesId, coverage: j.coverage, ourCount,
+  });
+}
+
+/**
+ * Follow a judgement the hunt chose: the same atomic write under the same cap as the add-time auto-follow
+ * (`followJudged`, `added_by` NULL), then the audit row that says the server did this and why. `detail`
+ * is spread into the audit row after the standard fields (the sweep adds `number`, the gap step `numbers`).
+ *
+ * Throws when nothing was written -- the cap was reached under the lock, or the series went away between
+ * the judgement and the follow -- with `why` set to the HuntResult verdict (`cap` or `no_candidate`), so a
+ * caller reporting a `why` maps it without parsing a message. Never after a partial write: followJudged is
+ * one transaction.
+ */
+export async function followHunted(
+  seriesId: string,
+  title: string,
+  j: Judgement,
+  reason: HuntReason,
+  detail: Record<string, unknown> = {},
+  admit?: () => Promise<boolean>,
+): Promise<{ source: string; sourceSeriesId: string }> {
+  if (admit && !(await admit().catch(() => false))) {
+    throw Object.assign(new Error(`"${title}": automatic follow was paused`), { why: 'no_candidate' });
+  }
+  // A follower that cannot carry the series now does not count toward its limit (v0.80.0): kept, and not counted.
+  const followers = (await q<{ source_id: string }>('SELECT source_id FROM series_sources WHERE series_id = $1', [seriesId]).catch(() => []))
+    .map((r) => r.source_id);
+  const notCounted = await notCarrying(followers).catch(() => [] as string[]);
+  const written = await followJudged(seriesId, j, { notCounted }).catch(() => 'gone' as const);
+  if (written !== 'inserted') {
+    throw Object.assign(new Error(`"${title}": could not follow ${j.source} (${written})`), { why: written === 'cap' ? 'cap' : 'no_candidate' });
+  }
+  await logAudit('series.follow_source', {
+    userId: null,
+    detail: {
+      id: seriesId, title, source: j.source, sourceSeriesId: j.sourceSeriesId, coverage: j.coverage, theirTitle: j.theirTitle,
+      auto: true, reason, ...detail,
+    },
+  });
+  console.log(`[hunt] "${title}": followed ${j.source} (${reason.replace('_', ' ')}${detail.number !== undefined ? ` for chapter ${detail.number}` : ''})`);
+  return { source: j.source, sourceSeriesId: j.sourceSeriesId };
+}
+
+/** What a series has at one whole number, for partAlias's R1 (partsAt). */
+interface PartsAt { held: HeldPart[]; listed: number[] }
+
+/**
+ * What the series has at the whole number `w` (v0.52.0): its parts on disk, override-aware with each file's origin --
+ * the updater's own read for lib/partAlias.ts -- and the numbers its listing keeps there. Null when the part rules do
+ * not apply to the series now (partRulesApply: posting order, a numbering change pending or a renumber half-done) or
+ * the read failed: the hunt then wants the exact number alone, as it always did.
+ */
+async function partsAt(seriesId: string, w: number): Promise<PartsAt | null> {
+  try {
+    const s = await one<{ numbering: string | null; numbering_pending: unknown; renumber_plan: unknown }>(
+      'SELECT numbering, numbering_pending, renumber_plan FROM lib_series WHERE id = $1', [seriesId]);
+    if (!s || !partRulesApply(s)) return null;
+    const held = await q<{ number: number; source_id: string | null }>(
+      `SELECT COALESCE(ov.number, b.number) AS number, b.source_id FROM lib_books b LEFT JOIN book_overrides ov ON ov.book_id = b.id
+        WHERE b.series_id = $1 AND ${heldBooks('b')} AND COALESCE(ov.number, b.number) >= $2 AND COALESCE(ov.number, b.number) < $2 + 1`,
+      [seriesId, w]);
+    const listed = await q<{ number: number }>(
+      'SELECT number FROM series_listing WHERE series_id = $1 AND number >= $2 AND number < $2 + 1', [seriesId, w]);
+    return { held: held.map((r) => ({ number: Number(r.number), sourceId: r.source_id })), listed: listed.map((r) => Number(r.number)) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A candidate's copy of `number` under partAlias's R1 (lib/partAlias.ts, v0.50.0), when it numbers the chapter's parts
+ * its own way: it lists as many parts at that whole number as the series has there (two or more), in other numbers --
+ * its 335.1 and 335.6 for our 335 and 335.5 -- so its part in the same place is ours, renumbered exactly as the sweep
+ * will renumber it once the source is followed. The reference is aliasParts' own: the parts on disk, else the numbers
+ * the series' listing keeps there (handed in as the primary's list). Renumbered first and chosen after, as the
+ * updater does. Anything else -- another count of parts, one part, nothing to go by -- is no copy, as the sweep would
+ * see it.
+ */
+function partCopy(chapters: readonly SourceChapter[], source: string, number: number, at: PartsAt, prefs: ReleasePrefs): SourceChapter | undefined {
+  const w = Math.floor(numKey(number));
+  const LISTING = '\u0000listing';
+  const theirs = chapters.filter((c) => Number.isFinite(c.number) && Math.floor(numKey(c.number)) === w).map((c) => ({ ...c, source }));
+  if (!theirs.length) return undefined;
+  const { tagged } = aliasParts({
+    tagged: [...at.listed.map((n) => ({ sourceId: '', number: n, source: LISTING })), ...theirs],
+    held: at.held,
+    primary: LISTING,
+  });
+  // A renumbered copy is a new object (aliasParts); the ones it left alone are the very ones handed in.
+  const moved = tagged.filter((c) => c.source === source && !theirs.includes(c));
+  return chooseReleases(moved, prefs).releases.find((c) => numKey(c.number) === numKey(number));
+}
+
+/**
+ * Search the sources this series does not follow for one that is this series, follow it, and hand back
+ * its copy of `number`: huntCandidates wanting "lists the number", then followHunted, then the copy out
+ * of the chapter list the judgement already fetched. A candidate that is this series but lacks the number
+ * is followed when nothing better turns up: it will serve the next chapter, which is what following is
+ * for, and the answer is then `no_copy`.
+ */
+export async function huntSource(seriesId: string, number: number, opts: HuntOpts): Promise<HuntResult> {
+  const none = (why: HuntResult['why']): HuntResult => ({ followed: null, chapter: null, why });
+  // The copy of the wanted number per judgement, remembered as `wants` finds it so it is not chosen twice
+  // (once to accept the judgement, once to hand it back) under preferences read once.
+  const copies = new WeakMap<Judgement, SourceChapter>();
+  // What the series has at the wanted number's whole, read once, for a candidate that numbers its parts its own way.
+  const at = await partsAt(seriesId, Math.floor(numKey(number)));
+  const wants = (j: Judgement, prefs: ReleasePrefs): boolean => {
+    // The exact number first. Then partAlias's R1 (v0.52.0; v0.50.0 left the hunt exact): a candidate with the same
+    // parts under other numbers lists the chapter, and is chosen at once rather than followed as a fallback that
+    // "does not list" it. Its parts are renumbered before the release choice, as the updater does. Reintroduce the
+    // exact match alone: "a candidate that numbers the parts its own way is chosen at once" in sourceHunt.int.test.ts
+    // reads no_copy.
+    const c = chooseReleases(j.chapters ?? [], prefs).releases.find((x) => x.number === number)
+      ?? (at ? partCopy(j.chapters ?? [], j.source, number, at, prefs) : undefined);
+    if (!c) return false;
+    copies.set(j, { ...c, source: j.source });
+    return true;
+  };
+  const found = await huntCandidates(seriesId, { ...opts, wants });
+  const j = found.chosen ?? found.fallback;
+  if (!j) return none(found.why);
+  const chapter = (found.chosen && copies.get(found.chosen)) || null;
+  if (opts.admit && !(await opts.admit().catch(() => false))) return none('no_candidate');
+  let followed: { source: string; sourceSeriesId: string };
+  try {
+    followed = await followHunted(seriesId, found.title, j, opts.reason ?? 'failed_chapter', { number }, opts.admit);
+  } catch (e: any) {
+    return none(e?.why === 'cap' ? 'cap' : 'no_candidate');
+  }
+  if (!chapter) console.log(`[hunt] "${found.title}": ${j.source} does not list chapter ${number} yet`);
+  return { followed, chapter, why: chapter ? 'followed' : 'no_copy' };
+}

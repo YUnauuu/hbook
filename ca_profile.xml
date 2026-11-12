@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<CommunityApplications>
+  <Profile>
+    A self-hosted manga server that downloads too.
+  </Profile>
+
+  <Icon>https://raw.githubusercontent.com/YUnauuu/hbook/main/web/public/icons/icon-512.png</Icon>
+
+  <WebPage>https://hbook.com</WebPage>
+</CommunityApplications>

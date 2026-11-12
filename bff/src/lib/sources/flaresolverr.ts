@@ -1,0 +1,637 @@
+// Thin client for FlareSolverr (headless-Chrome Cloudflare solver) and the solvers that speak its /v1 (trawl, Byparr).
+// Returns solved page HTML, and keeps the latest cf_clearance cookies + user-agent per solver and origin so the
+// downloader can fetch images directly afterwards.
+//
+// v0.55.3: an optional BACKUP solver (FLARESOLVERR_FALLBACK_URL). A request the main solver does not answer with a
+// page -- it cannot be reached, it ran out of time, it answered with an error, an empty page or something that is not
+// its JSON, or it stayed busy -- is sent once, unchanged, to the backup, and each site is asked first of the solver that
+// answered it last (lastWon). Every error keeps the `flaresolverr:` prefix whichever solver said it: to Health
+// (solverBlaming) and the diagnosis it means "the solver", never FlareSolverr in particular.
+//
+// Both addresses are read when asked rather than once at load: production sets them before the server starts, and a
+// test can point them at fakes of its own.
+import { fetchPublicHop } from '../publicConnection';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { assertNotPrivateHost, fetchFollowingPublic } from '../safeFetch';
+import { BlockedAddress, isBlockedHost } from '../ssrfGuard';
+
+const mainUrl = (): string => (process.env.FLARESOLVERR_URL || 'http://hbook-flaresolverr:8191').replace(/\/$/, '');
+
+/** The backup solver's address, or '' when there is none. The main's own address again is no backup. */
+export function backupSolverUrl(): string {
+  const b = (process.env.FLARESOLVERR_FALLBACK_URL ?? '').trim().replace(/\/$/, '');
+  return b && b !== mainUrl() ? b : '';
+}
+
+/** The solvers configured, the main first. */
+const solvers = (): string[] => [mainUrl(), backupSolverUrl()].filter(Boolean);
+
+interface Solution { url: string; status: number; response: string; cookies: Array<{ name: string; value: string }>; userAgent: string }
+
+/**
+ * Each solver's cookie jar and user agent, per origin it solved (v0.55.3: keyed by solver AND origin, `jarKey`), and
+ * whose pair an origin's plain fetches send: the solver that solved it last (`solvedBy`).
+ *
+ * A cf_clearance belongs to the browser that earned it -- its user agent, its address -- so an image fetch must send one
+ * solver's cookie with that same solver's user agent, never one's cookie with the other's agent: Cloudflare refuses the
+ * mix. Reintroduce one jar per origin (drop the solver from `jarKey`): "the reset clears both solvers' jars" in
+ * solverBackup.test.ts counts one pair where two solvers each solved the site.
+ */
+const sessions = new Map<string, { cookie: string; userAgent: string }>();
+const solvedBy = new Map<string, string>();
+const jarKey = (solver: string, origin: string): string => `${solver} ${origin}`;
+const sessionOf = (origin: string) => {
+  const solver = solvedBy.get(origin);
+  return solver === undefined ? undefined : sessions.get(jarKey(solver, origin));
+};
+
+/**
+ * Per site (the origin a request names), the solver that answered it last with a page, and when (v0.55.3).
+ *
+ * That solver is asked first for rememberMs: without it every request for a site the main cannot solve would wait for
+ * the main to fail -- up to its whole attempt -- before the backup answered as it did a moment ago. After that the main
+ * is asked first again, so a main that has recovered gets its sites back. In memory only, like the jars: a restart, or
+ * a solver reset, starts from the main. Reintroduce the fixed order (`solvers()` in solveNow): "the solver that answered
+ * a site last is asked first" in solverBackup.test.ts finds the main asked again.
+ */
+const lastWon = new Map<string, { solver: string; at: number }>();
+
+/** The solvers a request for `site` is asked of, in order: the one that answered it last, then the rest, main first. */
+function askingOrder(site: string | null): string[] {
+  const all = solvers();
+  const won = site === null ? undefined : lastWon.get(site);
+  if (!won) return all;
+  if (Date.now() - won.at > rememberMs || !all.includes(won.solver)) {
+    lastWon.delete(site!);
+    return all;
+  }
+  return [won.solver, ...all.filter((x) => x !== won.solver)];
+}
+
+/**
+ * How many solves may be in flight at once.
+ *
+ * FlareSolverr drives real Chrome instances. The fill scan searches every source at the same time, which put
+ * a dozen challenges on it simultaneously and produced "Task queue depth is 4" followed by
+ * "Error starting Chrome: Service /app/chromedriver unexpectedly exited" -- the solver falling over under
+ * our own fan-out. A crashed solve is reported as the SITE refusing us, so this was manufacturing source
+ * failures out of nothing.
+ */
+export const SOLVER_CONCURRENCY = Math.max(1, Number(process.env.SOLVER_CONCURRENCY || 4));
+let inFlight = 0;
+/** A request waiting for a slot: `go` hands it one; `drop` takes it out unserved (its caller stopped waiting). */
+interface Waiter { go: () => void; drop?: NodeJS.Timeout }
+const waiting: Waiter[] = [];
+
+/**
+ * When the caller stops waiting (v0.59.0), carried with the request rather than through every adapter's signature:
+ * a Discover listing runs its adapter under withSolverDeadline, and any solve the adapter queues meanwhile is dropped
+ * from the queue once that moment has passed instead of being solved for nobody. The owner's install had requests
+ * whose page had long given up still queued minutes later behind the slots they were blocking. A solve that has
+ * started runs to its end (the solver cannot be told to stop); one that has not started never will. Reintroduce by
+ * queueing without the deadline: "a queued solve whose caller gave up is never started" in solverQueue.test.ts finds
+ * it solved.
+ */
+const deadline = new AsyncLocalStorage<number>();
+export function withSolverDeadline<T>(ms: number, fn: () => Promise<T>): Promise<T> {
+  return deadline.run(Date.now() + ms, fn);
+}
+
+/**
+ * How long the caller is still willing to wait, if it said. Infinite when nobody said.
+ *
+ * Read by the fetches below so that a deadline given once is honoured by every request made
+ * under it -- not only by the ones that start after the deadline has passed.
+ */
+export function deadlineRemaining(): number {
+  const until = deadline.getStore();
+  return until === undefined ? Infinity : until - Date.now();
+}
+
+/**
+ * The signal of the work in flight, so a fetch that is ALREADY running can be stopped too.
+ *
+ * A deadline that is only read when a request is about to be made stops the NEXT request, not the
+ * one that is hanging on a socket. A signal is the only thing that closes a socket that is open:
+ * the fetch is aborted and the connection goes with it.
+ *
+ * This is the other half of `withSolverDeadline`: that one is about the solver's queue (a solve
+ * that has not started must not start for a caller that has gone), this one is about the socket (a
+ * request that is running must be stopped when the caller stops waiting).
+ */
+const stopSignal = new AsyncLocalStorage<AbortSignal>();
+
+/** Run `fn` under a signal that fires when the time is up. */
+export async function withStopSignal<T>(ms: number, fn: () => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  timer.unref?.();
+  try {
+    return await stopSignal.run(controller.signal, fn);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The signal of the work in flight, when there is one. */
+export function currentStopSignal(): AbortSignal | undefined {
+  return stopSignal.getStore();
+}
+// `selfTimeout` as withTimeout tags its own (lib/sources/index.ts): the drop fires at the listing's own deadline, a moment
+// before withTimeout would, so a listing must read it as its own budget running out -- slowness, never the site failing
+// (latestPage's reportFail would hand a working site an escalating cooldown). Reintroduce without it: "a listing whose
+// solve waited past its budget is slow, not failing" in discoverSources.int.test.ts finds a cooldown.
+const late = () =>
+  Object.assign(new Error('flaresolverr: the caller stopped waiting before a solver was free'), { busy: true, selfTimeout: true });
+
+async function acquire(): Promise<void> {
+  const until = deadline.getStore();
+  if (until !== undefined && Date.now() >= until) throw late();
+  if (inFlight < SOLVER_CONCURRENCY) { inFlight++; return; }
+  await new Promise<void>((resolve, reject) => {
+    const w: Waiter = { go: () => { if (w.drop) clearTimeout(w.drop); resolve(); } };
+    if (until !== undefined) {
+      w.drop = setTimeout(() => {
+        const i = waiting.indexOf(w);
+        if (i >= 0) waiting.splice(i, 1);
+        reject(late());
+      }, Math.max(0, until - Date.now()));
+      w.drop.unref?.();
+    }
+    waiting.push(w);
+  });
+  inFlight++;
+}
+function release(): void {
+  inFlight--;
+  waiting.shift()?.go();
+}
+
+/** v0.80.0: whether solves are queueing for a browser now. The scout leaves a source behind the solver for later then. */
+export const solverQueueing = (): boolean => waiting.length > 0;
+
+/** Tests only: how many solves are running and waiting. */
+export const _solverQueue = () => ({ inFlight, waiting: waiting.length });
+
+/** The e2e stub's own origins (FAKE_SOURCE_URLS, sources/fake.ts): on loopback by design, and set only by a test run. */
+const fakeOrigins = (): string[] => (process.env.FAKE_SOURCE_URLS || '').split(',').flatMap((e) => {
+  try { return [new URL(e.slice(e.indexOf('=') + 1).trim()).origin]; } catch { return []; }
+});
+
+/**
+ * A URL reaches the solver only on a public http(s) host (lib/safeFetch.ts assertNotPrivateHost). The solver is a
+ * browser on the Docker network beside the engine and the database, which follows redirects and runs a page's scripts,
+ * and the URLs it was handed came from a site's own HTML -- a chapter link, a page image -- with no check at all
+ * (v0.69.1). The cover route already checked before its solve; this is the one door every solve goes through.
+ */
+function solvableHost(url: string): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { throw new BlockedAddress(url); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new BlockedAddress(url);
+  if (fakeOrigins().includes(u.origin)) return null;
+  if (isBlockedHost(u.hostname)) throw new BlockedAddress(u.hostname);
+  return u.hostname;
+}
+
+async function solve(cmd: 'request.get' | 'request.post', url: string, postData?: string): Promise<Solution> {
+  // A private literal or a local name is refused before it takes a slot; the DNS half runs inside the slot, so the
+  // queue keeps the order callers arrived in. Reintroduce by removing both: solverGuard.test.ts sees the solver asked.
+  const host = solvableHost(url);
+  await acquire();
+  try {
+    if (host) await assertNotPrivateHost(host);
+    return await solveNow(cmd, url, postData);
+  } finally {
+    release();
+  }
+}
+
+/**
+ * The request, asked of each solver in turn until one answers it with a page (v0.55.3: the main, then the backup, or
+ * first the one that answered this site last -- askingOrder).
+ *
+ * When every one failed, the caller is told what a solver SAID: an error in its own words, or a page that came back
+ * empty, is what it found at the site, and a backup that could not be reached at all says nothing about the site -- its
+ * "fetch failed" must not hide the main's "Cloudflare has blocked this request". With nothing said, the first failure,
+ * which is the main's. Reintroduce the last failure: "when both fail, the caller hears what a solver said" in
+ * solverBackup.test.ts reads the backup's connection error.
+ */
+async function solveNow(cmd: 'request.get' | 'request.post', url: string, postData?: string): Promise<Solution> {
+  let site: string | null = null;
+  try { site = new URL(url).origin; } catch { /* asked as it is, and remembered under nothing */ }
+  const failed: Array<{ error: Error; said: boolean; busy?: boolean }> = [];
+  for (const solver of askingOrder(site)) {
+    const a = await ask(solver, cmd, url, postData);
+    if ('solution' in a) {
+      // A site moves to the solver that answered it only when the one asked before it failed AT it. One that was only
+      // busy keeps its sites: a moment's queue at the main (trawl's one browser) would otherwise hand them all to the
+      // backup for hours. Reintroduce the move on any failure: "a solver that was only busy keeps its sites" in
+      // solverBackup.test.ts finds the backup asked first.
+      if (site !== null && !(failed.length && failed.every((f) => f.busy))) lastWon.set(site, { solver, at: Date.now() });
+      return a.solution;
+    }
+    failed.push(a);
+  }
+  // A busy solver before a connection error (SOLVER_BUSY, below): it is the one that names no site.
+  throw (failed.find((f) => f.said) ?? failed.find((f) => f.busy) ?? failed[0]).error;
+}
+
+/** What asking one solver came to: a page, or why not -- `said` when the solver itself answered (above). */
+type Asked = { solution: Solution } | { error: Error; said: boolean; busy?: boolean };
+
+/**
+ * A solver's own HTTP 429 is the solver being BUSY, never the site refusing (v0.55.3).
+ *
+ * trawl answers it when none of its browsers (BROWSER_POOL_SIZE, one by default) frees up within its
+ * BROWSER_ACQUIRE_TIMEOUT_MS (15 s): "Browser pool exhausted: all browsers are busy". A site's own 429 comes inside an
+ * answer -- `solution.status`, or trawl's "Tier 3 failed (http-429)" -- where classify() reads it as the rate limit it
+ * is. So the same solver is asked again, BUSY_RETRIES times a few seconds apart, then the backup; a solver still busy
+ * after that fails in words of our own, which classify() files as nothing: no cooldown and no rate limit for a site that
+ * never said a word. Reintroduce the solver's 429 as an ordinary failure (drop the 429 branch in `ask`): "a solver's
+ * own 429 is busy" in solverBackup.test.ts finds the main asked once and its pool's words as the error.
+ */
+export const SOLVER_BUSY = 'flaresolverr: solver busy (every one of its browsers stayed in use)';
+const BUSY_RETRIES = 2;
+
+/**
+ * Test seam: how long one solver may take with one request before it counts as not answering (the backup is next), the
+ * pause before a busy solver is asked again (doubled the second time), and how long the solver that answered a site
+ * last is asked first (lastWon).
+ */
+let attemptMs = 95_000;
+let busyWaitMs = 3_000;
+let rememberMs = 6 * 60 * 60_000;
+export function setSolverTiming(t: { attemptMs?: number; busyWaitMs?: number; rememberMs?: number }): void {
+  if (t.attemptMs !== undefined) attemptMs = t.attemptMs;
+  if (t.busyWaitMs !== undefined) busyWaitMs = t.busyWaitMs;
+  if (t.rememberMs !== undefined) rememberMs = t.rememberMs;
+}
+
+async function ask(solver: string, cmd: 'request.get' | 'request.post', url: string, postData?: string): Promise<Asked> {
+  let r: Response;
+  for (let busy = 0; ; busy++) {
+    try {
+      // The solver's own timeout, and the caller's budget, and the caller's signal -- whichever
+      // comes first. The solver's timeout alone is not enough: a solver that cannot be reached
+      // hangs on its socket for the whole of it (ninety-five seconds), and a fan-out that asks
+      // thirty such sites holds thirty of those sockets, each of them a connection the sources
+      // that DO answer need.
+      const budget = Math.min(attemptMs, deadlineRemaining());
+      if (!(budget > 0)) return { error: late(), said: false };
+      const own = AbortSignal.timeout(budget);
+      const stop = currentStopSignal();
+      r = await fetch(`${solver}/v1`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cmd, url, postData, maxTimeout: 60000 }),
+        signal: stop ? AbortSignal.any([own, stop]) : own,
+      });
+    } catch (e) {
+      // Not reachable, or no answer in time: nothing about the site.
+      return { error: e as Error, said: false };
+    }
+    if (r.status !== 429) break;
+    await r.text().catch(() => '');
+    if (busy >= BUSY_RETRIES) return { error: new Error(SOLVER_BUSY), said: false, busy: true };
+    await new Promise((go) => setTimeout(go, busyWaitMs * (busy + 1)));
+  }
+  // A solver's errors are JSON too (FlareSolverr's HTTP 500 carries {status: 'error', message}). Anything else -- a
+  // proxy's error page, a web server at the wrong address -- is the solver's address failing, never the site.
+  const j: any = await r.json().catch(() => null);
+  if (!j || typeof j !== 'object') return { error: new Error('flaresolverr: the solver did not answer with its JSON'), said: false };
+  if (j.status !== 'ok' || !j.solution) return { error: new Error(`flaresolverr: ${j.message || j.status}`), said: true };
+  const s: Solution = j.solution;
+  try {
+    const origin = new URL(s.url || url).origin;
+    sessions.set(jarKey(solver, origin), { cookie: (s.cookies || []).map((c) => `${c.name}=${c.value}`).join('; '), userAgent: s.userAgent });
+    solvedBy.set(origin, solver);
+  } catch {}
+  return s.response ? { solution: s } : { error: emptyBody(s, url), said: true };
+}
+
+/**
+ * An answer with no page in it, as a failure.
+ *
+ * This used to be `s.response || ''`. An empty body is never a legitimate page -- every caller parses it
+ * straight into `[]` -- so a solver that answered with nothing was indistinguishable from a site with
+ * nothing on it, and `latestPage` recorded neither success nor failure. Whole classes of failure went into
+ * the void: on this install FlareSolverr's own browser was crashing and the affected sources simply looked
+ * quiet.
+ *
+ * Throwing routes it through the caller's existing catch, where `classify` finally has an HTTP status to
+ * read. That status was always here: `Solution.status` carries what the ORIGIN answered, and discarding it
+ * is why every caller had to call `classify(e)` with no second argument. The 403 that manhuaus.com and
+ * manhuafast.net return on every request was arriving on this line and being thrown away. Since v0.55.3 it is
+ * one solver's failure like any other, and the backup is asked; its cookies are kept all the same (cfSession).
+ */
+function emptyBody(s: Solution, url: string): Error {
+  let host = url;
+  try { host = new URL(s.url || url).host; } catch { /* the id is for humans; a bad URL must not mask the failure */ }
+  return Object.assign(
+    new Error(`flaresolverr: empty body (HTTP ${s.status ?? '?'}) from ${host}`),
+    { status: s.status },
+  );
+}
+
+/**
+ * The page, fetched directly, for when there is no solver to fetch it with.
+ *
+ * The solver is a real Chrome, and it is what gets past the Cloudflare challenge that many of these
+ * sites put in front of a page. But not every site has one, and a server without a solver should
+ * still be able to read the ones that do not -- a plain GET is the whole of what a page without a
+ * challenge needs.
+ *
+ * So the direct fetch is the fallback, not the first choice. A site that DOES have a challenge
+ * answers with the challenge page, the parsers find nothing in it, and the source has no books --
+ * exactly what a site that is down looks like. Nothing is broken by the fallback; something is
+ * gained.
+ *
+ * It is OPT-IN (`SOURCE_DIRECT_FETCH=1`), because it changes what the solver's failure means: with
+ * it, a solver that is down becomes a slower path rather than a dead one, and the request counts the
+ * upstream's own tests pin are no longer the counts. A server that runs the solver -- which the
+ * single-container image does -- has no reason to turn it on.
+ *
+ * The guarded connection (publicConnection.ts) is used, so a URL that names a private address is
+ * refused here as everywhere else.
+ */
+const directFetchWanted = (): boolean => (process.env.SOURCE_DIRECT_FETCH ?? '') === '1';
+
+/**
+ * How long a direct fetch may take.
+ *
+ * Ten seconds, not twenty. A page that has not answered in ten seconds is a page that is not there,
+ * and the connection it holds open is the one a working site's answer needs: a fan-out that asks
+ * thirty unreachable sites at once holds thirty connections for the whole timeout, and the site
+ * that would have answered is left waiting for a connection that does not come.
+ */
+const directFetchMs = (): number => {
+  const n = Number(process.env.SOURCE_DIRECT_FETCH_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 10_000;
+};
+
+/**
+ * A page's bytes, read as the page says it is written.
+ *
+ * A good half of the Chinese manga sites are still written in GB2312, and a page read as UTF-8 is
+ * a page of mojibake: the titles come out as "ֲ" and every parser finds nothing in it. So the
+ * charset the page names -- in its header or in its own markup -- is the one it is read with.
+ *
+ * The fallback is by badness rather than by trust: a page that says one thing and is written in
+ * another is read with the reading that makes fewer characters broken. A site whose header says
+ * gb2312 and whose bytes are UTF-8 is common enough to be worth the check.
+ */
+function decodePage(buf: Buffer, contentType: string | null): string {
+  const head = buf.subarray(0, 2048).toString('latin1');
+  const named = (contentType ?? '').match(/charset=["']?([\w-]+)/i)?.[1]
+    ?? head.match(/<meta[^>]+charset=["']?([\w-]+)/i)?.[1]
+    ?? 'utf-8';
+  const read = (label: string): string | null => {
+    try { return new TextDecoder(label.toLowerCase().trim()).decode(buf); } catch { return null; }
+  };
+  const broken = (s: string): number => (s.match(/\uFFFD/g) || []).length;
+  const chosen = read(named);
+  const other = read(named.toLowerCase().includes('gb') ? 'utf-8' : 'gbk');
+  if (!chosen) return other ?? buf.toString('utf8');
+  if (other && broken(other) < broken(chosen)) return other;
+  return chosen;
+}
+
+async function plainGet(url: string, postData?: string): Promise<string | null> {
+  if (!directFetchWanted()) return null;
+  // The budget is the shorter of our own timeout and the caller's deadline -- and when the caller
+  // has already stopped waiting, there is no request to make at all.
+  const budget = Math.min(directFetchMs(), deadlineRemaining());
+  if (!(budget > 0)) return null;
+  const own = AbortSignal.timeout(budget);
+  const stop = currentStopSignal();
+  const signal = stop ? AbortSignal.any([own, stop]) : own;
+  try {
+    // The redirects are followed BY HAND, hop by hop, each one checked: a site that answers "301
+    // Moved Permanently" to www.example.com is a site with a page, and a direct fetch that refuses
+    // to follow the redirect sees a page of nginx's own error text and no books in it. Half of the
+    // Chinese manga sites answer with a redirect to their www name.
+    const r = await fetchFollowingPublic(url, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        ...(postData ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+      },
+      signal,
+      ...(postData ? { method: 'POST', body: postData } : {}),
+    });
+    if (!r.ok) return null;
+    const text = decodePage(Buffer.from(await r.arrayBuffer()), r.headers.get('content-type'));
+    return text || null;
+  } catch {
+    // A fetch that was stopped by our own budget is not the site's failure: the site may be
+    // perfectly good and simply slow. Saying so keeps the caller from remembering a good site as
+    // broken and leaving it out of the next answer.
+    //
+    // `asked: true` says the site WAS asked and did not answer in time -- which is a different fact
+    // from "we gave up before asking", and the caller treats the two differently.
+    if (stop?.aborted) throw Object.assign(new Error('the caller stopped waiting'), { selfTimeout: true, asked: true });
+    return null;
+  }
+}
+
+export async function cfGet(url: string): Promise<string> {
+  try {
+    return (await solve('request.get', url)).response;
+  } catch (err) {
+    // The caller stopped waiting while the solver was being asked. That is not the site's failure.
+    //
+    // An error that already says so is kept as it is: the solver's own "busy" says the SOLVER was
+    // the reason, and the caller reads that to decide the site was never asked at all. Replacing it
+    // with our own wording would lose that, and a site nobody asked would be marked as one that
+    // refused us.
+    const ours = (err as { selfTimeout?: boolean })?.selfTimeout === true;
+    if (!ours && deadlineRemaining() <= 0) throw Object.assign(new Error('the caller stopped waiting'), { selfTimeout: true });
+    // No solver answered -- maybe there is not one. Fetch the page directly and let the parsers
+    // decide whether it is a page worth reading.
+    const direct = await plainGet(url);
+    if (direct !== null) return direct;
+    throw err;
+  }
+}
+export async function cfPost(url: string, postData: string): Promise<string> {
+  try {
+    return (await solve('request.post', url, postData)).response;
+  } catch (err) {
+    const ours = (err as { selfTimeout?: boolean })?.selfTimeout === true;
+    if (!ours && deadlineRemaining() <= 0) throw Object.assign(new Error('the caller stopped waiting'), { selfTimeout: true });
+    const direct = await plainGet(url, postData);
+    if (direct !== null) return direct;
+    throw err;
+  }
+}
+
+/** Cookie header + UA to fetch binaries (images) directly — FlareSolverr can't return binary bodies. */
+/** Origins whose last solve failed, and when, so a dead root is not re-solved for every chapter. */
+const unsolvable = new Map<string, number>();
+const RESOLVE_AFTER_MS = 5 * 60_000;
+
+/** The solve running for an origin, which every other caller for that origin waits on (v0.59.0). */
+const solving = new Map<string, Promise<void>>();
+
+/**
+ * @param o.solveUrl when the origin root cannot be solved, solve `url` itself (default true: a chapter's page images,
+ *   below). The cover route passes false for a caller's cover (v0.59.0): an image URL is not a page, and on the owner's
+ *   install every one of ~89 such solves for one cover CDN failed while holding the solver's slots.
+ */
+export async function cfSession(url: string, o: { solveUrl?: boolean } = {}): Promise<{ cookie: string; userAgent: string }> {
+  const origin = new URL(url).origin;
+  // Only the side effect matters here: `solve` stores the cookie jar before it returns, so an empty body
+  // (which now throws) has still given us what we came for. Before `cfGet` could throw this was a bare
+  // await, and letting it throw now would fail image downloads that used to succeed.
+  if (!sessionOf(origin) && Date.now() - (unsolvable.get(origin) || 0) > RESOLVE_AFTER_MS) {
+    // ONE solve per origin at a time (v0.59.0). A wall of covers from one CDN asked for its session all at once, and
+    // with no session yet each caller started its own root solve (and then its own URL solve): twenty covers, forty
+    // solves, all four slots for minutes. Now the first caller solves and the rest wait for its answer. Reintroduce
+    // by solving per caller: "one origin is solved once however many ask at once" in solverQueue.test.ts counts more.
+    let running = solving.get(origin);
+    if (!running) {
+      running = (async () => {
+        // The origin ROOT is the cheap way in and works for a normal site. An image CDN is not a normal site:
+        // `imgs-2.2xstorage.com/` and `storage.waitst.com/` both answer 403 with an access-denied page, which
+        // FlareSolverr reports as a block, so `solve` threw BEFORE caching anything. The session was therefore
+        // never stored, the root was re-solved for every single chapter, and every image was then fetched with
+        // no clearance cookie at all -- on the sites where the 429s were coming from.
+        //
+        // So fall back to the URL we are actually about to fetch. That one exists, so it can be solved -- unless the
+        // caller said not to (o.solveUrl, above).
+        //
+        // A solve dropped from the queue because its caller stopped waiting (withSolverDeadline) never reached the site:
+        // it says nothing about the origin, so it marks nothing unsolvable -- that would keep every caller, a chapter
+        // download's included, from asking for five minutes. Reintroduce by marking it: "a dropped solve does not mark
+        // its origin unsolvable" in solverQueue.test.ts finds the next caller turned away.
+        let dropped = false;
+        const ask = (u: string) => cfGet(u).catch((e) => { if ((e as { busy?: boolean })?.busy) dropped = true; throw e; });
+        await ask(`${origin}/`).catch(() => (o.solveUrl === false || dropped ? undefined : ask(url))).catch(() => {});
+        if (sessionOf(origin)) unsolvable.delete(origin);
+        else if (!dropped) unsolvable.set(origin, Date.now());
+      })().finally(() => solving.delete(origin));
+      solving.set(origin, running);
+    }
+    await running;
+  }
+  // One solver's pair, whole: the one that solved this origin last (`solvedBy`).
+  return sessionOf(origin) || { cookie: '', userAgent: 'Mozilla/5.0' };
+}
+
+/**
+ * Forget every solved session and every origin marked unsolvable, and say how many of each there were.
+ *
+ * What the nightly repair (lib/repair.ts) and the Health page's "Reset solver sessions" do when the solver
+ * itself answers its ping but sources behind it keep failing inside it: a `cf_clearance` cookie that
+ * Cloudflare has since rotated is re-sent with every image request until this process restarts, and an
+ * origin stamped `unsolvable` is not re-solved for RESOLVE_AFTER_MS however healthy it has become. Clearing
+ * both makes the next request solve afresh, which is what "restart the solver" achieved by accident.
+ *
+ * ⚠️ In-process state only. The app has no access to the solver container (or any container) and must
+ * never get any: that is a security boundary, not a missing feature. A solver that is genuinely wedged is
+ * for the operator's `docker restart`; this resets only what THIS process remembers about it.
+ *
+ * v0.55.3: both solvers' -- every (solver, origin) pair is counted and cleared -- and which solver answered each site
+ * last, so the next request starts from the main again (an operator who restarted the main has it back at once).
+ */
+export function resetSolverSessions(): { sessions: number; unsolvable: number } {
+  const out = { sessions: sessions.size, unsolvable: unsolvable.size };
+  solving.clear();
+  sessions.clear();
+  solvedBy.clear();
+  lastWon.clear();
+  unsolvable.clear();
+  return out;
+}
+
+/** Where the main solver is expected to be. Exported so the health page can name it without re-deriving it. */
+export const solverUrl = (): string => mainUrl();
+
+/**
+ * Are the Cloudflare solvers alive?
+ *
+ * Worth asking directly, because when it is not, every source behind it fails and each one records the
+ * failure against ITSELF. The operator sees four broken sites and no hint that one container explains all
+ * four. This turns that into a single line on the health page.
+ *
+ * v0.55.3: the main and the backup, side by side, each in `main` / `backup`. The top level is the solver that would
+ * solve now -- the main when it answers, else the backup when it does, else the main's failure -- so `ok` means at least
+ * one answers, which is what the repair's solver step and Fix everything take "the solver is up" to mean. The extension
+ * engine's helper is pointed at the main alone, and reads `main` (engineHealth.ts). Reintroduce the main's answer as
+ * the whole of it: "with the main down and the backup answering, the reset still runs" in repair.int.test.ts fails.
+ */
+export async function solverPing(timeoutMs = 5000): Promise<SolversPing> {
+  const at = backupSolverUrl();
+  const [m, b] = await Promise.all([pingOne(mainUrl(), timeoutMs), at ? pingOne(at, timeoutMs) : null]);
+  const main = { ...m, url: mainUrl() };
+  const backup = b && { ...b, url: at };
+  const now: SolverAt = !main.ok && backup?.ok ? backup : main;
+  return { ok: now.ok, version: now.version, error: now.error, kind: now.kind, main, backup };
+}
+
+async function pingOne(base: string, timeoutMs: number): Promise<SolverPing> {
+  try {
+    // FlareSolverr greets at its root with a readiness sentence rather than a status field ("FlareSolverr is ready!").
+    // `redirect: 'manual'`: a solver that redirects its root (Byparr, #144: to its API docs) is not followed onto HTML.
+    const r = await fetch(`${base}/`, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' });
+    const j: any = r.ok ? await r.json().catch(() => null) : null;
+    if (j && /ready/i.test(String(j.msg || ''))) return { ok: true, version: j.version, kind: kindOf(String(j.msg)) };
+    // Byparr (#144), a FlareSolverr-compatible solver: the same /v1 for solving, but it says it is up at /health. Its
+    // version is Byparr's, never compared with FlareSolverr's releases (`kind`, read by solverHealth). Reintroduce the
+    // root alone: "Byparr answering at /health is a working solver" in health.int.test.ts reads it as down.
+    const h = await fetch(`${base}/health`, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' }).catch(() => null);
+    if (h?.ok) {
+      const hj: any = await h.json().catch(() => null);
+      return { ok: true, version: typeof hj?.version === 'string' ? hj.version : undefined, kind: 'other' };
+    }
+    return { ok: false, error: !r.ok ? `HTTP ${r.status}` : j?.msg ? String(j.msg) : 'unexpected response' };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.cause?.code || e?.name || e?.message || 'unreachable') };
+  }
+}
+
+/**
+ * Which solver answered, by the sentence it greets with (v0.55.3). trawl (#144, germondai/trawl) greets "TRAWL is
+ * ready!", which the old `/ready/i` test took for FlareSolverr: Health then held trawl's 1.7.0 against FlareSolverr's
+ * 3.x releases and said an update was out. Only these two are named; any other solver that answers (Byparr at
+ * /health, another one's greeting) is `other`, and is held against nobody's releases. Reintroduce `flaresolverr` for
+ * every greeting: "trawl answering at its root is trawl" in health.int.test.ts fails.
+ */
+export type SolverKind = 'flaresolverr' | 'trawl' | 'other';
+function kindOf(greeting: string): SolverKind {
+  if (/\bflaresolverr is ready\b/i.test(greeting)) return 'flaresolverr';
+  if (/\btrawl is ready\b/i.test(greeting)) return 'trawl';
+  return 'other';
+}
+
+/** What a ping found: FlareSolverr itself, trawl, or another solver speaking its /v1 (Byparr, #144). */
+export interface SolverPing { ok: boolean; version?: string; error?: string; kind?: SolverKind }
+/** One solver's ping, and the address it answered (or did not) at. */
+export interface SolverAt extends SolverPing { url: string }
+/** Both solvers' pings (solverPing): the top level is the one that would solve now. `backup` null: none configured. */
+export interface SolversPing extends SolverPing { main: SolverAt; backup: SolverAt | null }
+
+/** How long one ping answers for everyone who asks. */
+export const PING_SHARED_MS = 10_000;
+let shared: { at: number; p: Promise<SolversPing> } | null = null;
+
+/**
+ * `solverPing`, asked once for everyone who asks within PING_SHARED_MS (concurrent callers share the one in flight).
+ *
+ * Health reads the solver twice: its Cloudflare solver row, and the extension engine row, whose engine gets past
+ * Cloudflare only through this same solver once Connect pointed it here. Two pings a moment apart could disagree, and
+ * the page said "can get past Cloudflare" in one row beside "not answering" in the other (v0.49.1). The repair's
+ * solver step still pings for itself: it decides whether to clear anything, and that wants the answer of now.
+ */
+export function solverPingShared(now: number = Date.now()): Promise<SolversPing> {
+  if (shared && now - shared.at < PING_SHARED_MS) return shared.p;
+  const p = solverPing();
+  shared = { at: now, p };
+  return p;
+}
+
+/** Tests: the next shared ping asks the solver again. */
+export function forgetSolverPing(): void {
+  shared = null;
+}

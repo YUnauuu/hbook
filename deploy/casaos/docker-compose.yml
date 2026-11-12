@@ -1,0 +1,171 @@
+name: hbook
+
+services:
+  hbook-db:
+    container_name: hbook-db
+    hostname: hbook-db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hbook
+      POSTGRES_USER: hbook
+      POSTGRES_PASSWORD: hbook
+    volumes:
+      - /DATA/AppData/hbook/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hbook -d hbook"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - hbook
+
+  hbook:
+    container_name: hbook
+    hostname: hbook
+    image: ghcr.io/yunauuu/hbook:latest
+    # The app finishes the chapter it is writing, then Postgres checkpoints. Docker's default 10 s cuts that
+    # short.
+    stop_grace_period: 40s
+    environment:
+      # Run as the owner of your library so file operations work. Unset = uid 10002, library read-only.
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://hbook:hbook@hbook-db:5432/hbook
+      LIBRARY_BACKEND: owned
+      # How you actually reach it. Logins and cookies break when this does not match the address in the
+      # browser, so on a box you open by LAN address set PUBLIC_ORIGIN=http://<nas-ip>:8080 in CasaOS's
+      # environment editor rather than leaving the localhost default.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      SOURCES_DIR: /sources
+      CUSTOM_SITES_FILE: /config/sites.json
+      # Mihon/Tachiyomi extensions. This listing ships no extension engine; import the add-on beside it
+      # (deploy/casaos/hbook-suwayomi.yml), then set this to http://hbook-suwayomi:4567 in CasaOS's
+      # settings editor. Listed empty on purpose, so the field is there to fill in; empty = no extensions.
+      SUWAYOMI_URL: ""
+      # Tells Admin → Sources which setup steps to open on (the add-on above), and nothing else.
+      HBOOK_PLATFORM: casaos
+    volumes:
+      # your existing comics, read-only — point this at wherever you keep them
+      - /DATA/Media/Comics:/library
+      - /DATA/AppData/hbook/downloads:/library-dl
+      - /DATA/AppData/hbook/config:/config
+      - /DATA/AppData/hbook/cache:/cache
+      - /DATA/AppData/hbook/backups:/backups
+    ports:
+      # The app serves the web UI itself now, on 3000. The old split layout published nginx's port 80 here.
+      - "8080:3000"
+    depends_on:
+      hbook-db:
+        condition: service_healthy
+    healthcheck:
+      # /livez, not /healthz: the latter queries the database, so a database blip would mark the whole app
+      # unhealthy rather than reporting what it is, which is the app running and the database not ready.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/livez >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - hbook
+
+  # Cloudflare solver — only used when you add a source that sits behind Cloudflare.
+  hbook-flaresolverr:
+    container_name: hbook-flaresolverr
+    hostname: hbook-flaresolverr
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    # Chrome's shared memory; Docker's 64 MB default kills chromedriver mid-challenge, which reads from the
+    # app's side as the manga site blocking us.
+    shm_size: 1gb
+    # FlareSolverr leaks over long uptimes and a bloated solver fails mid-challenge rather than dying. A cap
+    # plus `restart: unless-stopped` turns that into an automatic restart.
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/ | grep -q 'FlareSolverr is ready' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    environment:
+      LOG_LEVEL: warning
+    restart: unless-stopped
+    networks:
+      - hbook
+
+networks:
+  hbook:
+    name: hbook
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: hbook
+  author: AngeloSha
+  developer: AngeloSha
+  category: Media
+  store_app_id: hbook
+  icon: https://raw.githubusercontent.com/YUnauuu/hbook/main/web/public/icons/icon-512.png
+  thumbnail: https://raw.githubusercontent.com/YUnauuu/hbook/main/web/public/art/og.jpg
+  screenshot_link:
+    - https://raw.githubusercontent.com/YUnauuu/hbook/main/docs/shots/home.webp
+    - https://raw.githubusercontent.com/YUnauuu/hbook/main/docs/shots/library.webp
+    - https://raw.githubusercontent.com/YUnauuu/hbook/main/docs/shots/discover.webp
+    # Not admin-extensions: this listing ships no extension engine (it is an add-on, hbook-suwayomi.yml beside
+    # this file), and the Health page is a screen every CasaOS install has.
+    - https://raw.githubusercontent.com/YUnauuu/hbook/main/docs/shots/admin-health.webp
+  title:
+    en_US: hbook
+  tagline:
+    en_US: Self-hosted manga server that downloads too
+  description:
+    en_US: |
+      hbook is a self-hosted manga server that also downloads: it stores and serves your manga, manhwa
+      and webtoons the way a library server does, and it fetches and watches for new chapters the way a
+      source app does. The whole pipeline — discover, grab, monitor, serve, read — in one place instead of a
+      stack of containers.
+
+      Point it at a folder of CBZ/CBR files and read them on any device through a true-black OLED interface
+      built webtoon-first: continuous vertical scroll across chapters, pinch zoom, per-series settings, and
+      double-page spreads for classic manga. It installs as a PWA, so it works offline and lives on your home
+      screen without an app store.
+
+      Unlike a plain library server, it can also follow series: add a source by pasting a site's URL or point
+      it at a Mihon/Tachiyomi extension repository, and a scheduled updater grabs new chapters as they
+      appear, choosing between scanlation groups and falling back to another source when one refuses. Bring
+      your library over from a Mihon backup, a MangaDex list, or your AniList, MyAnimeList or Kitsu list —
+      every match is reviewed before it lands.
+
+      Built for a household — per-user reading progress, favourites, history and a leaderboard, plus age
+      ratings, two-factor auth, single sign-on, an audit log and a Jellyfin-style admin panel. It backs itself
+      up nightly. There is no account and no cloud; an update check reads GitHub's public releases page and
+      can be turned off, and the anonymous install count is off unless you turn it on.
+  tips:
+    before_install:
+      en_US: |
+        Set the **Comics** path to the folder holding your existing CBZ/CBR files — it is mounted read-only, so
+        hbook never modifies what you already have. Leave it as-is if you are starting from an empty library.
+
+        On first launch, open the web UI and create your admin account in the browser. There is no default
+        password to change.
+
+        **Run this once before installing.** hbook runs as a non-root user (uid 10002), and the folders
+        CasaOS creates for an app belong to root, so without this its downloads, image cache and settings
+        are unwritable:
+
+        ```
+        sudo mkdir -p /DATA/AppData/hbook/{downloads,config,cache,backups}
+        sudo chown -R 10002:10002 /DATA/AppData/hbook
+        ```
+
+        **Mihon/Tachiyomi extensions** are an optional add-on: after installing, import `hbook-suwayomi.yml`
+        from hbook's `deploy/casaos` folder as a custom app, then set `SUWAYOMI_URL` here to
+        `http://hbook-suwayomi:4567`.
+  port_map: "8080"
+  scheme: http
+  index: /
