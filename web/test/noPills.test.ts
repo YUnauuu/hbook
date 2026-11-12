@@ -1,0 +1,429 @@
+// "No more pills" (v0.49.0): the owner asked for the capsule shapes to go from actions, statuses and
+// notices -- and for the filter and sort chips to stay exactly as they are.
+//
+// A capsule is anything `rounded-full` that is not a circle, or a shared class that is one (`.chip`,
+// `.btn-accent`, `.btn-ghost` in app/globals.css). A circle names equal sides (`h-1.5 w-1.5`, `h-8 w-8`,
+// `size-2`) and has no inline padding or minimum width: a dot or a round icon button stays allowed. A
+// `min-w-[16px] rounded-full` count is a capsule the moment it says "9+".
+//
+// SURFACES is the list of redesigned files, SLICES the redesigned parts of files that also hold chips which
+// stay (a filter row). Each later v0.49.0 step adds the surfaces it redesigns (the notices, the Downloads
+// view, Health's rows, …) here in the same commit.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const ROOT = join(__dirname, '..');
+const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+/** Source with its comments removed: comments here describe the capsules they replaced. */
+const code = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+
+const SURFACES = [
+  'components/ProgressRing.tsx',
+  'components/StatusMark.tsx',
+  'components/ActionList.tsx',
+  'lib/ring.ts',
+  'lib/status.ts',
+  // Step 5, the Downloads view that replaced the pill: the ring's mapper, the view, the series band.
+  'components/DownloadsRing.tsx',
+  'components/ServerDownloadsView.tsx',
+  'components/SeriesServerDownloads.tsx',
+  // Step 6, the notices that replaced the capsule toasts.
+  'components/Toast.tsx',
+  'lib/notices.ts',
+  // Step 10 (#115): the one verdict about a source, on Providers and Health, and its Update address key.
+  'components/SourceEvidence.tsx',
+  'lib/sourceEvidence.ts',
+  // Step 8, Health: its keys, legends and status lines, and the live strip and history.
+  'components/HealthActions.tsx',
+  'components/RepairLive.tsx',
+  // Step 14, the slow archive (#117): its covers, sheet, keys and band, and Admin -> Settings -> Downloads.
+  'components/ArchiveQueue.tsx',
+  'components/ArchiveSettings.tsx',
+  'lib/archive.ts',
+  // Step 17 (#116): the numbering notice and its plan sheet, the extension settings sheet, and the versions sheet
+  // whose markers became squared tags and whose Fetch / Replace… became keys.
+  'components/NumberingNotice.tsx',
+  'components/NumberingSheet.tsx',
+  'components/ExtensionSettings.tsx',
+  'components/ChapterVersionsSheet.tsx',
+  // The web2 integration step: #116's words beside lib/archive.ts's (the numbering, the extension settings, the
+  // versions), so a class a later change builds in them is scanned too.
+  'lib/numbering.ts',
+  'lib/sourcePrefs.ts',
+  'lib/versions.ts',
+  // v0.49.1, Find other sources: the run's row, its results and Health's card.
+  'components/FindSources.tsx',
+  'lib/findSources.ts',
+  // v0.98.0, Discover's hero, its stand-in and the cards of its rows: squared keys, segments and badges.
+  'components/DiscoverHero.tsx',
+  // v0.99.0, Discover's For you band: its tag, the covers of what you read, the top pick's card and its key.
+  'components/ForYouBand.tsx',
+  // v0.53.0, Health → Source health decluttered: its groups, folds, compact rows and Turn off all, and their words.
+  'components/SourceHealthBody.tsx',
+  'lib/sourceHealth.ts',
+  // v0.53.0, Edit details redone: its keys, its genre tags and its close key.
+  'components/SeriesEditor.tsx',
+  // v0.53.0, Admin → Extensions redesigned: an extension's sheet, the languages and repositories sheets, the pieces
+  // the rows share and the words they say -- and since round 2 the whole tab, whose Browse has no filter chips left.
+  'components/ExtensionsPanel.tsx',
+  'components/ExtensionSheet.tsx',
+  'components/ExtensionLanguages.tsx',
+  'components/ExtensionRepos.tsx',
+  'components/ExtensionBits.tsx',
+  'lib/extensions.ts',
+  // v0.54.0, Admin → Sources, where Providers and Extensions were two tabs: the panel, one sheet for every source, its
+  // tile, the Replace dialog and its run, and the words they say.
+  'components/SourcesPanel.tsx',
+  'components/SourceSheet.tsx',
+  'components/SourceTile.tsx',
+  'components/ReplaceDialog.tsx',
+  'lib/sourcesPanel.ts',
+  'lib/mainSource.ts',
+  // v0.55.0, Health's Fix everything: its key, its dialog (the question, the run, the end) and the words they say.
+  'components/FixEverythingDialog.tsx',
+  'lib/autofix.ts',
+  // v0.60.0, the series page's four keys (Favourite, Offline, List, More) and what More opens -- its sheet's rows and
+  // the menu's items -- which took the place of the stack of capsules under the cover.
+  'components/SeriesKeys.tsx',
+  'lib/seriesActions.ts',
+  // v0.60.0, the Library's toolbar: its search, its Sort key and menu sheet, the layouts, Select, Select all and the
+  // sparkle -- keys all; the filter chips stay chips, in the panel and the active row.
+  'components/LibraryToolbar.tsx',
+  // v0.60.0, the owner: the filter panel was "so full of pills". Every choice is a row now; nothing in it is a chip.
+  'components/LibraryFilters.tsx',
+  'lib/librarySort.ts',
+  'lib/libraryLayout.ts',
+  // v0.61.0, Related works and the reader's Next in the story: AniList's covers with a squared score tag, a squared add
+  // mark and a band that says a work is not in the library -- no capsule anywhere on them.
+  'components/RelatedRail.tsx',
+  'lib/related.ts',
+  // v0.61.0, the release radar: its words, and the reader's end-card label and line.
+  'lib/radar.ts',
+  'components/ReaderEndRadar.tsx',
+  // v0.61.0, reading time: its words and the hours chart.
+  'lib/readingTime.ts',
+  'components/charts/Columns.tsx',
+  // v0.61.0: Save as list and Update "Name" (keys at the end of the Library's chip row) and the dialog; a list's tags
+  // ("Live list", "Shared"), whose it is, and its own keys on its page -- Edit (a chip until now), Edit filters, Share
+  // and Stop sharing -- beside its sort chips, which stay in the page; Incognito reading's line, its Turn off key and the
+  // reader's tag.
+  'components/SaveListDialog.tsx',
+  'components/ListBits.tsx',
+  'components/IncognitoBanner.tsx',
+  'lib/lists.ts',
+  // UI refresh: the shell (the sidebar, the top bar), Home's hero and its art, and Updates' check key.
+  'components/Sidebar.tsx',
+  'components/TopNav.tsx',
+  'components/HeroCarousel.tsx',
+  'components/MosaicArt.tsx',
+  'components/CheckForNew.tsx',
+  // UI refresh, phase 2: Offline downloads (its keys, the covers, the storage bar), Lists' cards and History's rows.
+  'app/downloads/page.tsx',
+  'components/OfflineCover.tsx',
+  'app/collections/page.tsx',
+  'app/history/page.tsx',
+  'lib/libraryQuery.ts',
+  'lib/incognito.ts',
+  // v0.61.0, Reader → Keys and controller: every binding a squared key cap, Add a key / Add a button, Reset to defaults.
+  'components/ReaderKeys.tsx',
+  'lib/readerKeys.ts',
+  'lib/readerPad.ts',
+  // v0.70.0 (#260, @Squeaks72): the reader's key list on ?, its key caps squared as Reader → Keys has them.
+  'components/ReaderShortcuts.tsx',
+  // v0.70.0 (#251, @Squeaks72): the profile photo's quick settings, its round avatar key and the hook it shares.
+  'components/ProfileMenu.tsx',
+  'lib/useReduceEffects.ts',
+  // UI refresh, phase 3 (Look settings): Home's Customize key and sheet (squared move keys, Reset, Done) and the words
+  // of the rails and the background tones.
+  'components/HomeCustomize.tsx',
+  'lib/homeRails.ts',
+  'lib/tone.ts',
+  // v0.75.0: the badges' goals and words (#267) and Profile → Insights' figures (#249).
+  'lib/badges.ts',
+  'lib/insights.ts',
+  // v0.75.0: the badges' drawn emblems (the owner's approved design) -- a medal and its tab are SVG, never a capsule class.
+  'components/BadgeEmblem.tsx',
+  // v0.86.0, the settings redesign ("a million pill"): both settings pages and everything they are made of -- the
+  // primitives, the layout and its search, the picture cards' drawings, every category's rows and editors, the
+  // notification targets, the translate row -- and Profile's Connections and Account, whose chips became keys.
+  // ⚠️ components/Switch.tsx is never listed: a switch's track is a capsule by design, and it is the one.
+  'components/settings.tsx',
+  'components/ConsoleLayout.tsx',
+  'components/settingsArt.tsx',
+  'components/ProfileSettings.tsx',
+  'components/AdminSettings.tsx',
+  'components/ArchiveSettings.tsx',
+  'components/AdminNotifications.tsx',
+  'components/TranslateSettings.tsx',
+  'components/ProfileConnections.tsx',
+  'components/ProfileAccount.tsx',
+  'lib/settingsIndex.ts',
+  'lib/settingsIndex.profile.ts',
+  'lib/settingsIndex.admin.ts',
+  'lib/settingsChoices.ts',
+  // v0.87.0: a chapter's comments and reactions -- the strip where two chapters meet, the paged key, the sheet, their
+  // reaction keys and count tags -- and their words.
+  'components/ChapterTalk.tsx',
+  'lib/comments.ts',
+];
+
+/**
+ * `[file, name, from, to]`: the code between the two markers. A marker that moved fails by name rather than
+ * letting the scan read an empty string and pass.
+ *
+ * The admin console's status badges (step 3) and its action keys: the owner ruled that only filter and sort
+ * chips keep the chip shape, so the Providers panel's Test / Clear block / Enable / Update address / Check
+ * all / Reload and the Extensions tab's keys (v0.53.0: Install, Update, Turn on, Update all, Turn on all, Check for
+ * extension updates, Languages, Connect) were `.btn-key`s -- and Admin → Sources, which took both tabs' place in
+ * v0.54.0, is a whole surface above. The engine strip's slice stops short of the platform picker's chips.
+ * Health()'s own capsules belong to the Health step, which adds its slice when it redesigns them.
+ */
+const SLICES: [string, string, string, string][] = [
+  ['app/admin/page.tsx', 'Overview: Needs attention', 'function NeedsAttention(', 'const roleText = '],
+  // Step 5: the Library's Series | Downloads switch (its count is a squared tag), and the header's two counts
+  // side by side on a desktop -- the downloads ring's and the Updates bell's, a capsule at "9+" until v0.49.0.
+  ['app/library/page.tsx', 'Library: the Series | Downloads switch', 'function ViewSwitch(', 'export default function LibraryPage('],
+  ['components/TopNav.tsx', 'TopNav: the Updates count and the avatar', '<Link href="/updates"', '<ProfileMenu'],
+  // UI refresh: the series page's chapter toolbar (keys: they act on the list), its pager, and the chapter rows' keys;
+  // Home's phone header; Updates' header.
+  ['app/series/page.tsx', 'Series: the chapter toolbar', '<div data-chapter-toolbar', '{group !== ALL_GROUPS && ('],
+  ['app/series/page.tsx', 'Series: the chapter pager', 'function ChapterPager(', 'function EditionChips('],
+  ['app/page.tsx', "Home: the phone's header", '<header className="safe-top sticky top-0 z-30', '</header>'],
+  ['app/updates/page.tsx', "Updates: the header's keys", '<h1 className="font-display', '</header>'],
+  // Step 8: Health's body -- the verdict marks that replaced the HEALTH_LABEL capsules, Re-check as a key, Open
+  // as a text link -- and the Tasks rows' Run now.
+  ['app/admin/page.tsx', 'Health: the cards, their marks and rows', 'function Health()', 'function DesktopUpdateNote('],
+  ['app/admin/page.tsx', 'Tasks: Run now', 'function Tasks()', 'function DesktopBackups()'],
+  // Step 14 (#117): where the slow archive is turned on -- keys, never chips, beside chips that stay.
+  ['components/AddSeriesDialog.tsx', 'Add dialog: Archive the rest slowly', '{archiveRest > 0 && (', '</>)}'],
+  ['app/library/page.tsx', 'Library: the Archive slowly key', 'onClick={archiveSelected}', "{(isAdmin || canDownload(user))"],
+  // v0.60.0: the whole select bar -- Mark read, Mark unread, Favourite, Fetch newest, More and Cancel became keys -- and
+  // the filter sheet's pinned Clear all and Done.
+  ['app/library/page.tsx', 'Library: the select bar', '<div ref={toolbarRef}', '{more && ('],
+  ['app/library/page.tsx', 'Library: the filter sheet\'s footer', "<Sheet title={tr('Filters')}", '<LibraryFilters'],
+  // ...and on a phone, its row in the selection's More sheet.
+  ['app/library/page.tsx', 'Library: Archive slowly in More', 'void archiveSelected(); }}', "{tr('Move to library')}"],
+  // v0.60.0: Archive slowly and the admin's keys are More's (components/SeriesKeys.tsx, a whole surface above); under the
+  // reading button, the row of four keys -- never the capsules they replaced.
+  ['app/series/page.tsx', 'Series: the four keys', '<div data-series-keys', 'const metaBits'],
+  ['app/series/page.tsx', 'Series: Archive slowly on the older-chapters row', '{!archiving && mayArchive', '</span>'],
+  // Step 17 (#116): the add dialog's numbering notice and its switch -- a text block with a start-edge rule, beside
+  // the dialog's own chips that stay. The last function in the file: an empty `to` reads to its end.
+  ['components/AddSeriesDialog.tsx', 'Add dialog: the numbering notice', 'function AddNumberingNotice(', ''],
+  // v0.49.1: the Sources sheet's Find more sources and Other names -- keys and a plain list, beside the sheet's
+  // Prefer/Block chips, which stay.
+  ['components/SourcesSheet.tsx', 'Sources sheet: Find more sources and Other names', 'function FindMore(', 'const emptyStat'],
+  // v0.54.0: a follower's Make main and the one line it asks first, beside the row's main / followed chip, which stays.
+  ['components/SourcesSheet.tsx', 'Sources sheet: Make main and its question', '{makeMain && !makeMain.asking && (', '{makeMain?.refusal &&'],
+  // v0.53.0, Admin → Extensions: the engine's strip, beside the platform picker's chips, which stay. The tab itself is
+  // a whole surface above since round 2 took Browse's chips out.
+  ['components/EngineSetup.tsx', 'Extensions: the engine strip', 'export function EngineReady(', 'function EngineOffSheet('],
+  // v0.55.1 (#148): a library's dialog, its list of folders and the folder browser that ticks them -- keys where "Use"
+  // was a chip -- beside the Libraries cards' chips and the suggested folders, which stay.
+  ['app/admin/page.tsx', 'Libraries: the folder browser and the library dialog', 'function FolderPicker(', 'function LibrariesSection('],
+  // v0.61.0 (#190): Profile → Connections' tracker rows -- Connect, Cancel, Test connection, Disconnect, and AniList's token
+  // page -- are keys, beside the OPDS and API token sections below them, whose chips this release does not redesign.
+  ['components/ProfileConnections.tsx', 'Connections: the tracker rows', 'function TrackerRow(', 'function OpdsSection('],
+  // v0.61.0, the release radar: Updates' Expected this week (its cards are the list's own, without the capsule count),
+  // and the series page's outlook line under the reading progress.
+  ['app/updates/page.tsx', 'Updates: Expected this week', 'function ExpectedThisWeek(', 'export default function UpdatesPage('],
+  ['app/series/page.tsx', 'Series: the outlook line', '{outlook && <p data-series-outlook', '<div data-series-keys'],
+  // v0.61.0, reading time: the Reading Studio's tiles, hours and devices, and Wrapped's line and hours.
+  ['components/ProfileYou.tsx', 'Studio: reading time', '<div data-studio-time>', '{bookCountText(data?.windowChapters ?? total)}'],
+  ['components/ProfileYou.tsx', 'Studio: by hour and devices', '<div data-studio-hours>', ''],
+  ['app/wrapped/page.tsx', 'Wrapped: the time line', '{timeLine && <p data-wrapped-time', '</div>'],
+  ['app/wrapped/page.tsx', 'Wrapped: by hour', '<div data-wrapped-hours', '(data?.topSeries?.length'],
+  // v0.65.1: the series page's select bar -- Mark read, Mark unread, Save offline, Fetch, Fetch again, Remove, Cancel --
+  // keys, as the Library's has been since v0.60.0.
+  ['app/series/page.tsx', 'Series: the select bar', 'const Toolbar = selecting && (', '{isAdmin && !deletable.length && ('],
+  // UI refresh, phase 2: Members' cards act through keys -- Reset, Make admin, Disable, downloads, and the openers of the
+  // library and age panels, whose choices inside stay chips -- and what a new member starts with, which reuses them.
+  ['app/admin/page.tsx', 'Members: the cards', 'function Members()', 'function NewMemberDefaults('],
+  ['app/admin/page.tsx', 'Members: what a new member starts with', 'function NewMemberDefaults(', 'function ArtReview('],
+  ['app/admin/page.tsx', 'Members: the age limit\'s opener', 'function AgeCap(', '{open && ('],
+  ['app/admin/page.tsx', 'Members: the libraries\' opener', 'function LibraryAccess(', '{open && ('],
+  // v0.70.0 (#255): the 18+ line above every page and its Hide 18+ key, beside the Show 18+ chip, a filter that stays.
+  ['components/AdultToggle.tsx', '18+: the banner', 'export function AdultBanner(', ''],
+  // #243: Add or move source -- its footer's keys (Cancel, Add as extra source, Move here, Attach anyway) and the squared
+  // markers of a source the series already uses, beside the search term's chips and the source picker, which stay; and in
+  // the Sources sheet, the main source's detach question and the row of keys that opens it all.
+  ['components/MigrateSourceSheet.tsx', 'Add or move source: the footer', 'const footer = pick ? (', 'return ('],
+  ['components/MigrateSourceSheet.tsx', 'Add or move source: the markers', 'function Marker(', ''],
+  ['components/SourcesSheet.tsx', 'Sources sheet: detaching the main source', '{isAdmin && detachAsk && main?.primary && (', '{isAdmin && sources.length > 1 && ('],
+  ['components/SourcesSheet.tsx', 'Sources sheet: Check now and the ways to add a source', 'onClick={checkNow}', '{isAdmin && series?.borrowNamesEffective'],
+  // v0.75.0 (#267): the badges are keys that say what they take, squared (they were capsules), and Show locked is a key --
+  // beside the Reading studio's range chips (All time among them), filters that stay.
+  ['components/ProfileYou.tsx', 'Badges: the badges and Show locked', 'export function BadgesCard(', 'export function ListsCard('],
+  // v0.75.0, Profile → Insights (#249): its cards, tiles and rows, beside the mix's Genre | Source chips, a filter that stays.
+  ['components/ProfileInsights.tsx', 'Insights: the cards before the mix', 'export function ProfileInsights(', 'const MIX_BY'],
+  ['components/ProfileInsights.tsx', 'Insights: the series begun and the backlog', 'function Funnel(', ''],
+];
+
+const slice = (src: string, from: string, to: string, name: string): string => {
+  const a = src.indexOf(from);
+  const b = to ? src.indexOf(to, a + 1) : src.length;
+  assert.ok(a >= 0 && b > a, `${name}: ${from} … ${to || 'the end'} is not where this test looks`);
+  return src.slice(a, b);
+};
+
+/** Every string that could be a class list, from every redesigned surface, with where it came from. */
+function surfaceStrings(): { where: string; s: string }[] {
+  const parts = [
+    ...SURFACES.map((f) => ({ where: f, src: code(read(f)) })),
+    ...SLICES.map(([f, name, from, to]) => ({ where: `${f} (${name})`, src: slice(code(read(f)), from, to, name) })),
+  ];
+  const out: { where: string; s: string }[] = [];
+  // Quoted strings and template literals.
+  for (const { where, src } of parts) for (const m of src.matchAll(/'([^'\n]*)'|"([^"\n]*)"|`([^`]*)`/g)) out.push({ where, s: m[1] ?? m[2] ?? m[3] });
+  return out;
+}
+
+/** The component classes in globals.css, by name, with their @apply bodies whitespace-collapsed. */
+function componentClasses(): Map<string, string> {
+  const css = read('app/globals.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Map<string, string>();
+  for (const m of css.matchAll(/\n\s*\.([\w-]+)\s*\{([^{}]*)\}/g)) out.set(m[1], m[2].replace(/\s+/g, ' ').trim());
+  return out;
+}
+
+/** A class list's utilities without their variants (`lg:px-2` → `px-2`). */
+const utilities = (classes: string) => classes.split(/\s+/).filter(Boolean).map((c) => c.slice(c.lastIndexOf(':') + 1));
+const isCapsule = (classes: string) => {
+  const u = utilities(classes);
+  if (!u.includes('rounded-full')) return false;
+  if (u.some((c) => /^(px|ps|pe|min-w)-/.test(c))) return true;
+  if (u.some((c) => /^size-/.test(c))) return false;
+  const h = u.filter((c) => /^h-/.test(c)).map((c) => c.slice(2));
+  const w = u.filter((c) => /^w-/.test(c)).map((c) => c.slice(2));
+  // A circle names its sides, and names them equal.
+  return !h.some((x) => w.includes(x));
+};
+
+test('the capsule detector: padding, a minimum width or unequal sides make rounded-full a capsule', () => {
+  // The first detector wanted `px-` beside `rounded-full`, so the round count the owner ruled out (a
+  // `min-w-[16px] rounded-full text-center` tag that grows into a pill at "9+") passed. Reintroduce that
+  // rule: "a min-width count is a capsule" fails.
+  assert.ok(isCapsule('absolute rounded-full px-1 text-[9px]'));
+  assert.ok(isCapsule('min-w-[16px] rounded-full bg-accent text-center text-[10px]'), 'a min-width count is a capsule');
+  assert.ok(isCapsule('rounded-full ps-2 pe-3'), 'logical padding is padding');
+  assert.ok(isCapsule('h-5 w-9 rounded-full'), 'a 20 x 36 lozenge is a capsule');
+  assert.ok(isCapsule('lg:rounded-full lg:px-3'), 'a variant hides the capsule');
+  assert.ok(isCapsule('rounded-full bg-ink-700 py-1 text-[11px]'), 'a fully rounded label with no sides named grows with its text');
+  assert.ok(!isCapsule('h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400'), 'a dot is a capsule');
+  assert.ok(!isCapsule('-my-1.5 grid h-8 w-8 place-items-center rounded-full'), 'a round icon button is a capsule');
+  assert.ok(!isCapsule('size-2 rounded-full bg-accent'));
+  assert.ok(!isCapsule('rounded-lg px-3'), 'a rounded rectangle is a capsule');
+});
+
+test('no capsule in the redesigned surfaces: no rounded-full with padding, no pill-shaped shared class', () => {
+  // Reintroduce the round count on the Library tab (`rounded-full px-1` on RingIcon's count tag), or a
+  // `chip` on an action key: "components/ProgressRing.tsx: capsule" fails.
+  const pills = [...componentClasses()].filter(([, body]) => isCapsule(body)).map(([name]) => name);
+  // UI refresh: `.btn-accent` and `.btn-ghost` are squared (rounded-xl) like every other action key, so the filter
+  // chip is the last capsule class -- as the owner's rule has it.
+  assert.deepEqual(pills.sort(), ['chip'], 'the pill-shaped shared classes changed -- update this list deliberately');
+  for (const { where, s } of surfaceStrings()) {
+    if (isCapsule(s)) assert.fail(`${where}: capsule -- "${s.trim()}"`);
+    for (const p of pills) {
+      if (new RegExp(`(^|[\\s{}'"\`])${p}(?=$|[\\s'"\`])`).test(s)) assert.fail(`${where}: uses the pill-shaped .${p} -- "${s.trim().slice(0, 120)}"`);
+    }
+  }
+});
+
+test('the admin console\'s status badges are marks and its actions keys: the slices hold what they claim to', () => {
+  // A slice that silently lost its content (a marker matched something earlier) would scan nothing and pass.
+  // Reintroduce by renaming a marker's function: "… is not where this test looks" fails -- the scan above goes first
+  // and says so too. Anchor the engine slice on "{tr('Extensions')}</p>" again: it starts at the not-configured card
+  // and "the engine slice holds the not-configured card" fails.
+  const admin = code(read('app/admin/page.tsx'));
+  const [attention, health, tasks] = SLICES.filter(([f]) => f === 'app/admin/page.tsx').map(([, name, from, to]) => slice(admin, from, to, name));
+  const ext = (name: string) => { const [f, , from, to] = SLICES.find(([, n]) => n === name)!; return slice(code(read(f)), from, to, name); };
+  const engine = ext('Extensions: the engine strip');
+  const panel = code(read('components/ExtensionsPanel.tsx'));
+  const tools = slice(panel, 'export function ExtensionTools(', 'export const OPENER', 'Extensions: the tools');
+  const browse = slice(panel, 'function BrowseView(', '', 'Extensions: Browse');
+  // Health (step 8): a mark per card, Re-check a key, and nothing called HEALTH_LABEL left to be a capsule.
+  assert.match(health, /<StatusMark \{\.\.\.mark\} size="xs" \/>/, 'the Health slice has no mark');
+  assert.match(health, /className="btn-key"/, 'Re-check is not a key');
+  assert.doesNotMatch(health, /HEALTH_LABEL|HEALTH_TONE/, 'the Health capsules are back');
+  assert.match(tasks, /className="btn-key /, 'Run now is not a key');
+  assert.match(attention, /<StatusMark tone=\{m\.tone\} title=\{m\.label\} \/>/, 'the Needs attention slice has no mark');
+  const keys = (src: string) => (src.match(/className=\{?[`"]btn-key\b/g) || []).length;
+  // Update address under a Test that found the move is SourceEvidence's (#115).
+  assert.equal(keys(code(read('components/SourceEvidence.tsx'))), 1, 'Update address is not a key');
+  // v0.53.0: the engine and its helper are marks, the engine's ⋯ and Connect are keys; Languages and Check for
+  // extension updates, Browse's Try again, Show more, the empty state's two and a row's Install and Update too. Its
+  // repositories are a text link in its count line since round 2, as an extension's "Hidden in every extension" is.
+  assert.match(engine, /<StatusMark tone=\{engine\.tone\} label=\{engine\.label\} size="md" \/>/, 'the engine is not a mark');
+  assert.match(engine, /<StatusMark tone=\{helperTone\}/, 'the Cloudflare helper is not a mark');
+  assert.match(engine, /onClick=\{connect\}[^>]*className="btn-key btn-key-primary[^"]*"/, 'Connect is not a key');
+  assert.equal(keys(engine), 2, 'the engine\'s ⋯ and Connect are not both keys');
+  assert.doesNotMatch(engine, /className="[^"]*\bchip\b/, 'the engine strip slice runs into the platform chips');
+  assert.equal(keys(tools), 2, 'Languages and Check for extension updates are not both keys');
+  assert.equal(keys(browse), 6, 'Browse\'s keys are not all keys');
+  assert.doesNotMatch(panel, /\bchip(-active)?\b/, 'a chip is back in the extension catalogue');
+  // v0.91.0 (#314): and Open site, the site in the engine's own browser.
+  assert.equal(keys(code(read('components/ExtensionSheet.tsx'))), 6, 'the sheet\'s Update, Turn on its sources, Open site, Remove extension, Remove and Cancel are not keys');
+  // v0.54.0, Admin → Sources: a source's state is a mark; every key of its sheet goes through one helper that makes a
+  // .btn-key; and the one filled key of the panel and of the sheet is Replace (Start, in the Replace dialog).
+  const sheet = code(read('components/SourceSheet.tsx'));
+  assert.match(sheet, /<StatusMark tone=\{says\.tone\} label=\{says\.word\} size="md" \/>/, 'a source\'s state is not a mark');
+  assert.match(sheet, /const key = \(k: SheetKey, label: ReactNode, onClick: \(\) => void, cls = 'btn-key', /, 'the sheet\'s keys are not keys');
+  const calls = sheet.split('\n').filter((l) => /&& key\('/.test(l));
+  assert.ok(calls.length >= 5, 'the sheet\'s keys are not where this test looks');
+  for (const l of calls) {
+    const cls = /, '([^']*)'(?:, \{[^}]*\})?\)\}\s*$/.exec(l)?.[1];
+    if (cls !== undefined) assert.match(cls, /^btn-key\b/, `a sheet key is drawn in a class that is not a key: ${l.trim()}`);
+  }
+  const sources = code(read('components/SourcesPanel.tsx'));
+  for (const [name, src, filled] of [['the panel', sources, 'Replace'], ['the sheet', sheet, 'Replace'], ['the Replace dialog', code(read('components/ReplaceDialog.tsx')), 'Start']] as const) {
+    assert.equal((src.match(/btn-key-primary/g) ?? []).length, 1, `${name} has a filled key besides ${filled}`);
+  }
+  // Add a site's Add is a key, the accent's fill kept for Replace, Start and Connect; Import a list is a row's link.
+  assert.match(sources, /<button type="submit" [^>]*className=\{`btn-key \$\{busyKey\(adding\)\}`\} data-sources-add-site-go>/, "Add a site's Add is not a key");
+  assert.match(sources, /<LinkRow href="\/admin\/import\/" label=\{tr\('Import a list'\)\}/, 'Import a list is not a row of Add sources');
+  // The series sheet's Make main, and the yes of its question: keys beside the row's chip.
+  const make = ext('Sources sheet: Make main and its question');
+  assert.match(make, /className="btn-key shrink-0" data-make-main=\{s\.sourceId\}>/, 'Make main is not a key');
+  assert.match(make, /className="btn-key" data-make-main-yes>\{tr\('Make main'\)\}<\/button>/, 'the question\'s Make main is not a key');
+});
+
+test('the downloads counts are squared tags: the switch\'s, the ring\'s and the Updates bell\'s beside it', () => {
+  // The Updates count beside the new desktop ring was a round tag that became a capsule at "9+": three count
+  // shapes side by side. Reintroduce `rounded-full` on it: the capsule scan above fails ("TopNav … capsule")
+  // and so does this.
+  const top = slice(code(read('components/TopNav.tsx')), '<Link href="/updates"', '<ProfileMenu', 'TopNav');
+  const count = /<span data-updates-count className="([^"]*)"/.exec(top);
+  assert.ok(count, 'the Updates count is not where this test looks');
+  assert.match(count![1], /rounded-\[4px\]/, 'the Updates count is not squared');
+  assert.doesNotMatch(count![1], /rounded-full/, 'the Updates count is a capsule');
+  const sw = slice(code(read('app/library/page.tsx')), 'function ViewSwitch(', 'export default function LibraryPage(', 'ViewSwitch');
+  assert.match(sw, /role="tablist"/, 'the switch slice does not hold the switch');
+  assert.match(sw, /rounded-\[4px\][^"]*tabular-nums/, 'the switch\'s count is not a squared tag');
+});
+
+test('the filter and sort chips stay exactly as they are', () => {
+  // The owner's rule: only actions, statuses and notices lose the capsule. Reintroduce a restyle of `.chip`
+  // (`rounded-lg` for `rounded-full`): "the filter/sort chips changed" fails.
+  const cls = componentClasses();
+  assert.equal(cls.get('chip'), '@apply inline-flex items-center gap-1.5 rounded-full border border-ink-600 bg-ink-800/60 px-3 py-1.5 text-sm text-fog-300 transition;',
+    'the filter/sort chips changed');
+  assert.equal(cls.get('chip-active'), '@apply border-transparent bg-accent-soft text-accent;', 'the active filter/sort chip changed');
+});
+
+test('the action keys that replace the pills are rectangles', () => {
+  // Reintroduce `rounded-full` for `rounded-lg` on `.btn-key`: "the action key lost its 8 px corners" fails.
+  const cls = componentClasses();
+  const key = cls.get('btn-key');
+  assert.ok(key, 'there is no .btn-key');
+  assert.match(key!, /\brounded-lg\b/, 'the action key lost its 8 px corners');
+  assert.ok(!isCapsule(key!), 'the action key is a capsule');
+  // v0.53.0 round 2: .btn-key-accent, the accent without its fill.
+  for (const v of ['btn-key-primary', 'btn-key-danger', 'btn-key-accent']) {
+    assert.ok(cls.has(v), `there is no .${v}`);
+    assert.doesNotMatch(cls.get(v)!, /rounded-full/, `.${v} makes the key a capsule`);
+  }
+});

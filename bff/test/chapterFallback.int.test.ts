@@ -1,0 +1,435 @@
+// The one-chapter fallback policy against real downloader writes and a scratch database.
+//
+// These tests deliberately enter through downloadWithFallback rather than mocking downloadChapter: the
+// distinction between an incomplete copy (which may become a partial or switch source) and a refusal
+// (which may switch to an already-followed source, but may never become a partial or start a hunt) is made
+// by the downloader's page evidence.
+import test, { before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const DSN = process.env.TEST_DATABASE_URL;
+let ROOT = '';
+if (DSN) {
+  ROOT = mkdtempSync(join(tmpdir(), 'hbook-fallback-'));
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+  process.env.LIBRARY_BACKEND = 'owned';
+  process.env.DL_ROOT = ROOT;
+  process.env.DOWNLOAD_MIN_GAP_MS = '0';
+  process.env.DOWNLOAD_CONCURRENCY = '2';
+  process.env.DOWNLOAD_PAGE_GAP_MS = '0';
+  process.env.DOWNLOAD_RESUME_WAIT_MS = '0,0,0';
+  process.env.MIN_FREE_GB = '0';
+}
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+const PRI = 'fb-pri', FOL = 'fb-fol', NEW = 'fb-new';
+const failures = new Map<string, number>();
+const asked: string[] = [];
+const realFetch = globalThis.fetch;
+let PIXEL: Buffer;
+let q: any, downloadWithFallback: any, clearPace: () => void;
+
+const adapter = (id: string) => ({
+  id, name: id,
+  async search() { return []; },
+  async getSeries(sid: string) { return { sourceId: sid, source: id, title: 'Fallback Tale' }; },
+  async listChapters() { return []; },
+  async getPageUrls(chapterId: string) {
+    const count = chapterId.includes('one') ? 1 : 5;
+    return Array.from({ length: count }, (_, i) => `https://fb.invalid/${id}/${chapterId}/${i}.png`);
+  },
+});
+
+before(async () => {
+  if (!DSN) return;
+  const sharp = (await import('sharp')).default;
+  PIXEL = await sharp({ create: { width: 4, height: 6, channels: 3, background: '#5a7fa2' } }).png().toBuffer();
+  globalThis.fetch = (async (url: any) => {
+    const m = String(url).match(/fb\.invalid\/([^/]+)\/([^/]+)\/(\d+)\.png$/);
+    if (!m) return realFetch(url);
+    const key = `${m[1]}/${m[2]}/${m[3]}`;
+    asked.push(key);
+    const status = failures.get(key);
+    if (status) return new Response(status === 429 ? 'slow down' : 'gone', { status, headers: status === 429 ? { 'retry-after': '0' } : {} });
+    return new Response(PIXEL, { status: 200, headers: { 'content-type': 'image/png' } });
+  }) as typeof fetch;
+
+  const { migrate } = await import('../src/lib/migrate');
+  ({ q } = await import('../src/lib/db'));
+  ({ downloadWithFallback } = await import('../src/lib/chapterFallback'));
+  ({ clearPace } = await import('../src/lib/pace'));
+  const { registerAdapter } = await import('../src/lib/sources');
+  await migrate();
+  registerAdapter(adapter(PRI) as any);
+  registerAdapter(adapter(FOL) as any);
+  registerAdapter(adapter(NEW) as any);
+});
+
+beforeEach(async () => {
+  failures.clear();
+  asked.length = 0;
+  clearPace?.();
+  if (ROOT) {
+    rmSync(join(ROOT, 'Fallback Tale'), { recursive: true, force: true });
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL, NEW]]).catch(() => {});
+  }
+});
+
+after(async () => {
+  globalThis.fetch = realFetch;
+  if (DSN) await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL, NEW]]).catch(() => {});
+  if (ROOT) rmSync(ROOT, { recursive: true, force: true });
+});
+
+const chapter = (source: string, sourceId: string, number: number, pinned = false) =>
+  ({ source, sourceId, number, ...(pinned ? { pinned: true } : {}) });
+const run = (chosen: any, alternates: any[] = [], extra: Record<string, unknown> = {}) => {
+  const refusing = (extra.refusing as Set<string> | undefined) ?? new Set<string>();
+  return {
+    refusing,
+    result: downloadWithFallback({
+      seriesId: 's-fallback', title: 'Fallback Tale', folder: 'Fallback Tale',
+      meta: { series: 'Fallback Tale' }, chapter: chosen,
+      alternates: async () => alternates, refusing, ...extra,
+    }),
+  };
+};
+
+test('an incomplete chosen copy lands from the same-number follower and records the switch', { skip }, async () => {
+  // Reintroduce by calling downloadChapter directly, or by dropping the alternate loop: this returns a
+  // partial from fb-pri instead of the complete fb-fol copy.
+  failures.set(`${PRI}/pri-five/4`, 404);
+  const { result } = run(chapter(PRI, 'pri-five', 1), [chapter(FOL, 'fol-five', 1)]);
+  const out = await result;
+  assert.equal(out.kind, 'landed');
+  assert.equal(out.via, FOL);
+  assert.deepEqual(out.switched, { from: PRI, why: 'incomplete' });
+  assert.ok(asked.some((x) => x.startsWith(`${FOL}/fol-five/`)), 'the follower was asked');
+  assert.ok(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 1.cbz')), 'the complete alternate was written');
+});
+
+test('a refusal costs one source strike but an already-followed alternate may still land', { skip }, async () => {
+  failures.set(`${PRI}/pri-one/0`, 403);
+  const refusing = new Set<string>();
+  const { result } = run(chapter(PRI, 'pri-one', 2), [chapter(FOL, 'fol-one', 2)], { refusing });
+  const out = await result;
+  assert.equal(out.kind, 'landed');
+  assert.equal(out.via, FOL);
+  assert.equal(out.switched?.why, 'blocked');
+  assert.deepEqual([...refusing], [PRI], 'the refusing source is not asked again this run');
+  const health = (await q('SELECT consecutive FROM source_health WHERE source_id = $1', [PRI]))[0];
+  assert.equal(Number(health?.consecutive), 1, 'one refusal is one health strike');
+});
+
+test('a pinned copy and the viewer age predicate both prevent alternate requests', { skip }, async (t) => {
+  await t.test('pinned', async () => {
+    failures.set(`${PRI}/pinned-one/0`, 404);
+    const out = await run(chapter(PRI, 'pinned-one', 3, true), [chapter(FOL, 'fol-one', 3)]).result;
+    assert.equal(out.kind, 'failed');
+    assert.ok(!asked.some((x) => x.startsWith(`${FOL}/`)), 'the named version was not replaced');
+  });
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL]]);
+  asked.length = 0;
+  await t.test('age cap', async () => {
+    failures.set(`${PRI}/denied-one/0`, 404);
+    const out = await run(chapter(PRI, 'denied-one', 4), [chapter(FOL, 'fol-one', 4)], { allowed: (id: string) => id !== FOL }).result;
+    assert.equal(out.kind, 'failed');
+    assert.ok(!asked.some((x) => x.startsWith(`${FOL}/`)), 'an excluded source was never reached');
+  });
+});
+
+test('an unattended admission change stops before every next source operation', { skip }, async (t) => {
+  await t.test('before the chosen copy', async () => {
+    const out = await run(chapter(PRI, 'never-one', 30), [chapter(FOL, 'fol-one', 30)], {
+      admit: async () => false,
+      hunt: async () => { assert.fail('a paused chapter must not hunt'); },
+    }).result;
+    assert.deepEqual(out, { kind: 'skipped', why: 'paused' });
+    assert.deepEqual(asked, [], 'no page request crossed the admission check');
+  });
+
+  await t.test('between a failed chosen copy and its alternate', async () => {
+    failures.set(`${PRI}/pause-one/0`, 404);
+    let checks = 0, hunts = 0;
+    const out = await run(chapter(PRI, 'pause-one', 31), [chapter(FOL, 'fol-one', 31)], {
+      // First at the cheap outer filter, then inside the source gate. Pause before the alternate's filter.
+      admit: async () => ++checks <= 2,
+      hunt: async () => { hunts++; return chapter(NEW, 'new-one', 31); },
+    }).result;
+    assert.deepEqual(out, { kind: 'skipped', why: 'paused' });
+    assert.ok(asked.some((x) => x.startsWith(`${PRI}/pause-one/`)), 'the admitted chosen copy was asked');
+    assert.ok(!asked.some((x) => x.startsWith(`${FOL}/`)), 'the alternate was stopped at its own admission check');
+    assert.equal(hunts, 0, 'the hunt never started');
+  });
+
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL, NEW]]);
+  asked.length = 0;
+  await t.test('while a hunt that finds nothing is in flight', async () => {
+    failures.set(`${PRI}/hunt-pause-five/4`, 404);
+    let admitted = true;
+    const out = await run(chapter(PRI, 'hunt-pause-five', 32), [], {
+      admit: async () => admitted,
+      hunt: async () => { admitted = false; return null; },
+    }).result;
+    assert.deepEqual(out, { kind: 'skipped', why: 'paused' });
+    assert.equal(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 32.cbz')), false,
+      'a partial was written after Unmonitor landed during the hunt');
+  });
+});
+
+test('current automatic copy rules are re-read at every request and partial-write boundary; an explicit pin bypasses them', { skip }, async (t) => {
+  const reset = async () => {
+    failures.clear();
+    asked.length = 0;
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL, NEW]]);
+  };
+
+  await t.test('a stale chosen copy is skipped and an allowed alternate lands', async () => {
+    const checked: string[] = [];
+    const chosen = { ...chapter(PRI, 'stale-five', 33), scanlator: 'Blocked Team' };
+    const alternate = { ...chapter(FOL, 'open-five', 33), scanlator: 'Open Team' };
+    const out = await run(chosen, [alternate], {
+      automaticAllowed: async (c: any) => { checked.push(c.source); return c.scanlator !== 'Blocked Team'; },
+    }).result;
+    assert.deepEqual([out.kind, out.via], ['landed', FOL]);
+    assert.deepEqual(checked, [PRI, FOL], 'each candidate was checked beside its own attempt');
+    assert.equal(asked.some((x) => x.startsWith(`${PRI}/`)), false, 'the newly blocked chosen copy was contacted');
+  });
+
+  await reset();
+  await t.test('a block saved after the chosen failure stops the alternate and hunted copy independently', async () => {
+    failures.set(`${PRI}/race-five/4`, 404);
+    const allowed = new Set([PRI, FOL, NEW]);
+    let hunts = 0;
+    const out = await run(
+      { ...chapter(PRI, 'race-five', 34), scanlator: 'First Team' },
+      [{ ...chapter(FOL, 'race-alt-one', 34), scanlator: 'Blocked Alternate' }],
+      {
+        automaticAllowed: async (c: any) => allowed.has(c.source),
+        onAsked: (source: string, err: unknown) => { if (source === PRI && err) allowed.clear(); },
+        hunt: async () => { hunts++; return { ...chapter(NEW, 'race-new-one', 34), scanlator: 'Blocked Hunt' }; },
+      },
+    ).result;
+    assert.equal(out.kind, 'failed');
+    assert.equal(hunts, 1, 'the ordinary failure still reached the hunt decision');
+    assert.ok(asked.some((x) => x.startsWith(`${PRI}/race-five/`)), 'the initially allowed chosen copy was not asked');
+    assert.ok(!asked.some((x) => x.startsWith(`${FOL}/`) || x.startsWith(`${NEW}/`)),
+      'an alternate or hunted copy crossed its last-moment rule check');
+  });
+
+  await reset();
+  await t.test('a partial is not written after its group becomes blocked during the download', async () => {
+    failures.set(`${PRI}/hold-five/4`, 404);
+    let checks = 0;
+    const out = await run({ ...chapter(PRI, 'hold-five', 35), scanlator: 'Soon Blocked' }, [], {
+      automaticAllowed: async () => ++checks === 1,
+    }).result;
+    assert.equal(out.kind, 'failed');
+    assert.equal(checks, 2, 'the held copy was checked again at its write boundary');
+    assert.equal(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 35.cbz')), false, 'the blocked partial was written');
+  });
+
+  await reset();
+  await t.test('an explicitly pinned copy remains the sole override', async () => {
+    let checks = 0;
+    const out = await run({ ...chapter(PRI, 'pin-five', 36, true), scanlator: 'Blocked Team' }, [], {
+      automaticAllowed: async () => { checks++; return false; },
+    }).result;
+    assert.deepEqual([out.kind, out.via], ['landed', PRI]);
+    assert.equal(checks, 0, 'a person-picked copy was passed through automatic policy');
+  });
+
+  await reset();
+  await t.test('a pin never overrides current source authorization', async () => {
+    const out = await run(chapter(PRI, 'pin-source-one', 37, true), [chapter(FOL, 'fol-one', 37)], {
+      sourceAllowedNow: async () => false,
+    }).result;
+    assert.deepEqual(out, { kind: 'skipped', why: 'refusing' });
+    assert.deepEqual(asked, [], 'the unauthorised pinned copy was contacted');
+  });
+});
+
+test('the source-slot preflight sees an unfollow, disable, and cooldown that land while queued', { skip }, async (t) => {
+  const { underGate } = await import('../src/lib/downloader');
+  const { listActivity } = await import('../src/lib/downloadActivity');
+  const { seriesFollowsSource } = await import('../src/lib/seriesListing');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+
+  const queuedRace = async (n: number, mutate: () => Promise<void>, extra: Record<string, unknown> = {}) => {
+    let entered = 0;
+    let ready!: () => void;
+    let release!: () => void;
+    const both = new Promise<void>((r) => { ready = r; });
+    const held = new Promise<void>((r) => { release = r; });
+    const occupy = () => underGate(PRI, async () => { if (++entered === 2) ready(); await held; });
+    const holders = [occupy(), occupy()];
+    let result: Promise<any> | null = null;
+    try {
+      await both;
+      result = run(chapter(PRI, `queued-${n}-one`, n), [chapter(FOL, `queued-alt-${n}-one`, n)], extra).result;
+      // beginDownload happens before the source gate. Seeing it queued proves the outer filters have run and
+      // the operation is waiting precisely at the boundary under test. Waited for by the clock, not by a count of
+      // event-loop turns: the download reads the database on its way there, and on a loaded runner a hundred turns
+      // came and went first.
+      const queued = () => listActivity().active.some((x) => x.folder === 'Fallback Tale' && x.number === n);
+      for (const t0 = Date.now(); !queued() && Date.now() - t0 < 10_000;) await new Promise<void>((r) => setTimeout(r, 5));
+      assert.ok(queued(), 'download reached the held source gate');
+      await mutate();
+      release();
+      return await result;
+    } finally {
+      // ⚠️ Whatever failed above, the two slots are given back and the queued download has ended before the next
+      // test. The assertion used to throw with both still held, and every later download from fb-pri waited for a
+      // slot forever: "the best incomplete hold ..." hung until the CI Tests job was cancelled (PR #185, twice), with
+      // nothing printed. Reintroduce by releasing only on the way out of the happy path: a failed queuedRace hangs
+      // the file again.
+      release();
+      await Promise.all(holders);
+      await result?.catch(() => {});
+    }
+  };
+
+  await t.test('unfollow', async () => {
+    const lib = 'fallback-race-lib', series = 'fallback-race-series';
+    await q(`INSERT INTO libraries (id, name, path) VALUES ($1, 'Fallback race', $1) ON CONFLICT (id) DO NOTHING`, [lib]);
+    await q('DELETE FROM lib_series WHERE id = $1', [series]);
+    await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id)
+             VALUES ($1, 'T!fallback', 'Fallback race', $2, 0, $3, $4, 'fol-series')`, [series, 'Fallback Race', lib, FOL]);
+    await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, 'pri-series')`, [series, PRI]);
+    try {
+      const out = await queuedRace(38, () => q('DELETE FROM series_sources WHERE series_id = $1 AND source_id = $2', [series, PRI]).then(() => {}), {
+        sourceAllowedNow: (c: any) => seriesFollowsSource(series, c.source ?? ''),
+      });
+      assert.deepEqual([out.kind, out.via], ['landed', FOL]);
+      assert.equal(asked.some((x) => x.startsWith(`${PRI}/queued-38-one/`)), false, 'unfollowed source was contacted after its slot opened');
+    } finally {
+      await q('DELETE FROM lib_series WHERE id = $1', [series]);
+    }
+  });
+
+  await t.test('disabled', async () => {
+    const out = await queuedRace(39, () => setDisabled(PRI, true));
+    assert.deepEqual([out.kind, out.via], ['landed', FOL]);
+    assert.equal(asked.some((x) => x.startsWith(`${PRI}/queued-39-one/`)), false, 'disabled source was contacted after its slot opened');
+    await setDisabled(PRI, false);
+  });
+
+  await t.test('cooldown', async () => {
+    const out = await queuedRace(40, () => q(
+      `INSERT INTO source_health (source_id, status, blocked_until, updated_at) VALUES ($1, 'rate_limited', now() + interval '10 minutes', now())
+       ON CONFLICT (source_id) DO UPDATE SET status = EXCLUDED.status, blocked_until = EXCLUDED.blocked_until, updated_at = now()`, [PRI],
+    ).then(() => {}));
+    assert.deepEqual([out.kind, out.via], ['landed', FOL]);
+    assert.equal(asked.some((x) => x.startsWith(`${PRI}/queued-40-one/`)), false, 'cooling source was contacted after its slot opened');
+  });
+});
+
+test('the best incomplete hold is written only after every non-refusing option is exhausted', { skip }, async () => {
+  failures.set(`${PRI}/partial-five/4`, 404);
+  let hunts = 0;
+  const out = await run(chapter(PRI, 'partial-five', 5), [], { hunt: async () => { hunts++; return null; } }).result;
+  assert.equal(out.kind, 'partial');
+  assert.deepEqual(out.missing, [4]);
+  assert.equal(hunts, 1, 'an incomplete chapter is eligible for one hunt before its hold is written');
+  assert.ok(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 5.cbz')));
+});
+
+test('429 never writes a partial and never starts a hunt', { skip }, async () => {
+  failures.set(`${PRI}/rate-five/4`, 429);
+  let hunts = 0;
+  const refusing = new Set<string>();
+  const out = await run(chapter(PRI, 'rate-five', 6), [], {
+    refusing,
+    hunt: async () => { hunts++; return chapter(NEW, 'new-five', 6); },
+  }).result;
+  assert.equal(out.kind, 'failed');
+  assert.equal(hunts, 0, 'a refusal is answered by its cooldown, not more source traffic');
+  assert.ok(refusing.has(PRI));
+  assert.equal(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 6.cbz')), false, 'no placeholder archive was written');
+});
+
+test('a persistent refusal may hunt, and still never writes a partial', { skip }, async () => {
+  // Reintroduce by dropping `|| f.persistent` from the hunt gate in chapterFallback.ts: hunts stays 0 and
+  // the chapter fails as in the test above.
+  // The test above is the story so far: a refusal on its own is answered by the cooldown. This is the
+  // sweep's third attempt, after the ledger (lib/updater.ts) has shown the same site refusing this number
+  // twice -- the caller's word, here -- and the one thing that changes is that the hunt may run.
+  failures.set(`${PRI}/persist-five/4`, 429);
+  let hunts = 0;
+  const hunt = async () => { hunts++; return chapter(NEW, 'new-five', 7); };
+  const refusing = new Set<string>();
+  const out = await run(chapter(PRI, 'persist-five', 7), [], { hunt, refusing, persistent: true }).result;
+  assert.equal(hunts, 1, 'the third refusal is not a cooldown story: the hunt runs');
+  assert.equal(out.kind, 'landed', 'and the chapter lands from the hunted copy, whole');
+  assert.equal(out.via, NEW);
+  assert.equal(out.pages, 5);
+  assert.deepEqual(out.switched, { from: PRI, why: 'rate_limited' });
+  assert.ok(refusing.has(PRI), 'the refusal still costs the source its strike for the run');
+  assert.ok(asked.some((x) => x.startsWith(`${NEW}/new-five/`)), 'the hunted source was asked');
+  assert.ok(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 7.cbz')), 'the whole copy is on disk');
+
+  // Persistent lifts only the hunt gate. With nothing to hunt, a refusal (a 403 here: the same rule, no
+  // resume waits) is still never a partial.
+  failures.set(`${PRI}/persist-again/4`, 403);
+  await q('DELETE FROM source_health WHERE source_id = $1', [PRI]);
+  let idle = 0;
+  const none = await run(chapter(PRI, 'persist-again', 8), [], { hunt: async () => { idle++; return null; }, persistent: true }).result;
+  assert.equal(idle, 1, 'the hunt was offered its turn');
+  assert.equal(none.kind, 'failed');
+  assert.equal(existsSync(join(ROOT, 'Fallback Tale', 'Chapter 8.cbz')), false, 'no placeholder archive was written on a refusal, persistent or not');
+});
+
+test('a copy that was not kept leaves the downloads at once', { skip }, async () => {
+  // A copy that arrives short is held open in the downloads view until the fallback decides (holdPartial). When the
+  // chapter landed whole from another source -- or a hold with fewer holes was written instead -- the one not kept
+  // waited out HOLD_MS there as a download still running: the Library ring spun and the Downloads view polled for
+  // ten minutes (integration-2 walk). Reintroduce by not dropping them (downloadWithFallback's finally): it is active.
+  const { listActivity } = await import('../src/lib/downloadActivity');
+  const open = (n: number) => listActivity().active.filter((e) => e.folder === 'Fallback Tale' && e.number === n);
+  failures.set(`${PRI}/drop-five/4`, 404);
+  const out = await run(chapter(PRI, 'drop-five', 11), [chapter(FOL, 'fol-five', 11)]).result;
+  assert.deepEqual([out.kind, out.via], ['landed', FOL], 'PREMISE: landed whole from the second source');
+  assert.deepEqual(open(11), [], 'a copy that was not kept leaves the downloads at once');
+  const ended = listActivity().recent.find((e) => e.folder === 'Fallback Tale' && e.number === 11 && e.source === PRI);
+  assert.deepEqual([ended?.status, ended?.reason], ['failed', 'arrived with 1 page missing; not kept'], 'ended as not kept, as the wait would have ended it');
+  // v0.49.1: the same, as its codes (lib/said.ts).
+  assert.deepEqual(ended?.reasonSaid, [{ code: 'activity.arrived', params: { n: 1 } }, { code: 'activity.notKept' }]);
+
+  // Two copies short by a page each: the first is written, and the other leaves the downloads too.
+  // The first premise above legitimately put PRI into a cooldown. This is a separate chapter scenario, so
+  // clear that state rather than accidentally testing the new fresh-cooldown gate instead of two holds.
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[PRI, FOL]]);
+  clearPace();
+  failures.set(`${PRI}/drop-two/4`, 404);
+  failures.set(`${FOL}/fol-two/3`, 404);
+  const two = await run(chapter(PRI, 'drop-two', 12), [chapter(FOL, 'fol-two', 12)]).result;
+  assert.deepEqual([two.kind, two.via], ['partial', PRI], 'PREMISE: the first hold was written');
+  assert.deepEqual(open(12), [], 'and the hold not written leaves the downloads too');
+});
+
+test('a copy on a source switched off mid-run is never asked: the same number comes from a follower, never a hunt', { skip }, async () => {
+  // v0.54.0, switched off means off. The sweep filters a switched-off source out before it lists (lib/updater.ts); an
+  // admin's Turn off after that listing reaches only this helper, which skips the chosen copy as it skips a refusing
+  // one. Reintroduce by asking the chosen copy whatever its source (dropping `!off` from its gate): fb-pri is asked.
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  await setDisabled(PRI, true);
+  try {
+    let hunts = 0;
+    const out = await run(chapter(PRI, 'off-five', 13), [chapter(FOL, 'fol-five', 13)], { hunt: async () => { hunts++; return null; } }).result;
+    assert.equal(asked.some((x) => x.startsWith(`${PRI}/`)), false, 'a copy on a source switched off mid-run is never asked');
+    assert.deepEqual([out.kind, out.via], ['landed', FOL], 'the same number came from the follower');
+    assert.deepEqual(out.switched, { from: PRI, why: 'off' }, 'and the switch says why');
+    assert.equal(hunts, 0, 'no hunt: nothing failed');
+    // With nothing else to ask, it was not asked at all: not a failure, and nothing toward the retry cap.
+    const alone = await run(chapter(PRI, 'off-one', 14)).result;
+    assert.deepEqual(alone, { kind: 'skipped', why: 'refusing' });
+    assert.equal(asked.some((x) => x.startsWith(`${PRI}/`)), false);
+  } finally {
+    await setDisabled(PRI, false);
+  }
+});

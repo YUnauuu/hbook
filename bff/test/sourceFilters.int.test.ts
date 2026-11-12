@@ -1,0 +1,251 @@
+// The library's two source filters, against a real database.
+//
+// `mainSource` is the source a series was added from (lib_series.source_id); `anySource` is that OR a source
+// it follows as a fallback (series_sources). GET /api/library/sources counts both per source, and the panel
+// shows those counts beside each chip -- so the count is a promise about what tapping the chip returns. The
+// invariant pinned here is the one genreOverview.int.test.ts pins for genres: the counts and the search agree,
+// and the counts are a VIEW, hiding what the viewer may not list (a source only a hidden library reads from
+// is not named at all).
+//
+// sourceFilter.test.ts pins the SQL's shape without a database; this pins the rows it selects, and (through the
+// real route) the name each source is shown by. Since v0.55.1 (#149) also "No source": the series with no main source,
+// and the count beside its chip.
+//
+// Skipped automatically unless TEST_DATABASE_URL is set (CI provides a throwaway Postgres service).
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const DSN = process.env.TEST_DATABASE_URL;
+if (DSN) {
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+  process.env.LIBRARY_BACKEND = 'owned';
+}
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+const LIB = 'lib_sf_x';
+const SERIES = ['s_sf_a', 's_sf_b', 's_sf_c', 's_sf_d', 's_sf_e'] as const;
+// Two extension sources the engine has named (suwayomi_sources), each only ever followed, never a main source.
+const SW_OFF = 'sw:8800000000000000001';    // not registered: switched off, or the engine is down
+const SW_LOADED = 'sw:8800000000000000002'; // registered, under a newer name than the one the engine row kept
+const SOURCES = ['sf-x', 'sf-y', 'sf-z', 'sf-w', SW_OFF, SW_LOADED] as const;
+const ADMIN = 'sf-admin';
+// #149: series with no main source -- added by hand (f), one that follows a source all the same (g, through sf-v, which
+// nothing else reads), one in the library the bound member cannot open (h), and a soft-deleted one (i). Apart from
+// SERIES, so the rows the source filters above select are the ones they always were.
+const UNSOURCED = ['s_sf_f', 's_sf_g', 's_sf_h', 's_sf_i'] as const;
+
+async function setup() {
+  const { migrate } = await import('../src/lib/migrate');
+  const { q } = await import('../src/lib/db');
+  const { owned } = await import('../src/lib/ownedCatalog');
+  const { viewCtxFor, SYSTEM_CTX } = await import('../src/lib/visibility');
+  const { registerAdapter } = await import('../src/lib/sources');
+  const Fastify = (await import('fastify')).default;
+  const jwt = (await import('@fastify/jwt')).default;
+  const catalogRoutes = (await import('../src/routes/catalog')).default;
+  await migrate();
+
+  await cleanup(q);
+  await q(`INSERT INTO libraries (id, name, path) VALUES ($1,'SF','SfLib')`, [LIB]);
+
+  //   a: added from x, follows y        b: added from y
+  //   c: added from x                   d: added from z, soft-deleted, follows x
+  //   e: added from w, in LIB (a library the bound member cannot open), follows y
+  //   b also follows SW_OFF, c also follows SW_LOADED
+  const rows: Array<[string, string, string]> = [
+    ['s_sf_a', 'sf-x', 'lib'],
+    ['s_sf_b', 'sf-y', 'lib'],
+    ['s_sf_c', 'sf-x', 'lib'],
+    ['s_sf_d', 'sf-z', 'lib'],
+    ['s_sf_e', 'sf-w', LIB],
+  ];
+  for (const [id, source, lib] of rows) {
+    await q(
+      `INSERT INTO lib_series (id, source, title, folder, books_count, source_id, source_series_id, library_id, latest_mtime)
+       VALUES ($1,'T!sf',$1,$1,1,$2,$1,$3, extract(epoch from now())::bigint)`,
+      [id, source, lib],
+    );
+  }
+  const follow = (id: string, source: string) =>
+    q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1,$2,$1)`, [id, source]);
+  await follow('s_sf_a', 'sf-y');
+  await follow('s_sf_d', 'sf-x');
+  await follow('s_sf_e', 'sf-y');
+  await follow('s_sf_b', SW_OFF);
+  await follow('s_sf_c', SW_LOADED);
+  await q(`UPDATE lib_series SET deleted_at = now() WHERE id = 's_sf_d'`);
+  // No source_id at all: what the scan writes for a folder of your own (library.ts).
+  for (const [id, lib] of [['s_sf_f', 'lib'], ['s_sf_g', 'lib'], ['s_sf_h', LIB], ['s_sf_i', 'lib']] as const) {
+    await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, latest_mtime)
+             VALUES ($1,'T!sf',$1,$1,1,$2, extract(epoch from now())::bigint)`, [id, lib]);
+  }
+  await follow('s_sf_g', 'sf-v');
+  await q(`UPDATE lib_series SET deleted_at = now() WHERE id = 's_sf_i'`);
+  await q(`INSERT INTO suwayomi_sources (source_id, name, lang, enabled) VALUES ($1,'SF Engine Source (EN)','en',false), ($2,'SF Stored Name (EN)','en',true)`,
+    [SW_OFF.slice(3), SW_LOADED.slice(3)]);
+  registerAdapter({
+    id: SW_LOADED, name: 'SF Loaded Name (EN)',
+    async search() { return []; }, async getSeries() { return null; }, async listChapters() { return []; }, async getPageUrls() { return []; },
+  } as any);
+
+  const bound = (await q<{ id: string }>(
+    `INSERT INTO users (username, display_name, password_hash, role, auth_kind)
+     VALUES ('sf-bound','sf-bound','x','user','password') RETURNING id`))[0].id;
+  await q('INSERT INTO user_libraries (user_id, library_id) VALUES ($1,$2)', [bound, 'lib']);
+  const admin = (await q<{ id: string }>(
+    `INSERT INTO users (username, display_name, password_hash, role, auth_kind)
+     VALUES ($1,$1,'x','admin','password') RETURNING id`, [ADMIN]))[0].id;
+
+  const app = Fastify();
+  await app.register(jwt, { secret: process.env.JWT_SECRET! });
+  await app.register(catalogRoutes);
+  await app.ready();
+  const auth = { authorization: `Bearer ${app.jwt.sign({ sub: admin, role: 'admin' })}` };
+
+  return { q, owned, viewCtxFor, SYSTEM_CTX, bound, app, auth };
+}
+
+async function cleanup(q: (sql: string, params?: any[]) => Promise<any>) {
+  await q('DELETE FROM series_sources WHERE series_id = ANY($1)', [[...SERIES, ...UNSOURCED]]).catch(() => {});
+  await q('DELETE FROM lib_series WHERE id = ANY($1)', [[...SERIES, ...UNSOURCED]]).catch(() => {});
+  await q('DELETE FROM libraries WHERE id = $1', [LIB]).catch(() => {});
+  await q(`DELETE FROM users WHERE username = 'sf-bound'`).catch(() => {});
+  await q('DELETE FROM users WHERE username = $1', [ADMIN]).catch(() => {});
+  await q('DELETE FROM suwayomi_sources WHERE source_id = ANY($1)', [[SW_OFF.slice(3), SW_LOADED.slice(3)]]).catch(() => {});
+}
+
+const ours = (r: any): string[] => r.content.map((s: any) => s.id).filter((i: string) => (SERIES as readonly string[]).includes(i)).sort();
+const unsourced = (r: any): string[] => r.content.map((s: any) => s.id).filter((i: string) => (UNSOURCED as readonly string[]).includes(i)).sort();
+const bySource = (rows: any[]) =>
+  Object.fromEntries(rows.filter((r) => (SOURCES as readonly string[]).includes(r.id)).map((r) => [r.id, r]));
+
+test('library source filters', { skip }, async (t) => {
+  const { q, owned, viewCtxFor, SYSTEM_CTX, bound, app, auth } = await setup();
+  const search = (condition: any, ctx: any = SYSTEM_CTX) => owned.searchSeries(ctx, { condition }, 0, 200);
+
+  try {
+    await t.test('mainSource returns only the series added from that source', async () => {
+      assert.deepEqual(ours(await search({ mainSource: { operator: 'is', value: 'sf-x' } })), ['s_sf_a', 's_sf_c']);
+      // Reintroduce by consulting series_sources in mainSource: b would come back for y through a's follow.
+      assert.deepEqual(ours(await search({ mainSource: { operator: 'is', value: 'sf-y' } })), ['s_sf_b']);
+    });
+
+    await t.test('anySource adds the series that follow the source as a fallback', async () => {
+      assert.deepEqual(ours(await search({ anySource: { operator: 'is', value: 'sf-y' } })), ['s_sf_a', 's_sf_b', 's_sf_e']);
+      assert.deepEqual(ours(await search({ anySource: { operator: 'is', value: 'sf-x' } })), ['s_sf_a', 's_sf_c'],
+        'd follows x but is soft-deleted, and a filter must not bring a hidden series back');
+    });
+
+    await t.test('isNot negates, and both combine with the other conditions', async () => {
+      assert.deepEqual(ours(await search({ mainSource: { operator: 'isNot', value: 'sf-x' } })), ['s_sf_b', 's_sf_e']);
+      assert.deepEqual(
+        ours(await search({ allOf: [{ anySource: { operator: 'is', value: 'sf-y' } }, { mainSource: { operator: 'isNot', value: 'sf-y' } }] })),
+        ['s_sf_a', 's_sf_e'], 'read from y, but not added from it');
+      assert.deepEqual(
+        ours(await search({ allOf: [{ anySource: { operator: 'is', value: 'sf-y' } }, { libraryId: { operator: 'is', value: LIB } }] })),
+        ['s_sf_e']);
+    });
+
+    await t.test('a source that is not installed still filters', async () => {
+      // None of these ids is a registered adapter: the filter compares ids as stored, so a series whose
+      // extension was removed can still be found by where it came from.
+      const r = await search({ mainSource: { operator: 'is', value: 'sf-w' } });
+      assert.deepEqual(ours(r), ['s_sf_e']);
+    });
+
+    await t.test('librarySources counts main and any per source, hidden series excluded', async () => {
+      const s = bySource(await owned.librarySources(SYSTEM_CTX));
+      assert.deepEqual({ main: s['sf-x'].main, any: s['sf-x'].any }, { main: 2, any: 2 }, 'd is soft-deleted: its follow of x must not count');
+      assert.deepEqual({ main: s['sf-y'].main, any: s['sf-y'].any }, { main: 1, any: 3 });
+      assert.deepEqual({ main: s['sf-w'].main, any: s['sf-w'].any }, { main: 1, any: 1 });
+      assert.ok(!('sf-z' in s), 'z is only the source of a soft-deleted series, so it has nothing to filter to');
+    });
+
+    await t.test('every count is what the search behind it returns', async () => {
+      // The chip says "{name} {n}": if these ever disagree, the panel promises a number the grid does not show.
+      for (const ctx of [SYSTEM_CTX, await viewCtxFor(bound)]) {
+        const rows = (await owned.librarySources(ctx)).filter((r: any) => (SOURCES as readonly string[]).includes(r.id));
+        assert.ok(rows.length > 0);
+        for (const r of rows) {
+          const main = await search({ mainSource: { operator: 'is', value: r.id } }, ctx);
+          const any = await search({ anySource: { operator: 'is', value: r.id } }, ctx);
+          assert.equal(r.main, main.totalElements, `${r.id}: main says ${r.main}, the search returns ${main.totalElements}`);
+          assert.equal(r.any, any.totalElements, `${r.id}: any says ${r.any}, the search returns ${any.totalElements}`);
+        }
+      }
+    });
+
+    await t.test('a member does not see a source only a library closed to them reads from', async () => {
+      const s = bySource(await owned.librarySources(await viewCtxFor(bound)));
+      assert.ok(!('sf-w' in s), 'naming w would tell the member a series they cannot open exists, and where it came from');
+      assert.equal(s['sf-y'].any, 2, "e's follow of y is in a library this member cannot open");
+      assert.deepEqual(ours(await search({ anySource: { operator: 'is', value: 'sf-y' } }, await viewCtxFor(bound))), ['s_sf_a', 's_sf_b']);
+    });
+
+    await t.test("GET /api/library/sources names each source as Health does: its adapter, the engine's name, its id", async () => {
+      // The #115 rule (lib/health.ts sourceLabel). PR #124 named a source from the registry, then its series'
+      // folder label, then the id. A folder label exists only for a main source, so an extension source that is
+      // only ever followed (AllManga, on the library this was written against) read as a raw `sw:4709…` whenever
+      // the engine was down or the source switched off; and a main source that is not registered was named after
+      // the folder its series sit in ('T!sf' here). Reintroduce `getSource(r.id)?.name ?? r.label ?? r.id`:
+      // "a followed extension source reads as its raw id" fails.
+      const r = await app.inject({ method: 'GET', url: '/api/library/sources', headers: auth });
+      assert.equal(r.statusCode, 200, r.body);
+      const s = bySource(r.json().content);
+      assert.deepEqual(s[SW_OFF], { id: SW_OFF, name: 'SF Engine Source (EN)', main: 0, any: 1, installed: false },
+        'a followed extension source reads as its raw id');
+      assert.deepEqual({ name: s[SW_LOADED].name, installed: s[SW_LOADED].installed }, { name: 'SF Loaded Name (EN)', installed: true },
+        "a loaded source is not named by its adapter first");
+      assert.equal(s['sf-x'].name, 'sf-x', 'a source is named after the folder its series sit in');
+      assert.deepEqual({ main: s['sf-x'].main, any: s['sf-x'].any, installed: s['sf-x'].installed }, { main: 2, any: 2, installed: false });
+    });
+
+    await t.test('No source (#149) is every series with no main source, one that follows a source included, nothing hidden', async () => {
+      // Kedryn's ask: the series without a source, to fix them. A hand-added folder that follows a source has none of its
+      // own all the same. Reintroduce by also asking series_sources in condSql: "one that follows a source is still
+      // without a main source" fails.
+      const none = { hasMainSource: { operator: 'isFalse' } };
+      assert.deepEqual(unsourced(await search(none)), ['s_sf_f', 's_sf_g', 's_sf_h'], 'one that follows a source is still without a main source');
+      assert.deepEqual(ours(await search(none)), [], 'a series with a main source is never "No source"');
+      assert.deepEqual(unsourced(await search(none, await viewCtxFor(bound))), ['s_sf_f', 's_sf_g'], 'h is in a library this member cannot open');
+      assert.deepEqual(unsourced(await search({ hasMainSource: { operator: 'isTrue' } })), []);
+      assert.deepEqual(unsourced(await search({ allOf: [none, { libraryId: { operator: 'is', value: LIB } }] })), ['s_sf_h']);
+    });
+
+    await t.test('the No source count is what its search returns, for every viewer', async () => {
+      // The chip says "No source {n}". Reintroduce a predicate of the count's own that leaves out a series following a
+      // source: g is counted out while the search returns it.
+      for (const ctx of [SYSTEM_CTX, await viewCtxFor(bound)]) {
+        const n = await owned.seriesWithoutSource(ctx);
+        const r = await search({ hasMainSource: { operator: 'isFalse' } }, ctx);
+        assert.ok(n >= 2, `PREMISE: the fixture's series are counted (${n})`);
+        assert.equal(n, r.totalElements, `the No source count says ${n}, the search returns ${r.totalElements}`);
+      }
+    });
+
+    await t.test('GET /api/library/sources says how many have no source beside the sources, and the search agrees', async () => {
+      // A top-level count, `content` exactly as it was: an older script reads the rows as it always did. Reintroduce by
+      // dropping `none` from the route: "the route does not say how many have no source" fails.
+      const r = await app.inject({ method: 'GET', url: '/api/library/sources', headers: auth });
+      assert.equal(r.statusCode, 200, r.body);
+      const body = r.json();
+      assert.equal(typeof body.none, 'number', 'the route does not say how many have no source');
+      assert.deepEqual(Object.keys(body).sort(), ['content', 'none'], 'nothing else beside the sources');
+      assert.deepEqual(Object.keys(bySource(body.content)['sf-x']).sort(), ['any', 'id', 'installed', 'main', 'name'], 'a source row keeps its shape');
+      const searched = await app.inject({ method: 'POST', url: '/api/series/search', headers: auth,
+        payload: { condition: { allOf: [{ hasMainSource: { operator: 'isFalse' } }] }, size: 100 } });
+      assert.equal(searched.statusCode, 200, searched.body);
+      assert.equal(body.none, searched.json().totalElements, 'the chip\'s count is not what the search returns');
+      assert.deepEqual(unsourced(searched.json()), ['s_sf_f', 's_sf_g', 's_sf_h']);
+      // An operator the boolean shape does not have is refused, never widened to the whole library.
+      const bad = await app.inject({ method: 'POST', url: '/api/series/search', headers: auth, payload: { condition: { hasMainSource: { operator: 'is', value: 'none' } } } });
+      assert.equal(bad.statusCode, 400);
+      assert.deepEqual(bad.json(), { error: 'unsupported_filter', predicate: 'hasMainSource:is' });
+    });
+  } finally {
+    await app.close();
+    await cleanup(q);
+  }
+});

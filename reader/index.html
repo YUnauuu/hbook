@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>hbook · Manga & Novels</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22h%22%20gradientUnits%3D%22userSpaceOnUse%22%20x1%3D%22170%22%20y1%3D%22116%22%20x2%3D%22330%22%20y2%3D%22396%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%235b9cff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%237ee0c0%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%22512%22%20height%3D%22512%22%20rx%3D%22112%22%20fill%3D%22%230e1116%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22url(%23h)%22%20stroke-width%3D%2246%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M170%20116V396%22%2F%3E%3Cpath%20d%3D%22M170%20272c0-54%2044-92%20100-92s100%2038%20100%2092v124%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+<!-- The stamp is a cache buster: it makes the browser ask for these two files again after they
+     change, instead of showing the version it happens to have. Bump it when you edit either of
+     them — the numbers are the day the file last changed, and nothing depends on them matching. -->
+<link rel="stylesheet" href="/style.css?v=20261111b">
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="#/">hbook</a>
+
+    <form id="search" class="search" autocomplete="off">
+      <input id="q" name="q" type="search" placeholder="搜索漫画或小说…" spellcheck="false">
+      <div class="kind" role="tablist">
+        <button type="button" class="on" data-kind="manga">漫画</button>
+        <button type="button" data-kind="novel">小说</button>
+      </div>
+      <button type="submit" class="go" aria-label="搜索">🔍</button>
+    </form>
+
+    <label class="adult" title="显示 18+ 内容">
+      <input type="checkbox" id="adult"><span>18+</span>
+    </label>
+
+    <select id="lang" class="lang" title="漫画语言">
+      <option value="zh">中文</option>
+      <option value="ja">日本語</option>
+      <option value="ko">한국어</option>
+      <option value="en">English</option>
+      <option value="all">全部</option>
+    </select>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <a href="#/" data-view="home">首页</a>
+    <a href="#/manga" data-view="manga">漫画库</a>
+    <a href="#/novels" data-view="novels">书库</a>
+    <a href="#/latest" data-view="latest">最新更新</a>
+    <a href="#/popular" data-view="popular">热门排行</a>
+    <a href="#/history" data-view="history">历史记录</a>
+  </nav>
+</header>
+
+<main id="view"><div class="loading">载入中…</div></main>
+
+<div id="reader" class="reader" hidden>
+  <div class="reader-top">
+    <button id="r-back" class="ghost">←</button>
+    <span id="r-title"></span>
+    <button id="r-size" class="ghost">Aa</button>
+  </div>
+  <div id="r-body" class="reader-body"></div>
+  <div class="reader-foot">
+    <button id="r-prev" class="ghost">上一章</button>
+    <span id="r-pos"></span>
+    <button id="r-next" class="ghost">下一章</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- The old app's service worker, if one is still installed on this origin, has to go: it serves its
+     own cached shell for every navigation, and this page would never be shown. /sw.js does the same
+     job for the worker itself; this does it for anything the worker already left behind. -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((list) => {
+    for (const reg of list) reg.unregister();
+  }).catch(() => {});
+}
+if (window.caches) {
+  caches.keys().then((names) => {
+    for (const name of names) caches.delete(name);
+  }).catch(() => {});
+}
+</script>
+
+<script src="/app.js?v=20261111b"></script>
+</body>
+</html>

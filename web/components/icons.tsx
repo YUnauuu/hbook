@@ -1,0 +1,184 @@
+import { SVGProps } from 'react';
+
+type P = SVGProps<SVGSVGElement>;
+const base = (p: P) => ({
+  width: 24,
+  height: 24,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  ...p,
+});
+
+export const IcHome = (p: P) => (
+  <svg {...base(p)}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
+);
+export const IcGrid = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+);
+// The Library's layouts (v0.60.0): Comfortable is IcGrid's four covers, Compact nine smaller ones, List covers in rows.
+export const IcGridDense = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="3" width="5" height="5" rx="1" /><rect x="9.5" y="3" width="5" height="5" rx="1" /><rect x="16" y="3" width="5" height="5" rx="1" /><rect x="3" y="9.5" width="5" height="5" rx="1" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" /><rect x="16" y="9.5" width="5" height="5" rx="1" /><rect x="3" y="16" width="5" height="5" rx="1" /><rect x="9.5" y="16" width="5" height="5" rx="1" /><rect x="16" y="16" width="5" height="5" rx="1" /></svg>
+);
+export const IcRows = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="4" width="4.5" height="6" rx="1" /><rect x="3" y="14" width="4.5" height="6" rx="1" /><path d="M11 6h10M11 9h6M11 16h10M11 19h6" /></svg>
+);
+// Sort (v0.60.0, the Library's Sort key): bars getting shorter, the shelf from most to least. Flipped upside down, the
+// other way round.
+export const IcSort = (p: P) => (
+  <svg {...base(p)}><path d="M4 6h11M4 12h7.5M4 18h4" /><path d="M18.5 5v14" /><path d="m15.5 16 3 3 3-3" /></svg>
+);
+export const IcSearch = (p: P) => (
+  <svg {...base(p)}><circle cx="11" cy="11" r="7" /><path d="m21 21-3.5-3.5" /></svg>
+);
+export const IcDownload = (p: P) => (
+  <svg {...base(p)}><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M5 21h14" /></svg>
+);
+// A cloud with an arrow out of it: "fetch from the source onto this server". Deliberately NOT IcDownload,
+// which every on-disk chapter row spends on "save to this device" -- the two are different promises
+// (a file arrives on the server vs. on the phone in hand), and a ghost row showing the same arrow as the
+// row above it would read as the same action.
+export const IcCloudDownload = (p: P) => (
+  <svg {...base(p)}><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8a4 4 0 0 1 1 7.9" /><path d="M12 12v9" /><path d="m8.5 17.5 3.5 3.5 3.5-3.5" /></svg>
+);
+export const IcUser = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
+);
+/** People: how many readers have a series on a list (v0.60.0, the AniList tile and the Library's popularity value). */
+export const IcUsers = (p: P) => (
+  <svg {...base(p)}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 3-5.5 6.5-5.5s6.5 1.9 6.5 5.5" /><path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8" /><path d="M17.5 14.8c2.4.5 4 2.3 4 5.2" /></svg>
+);
+// Mirrored about x = 12, the tip's line (v0.60.1, from Squeaks72's fork): the old path's lobes met at x = 10, so the heart
+// leaned left -- visible since v0.60.0 drew it at 20 px on the Favourite key. v601Fixes.test.ts checks the mirror.
+export const IcHeart = (p: P) => (
+  <svg {...base(p)}><path d="M12 20s-8-4.9-9.4-9.6C1.7 7.2 3.6 4.5 6.6 4.5c2.1 0 3.9 1.1 5.4 3.1 1.5-2 3.3-3.1 5.4-3.1 3 0 4.9 2.7 4 5.9C20 15.1 12 20 12 20Z" /></svg>
+);
+export const IcStar = (p: P) => (
+  <svg {...base(p)}><path d="m12 3 2.6 5.6 6 .8-4.4 4.2 1.1 6L12 16.8 6.7 19.6l1.1-6L3.4 9.4l6-.8L12 3Z" /></svg>
+);
+// The same glyph the series page draws inline for "Edit details", promoted so two callers share one path.
+export const IcPencil = (p: P) => (
+  <svg {...base(p)}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+);
+// A page with a ribbon on it. Deliberately not IcBookmark (a bare ribbon), which the nav already spends on
+// Lists -- two ribbons in one header would read as the same destination twice.
+export const IcMoments = (p: P) => (
+  <svg {...base(p)}><rect x="4" y="3" width="16" height="18" rx="2.5" /><path d="M9.5 3v7l2.5-1.9L14.5 10V3" /></svg>
+);
+export const IcChevronLeft = (p: P) => (
+  <svg {...base(p)}><path d="m15 5-7 7 7 7" /></svg>
+);
+export const IcChevronRight = (p: P) => (
+  <svg {...base(p)}><path d="m9 5 7 7-7 7" /></svg>
+);
+export const IcPlay = (p: P) => (
+  <svg {...base(p)} fill="currentColor" stroke="none"><path d="M7 4.5v15l13-7.5L7 4.5Z" /></svg>
+);
+export const IcSettings = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H2a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.3-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1H22a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>
+);
+// A frame its badge has not unlocked yet (v0.89.0, the avatar editor).
+export const IcLock = (p: P) => (
+  <svg {...base(p)}><rect x="5" y="10.5" width="14" height="10" rx="2.2" /><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7" /></svg>
+);
+export const IcCheck = (p: P) => (
+  <svg {...base(p)}><path d="m5 12 4.5 4.5L19 7" /></svg>
+);
+export const IcLogOut = (p: P) => (
+  <svg {...base(p)}><path d="M15 17l5-5-5-5M20 12H9M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>
+);
+export const IcX = (p: P) => (
+  <svg {...base(p)}><path d="M6 6 18 18M18 6 6 18" /></svg>
+);
+export const IcPlus = (p: P) => (
+  <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
+);
+export const IcSliders = (p: P) => (
+  <svg {...base(p)}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></svg>
+);
+export const IcTrash = (p: P) => (
+  <svg {...base(p)}><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
+);
+export const IcBookmark = (p: P) => (
+  <svg {...base(p)}><path d="M6 3h12v18l-6-4-6 4V3Z" /></svg>
+);
+// The novel side's mark: an open book, next to the manga side's grid.
+export const IcBook = (p: P) => (
+  <svg {...base(p)}><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v14h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-14h-3c-2.5 0-4.5.5-6 2Z" /><path d="M12 6.5v14" /></svg>
+);
+export const IcBookOpen = (p: P) => (
+  <svg {...base(p)}><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v14h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-14h-3c-2.5 0-4.5.5-6 2Z" /><path d="M12 6.5v14" /></svg>
+);
+export const IcSparkle = (p: P) => (
+  <svg {...base(p)}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /></svg>
+);
+export const IcBell = (p: P) => (
+  <svg {...base(p)}><path d="M6 9a6 6 0 1 1 12 0c0 3.6 1.4 5.3 1.4 5.3H4.6S6 12.6 6 9Z" /><path d="M10.2 19a1.8 1.8 0 0 0 3.6 0" /></svg>
+);
+export const IcRefresh = (p: P) => (
+  <svg {...base(p)}><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 4v5h-5" /></svg>
+);
+export const IcInfo = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 8h.01" /></svg>
+);
+export const IcAlert = (p: P) => (
+  <svg {...base(p)}><path d="M12 3.5 2.5 20h19L12 3.5Z" /><path d="M12 10v4.5" /><path d="M12 17.5h.01" /></svg>
+);
+// Waiting its turn: a queued cover in the Downloads view, a refused action that will run later.
+// Admin (UI refresh): the sidebar's way into the console. A shield rather than the gear, which already means a
+// person's own Settings on their profile.
+export const IcShield = (p: P) => (
+  <svg {...base(p)}><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3Z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg>
+);
+export const IcClock = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+);
+// The slow archive (#117): fetched over days, a chapter at a time. An hourglass rather than the clock, which
+// already means "queued, next in line" -- the archive is not waiting for a turn, it is taking its time.
+export const IcHourglass = (p: P) => (
+  <svg {...base(p)}><path d="M6.5 3h11" /><path d="M6.5 21h11" /><path d="M7.5 3c0 4.5 4.5 6 4.5 9s-4.5 4.5-4.5 9" /><path d="M16.5 3c0 4.5-4.5 6-4.5 9s4.5 4.5 4.5 9" /></svg>
+);
+// Languages: Admin → Sources' key for the languages hidden in every extension.
+export const IcGlobe = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3Z" /></svg>
+);
+// More, for a ⋯ key whose menu holds the rarely needed things.
+export const IcMore = (p: P) => (
+  <svg {...base(p)} fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+);
+// Import your library (v0.55.4, #158): an arrow into a tray, what a list from another app does. Deliberately not
+// IcDownload (an arrow onto a line), which every chapter row spends on "save to this device".
+export const IcImport = (p: P) => (
+  <svg {...base(p)}><path d="M12 3v10" /><path d="m8 9.5 4 4 4-4" /><path d="M3.5 14H8l1.5 2.5h5L16 14h4.5" /><path d="M3.5 14v4.5A2.5 2.5 0 0 0 6 21h12a2.5 2.5 0 0 0 2.5-2.5V14" /></svg>
+);
+// Upload a series: an arrow up out of a tray, the import's mirror -- files from this device, not a list.
+export const IcUpload = (p: P) => (
+  <svg {...base(p)}><path d="M12 14V3" /><path d="m8 7 4-4 4 4" /><path d="M3.5 14v4.5A2.5 2.5 0 0 0 6 21h12a2.5 2.5 0 0 0 2.5-2.5V14" /></svg>
+);
+export const IcFilter = (p: P) => (
+  <svg {...base(p)}><path d="M4 5h16" /><path d="M7 12h10" /><path d="M10 19h4" /></svg>
+);
+/** v0.61.0: Incognito reading -- an eye, struck through. */
+export const IcEyeOff = (p: P) => (
+  <svg {...base(p)}><path d="M3 3l18 18" /><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c5.5 0 9 5.5 9.6 7a13.6 13.6 0 0 1-3 3.9M6.4 6.4C4.2 7.9 2.8 10 2.4 12c.6 1.5 4.1 7 9.6 7 1.7 0 3.2-.5 4.5-1.3" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+);
+export const IcWifiOff = (p: P) => (
+  <svg {...base(p)}><path d="M2 4l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.5a10 10 0 0 1 4-2.6M2 9a15 15 0 0 1 4-2.5M19 12.5q.8.6 1.5 1.3M22 9a15 15 0 0 0-7-4" /><circle cx="12" cy="20" r="0.6" fill="currentColor" /></svg>
+);
+/** v0.87.0: a chapter's comments -- a speech bubble with two lines of talk in it. */
+export const IcComment = (p: P) => (
+  <svg {...base(p)}><path d="M5 4.5h14A2.5 2.5 0 0 1 21.5 7v8a2.5 2.5 0 0 1-2.5 2.5h-7.5L7 21v-3.5H5A2.5 2.5 0 0 1 2.5 15V7A2.5 2.5 0 0 1 5 4.5Z" /><path d="M7.5 9.5h9M7.5 13h6" /></svg>
+);
+// The consoles' lists (v0.88.0): Insights' bars, Connections' link, Account's key.
+export const IcChart = (p: P) => (
+  <svg {...base(p)}><path d="M4 20h16" /><rect x="5.5" y="11" width="3" height="6" rx="1" /><rect x="10.5" y="6" width="3" height="11" rx="1" /><rect x="15.5" y="9" width="3" height="8" rx="1" /></svg>
+);
+export const IcLink = (p: P) => (
+  <svg {...base(p)}><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" /><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" /></svg>
+);
+export const IcKey = (p: P) => (
+  <svg {...base(p)}><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 8.2-8.2" /><path d="m16 7 2.5 2.5" /><path d="m13.5 9.5 2 2" /></svg>
+);

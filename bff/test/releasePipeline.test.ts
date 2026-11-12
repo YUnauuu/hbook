@@ -1,0 +1,844 @@
+// The release pipeline and the one-click manifests, held to the shape that stops them breaking.
+//
+// The pipeline broke four of five releases before v0.19.0, every time the same way: arm64 built under QEMU
+// on an amd64 runner, and the native-module builds either hung until the timeout or died with SIGILL. The
+// fix is structural -- each architecture on a runner of that architecture, merged into one index -- and
+// structural fixes are exactly the kind that get undone by a helpful edit ("let's simplify this back to one
+// job"). So the structure is pinned here, as text, the way aioParity.test.ts pins the Dockerfiles.
+//
+// The manifests are pinned for the same reason: an Unraid template with a missing path or an Umbrel compose
+// without the proxy block installs fine and then does not work, and nobody here runs Unraid or umbrelOS to
+// notice. What can be checked without them is checked.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync, statSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { createHash } from 'crypto';
+import { execFile } from 'child_process';
+import { createServer } from 'http';
+import type { AddressInfo } from 'net';
+import { parse as parseYaml } from 'yaml';
+
+const REPO = join(__dirname, '..', '..');
+const read = (p: string) => readFileSync(join(REPO, p), 'utf8');
+const code = (s: string) => s.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+// A value matched literally inside a RegExp: every special character escaped, the backslash too. Escaping only the
+// dots is what CodeQL flags as an incomplete escape (js/incomplete-sanitization).
+const reLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test('arm64 is built on an arm64 runner, never emulated, and merged into one index', () => {
+  const y = read('.github/workflows/release.yml');
+  const wf = parseYaml(y);
+  // Reintroduce by adding setup-qemu-action back: the next release hangs at exactly the timeout again.
+  assert.ok(!/setup-qemu/.test(code(y)), 'release.yml uses QEMU emulation again');
+  assert.match(code(y), /ubuntu-24\.04-arm/, 'no native arm64 runner');
+  assert.match(code(y), /push-by-digest=true/, 'architectures are not pushed by digest, so the tag can point at one of them');
+  assert.ok(wf.jobs.merge, 'no merge job: nothing writes the tag over both architectures');
+  assert.match(code(y), /imagetools create -t "\$\{\{ matrix\.image \}\}:\$\{\{ matrix\.tag_prefix \}\}\$\{\{ github\.ref_name \}\}"/, 'the merge job does not write the version tag');
+  assert.match(code(y), /grep -q "linux\/\$arch"/, 'the merge job does not check both architectures are in the index');
+  // Reintroduce by piping `imagetools inspect` into grep -q or an early-exiting awk: buildx dies of SIGPIPE,
+  // pipefail makes that the step's status, and every merge fails after every build succeeded -- the first
+  // run of this pipeline, exactly.
+  assert.ok(!/imagetools inspect[^\n]*\|\s*(grep|awk|head)/.test(code(y)), 'release.yml pipes an imagetools inspect into a reader that can close the pipe early');
+  // The gate: latest moves only after every image is merged. Reintroduce by pointing `needs` at build.
+  assert.equal(wf.jobs.latest.needs, 'merge', 'latest is not gated on the merged indexes');
+  assert.equal(wf.jobs.merge.needs, 'build');
+  for (const j of ['build', 'merge', 'latest']) assert.ok(wf.jobs[j]['timeout-minutes'], `${j} has no timeout`);
+  assert.match(y, /attest-build-provenance/, 'no provenance attestation');
+  assert.equal(wf.permissions['id-token'], 'write', 'attestations need id-token: write');
+  assert.equal(wf.permissions.attestations, 'write');
+  // The digest the merge job trusts is checked before it is written. `build-push-action` sets that output
+  // only `if (digest)`, so a build that produced no image metadata leaves it empty -- and an empty digest
+  // reaches `imagetools create` as a bare `image@`, which is how a tag ends up over one architecture or
+  // none. Reintroduce by dropping the `sha256:` case: the guard is the only thing between an empty output
+  // and a half-published tag, and `merge` runs `fail-fast: false`, so nothing else would stop it.
+  const record = wf.jobs.build.steps.find((st: any) => st.name === 'Record the digest');
+  assert.ok(record, 'no step records the per-arch digest');
+  assert.match(record.run, /sha256:\*\)/, 'the recorded digest is not validated before it is written');
+  assert.match(record.run, /exit 1/, 'a malformed digest does not fail the build');
+  // Every image, both architectures.
+  assert.deepEqual(wf.jobs.build.strategy.matrix.service, ['bff', 'web', 'aio', 'title-extractor']);
+  assert.deepEqual(wf.jobs.build.strategy.matrix.arch, ['amd64', 'arm64']);
+});
+
+test('optional title inference ships on both native architectures without model weights or application secrets', () => {
+  const release = parseYaml(read('.github/workflows/release.yml'));
+  const worker = release.jobs.build.strategy.matrix.include.find((item: any) => item.service === 'title-extractor');
+  assert.equal(worker.image, 'ghcr.io/yunauuu/hbook');
+  assert.match(worker.license, /Apache-2\.0/);
+  const mergeRows = release.jobs.merge.strategy.matrix.include;
+  assert.equal(mergeRows.find((item: any) => item.service === 'title-extractor').tag_prefix, 'title-extractor-');
+  const targets = release.env.IMAGE_TAG_PREFIXES.split(' ').map((entry: string) => entry.split('='));
+  assert.deepEqual(targets, mergeRows.map((row: any) => [row.image, row.tag_prefix ?? '']), 'every versioned image must join the coherent latest gate');
+  assert.equal(new Set(targets.map((pair: string[]) => pair.join(':') + 'latest')).size, 4, 'the worker must never overwrite the app latest/version tags');
+  const promotion = release.jobs.latest.steps.find((step: any) => step.name.startsWith('Point latest')).run;
+  assert.match(promotion, /-t "\$img:\$\{prefix\}latest" "\$img:\$\{prefix\}\$\{GITHUB_REF_NAME\}"/);
+  const checkout = release.jobs.build.steps.find((step: any) => step.with?.repository === 'ymy-k/Hi-SAM');
+  assert.equal(checkout.with.ref, '69009434d4dba5541f228d8f5acb0754c333d417');
+  assert.equal(checkout.with['persist-credentials'], false);
+  const ci = parseYaml(read('.github/workflows/ci.yml')).jobs['title-extractor'];
+  assert.deepEqual(ci.strategy.matrix.include.map((item: any) => item.arch), ['amd64', 'arm64']);
+  assert.match(JSON.stringify(ci.steps), /test_\*\.py/);
+  assert.match(JSON.stringify(ci.steps), /--prepare-context/);
+  const overlay = parseYaml(read('deploy/docker-compose.title-extractor.yml'));
+  const service = overlay.services['title-extractor'];
+  assert.equal(service.image, '${TITLE_EXTRACTOR_IMAGE:-ghcr.io/yunauuu/hbook:title-extractor-v' + JSON.parse(read('bff/package.json')).version + '}');
+  assert.deepEqual(service.profiles, ['title-art']);
+  assert.equal(service.read_only, true);
+  assert.equal(service.ports, undefined);
+  assert.deepEqual(service.networks, ['title_extractor']);
+  assert.equal(overlay.networks.title_extractor.internal, true);
+  assert.equal(service.mem_limit, '4g');
+  assert.deepEqual(service.cap_drop, ['ALL']);
+  assert.equal(service.env_file, '.env.title-extractor');
+  assert.equal(overlay.services.hbook.image, undefined, 'the overlay must not replace an existing pinned app image');
+  assert.ok(service.volumes.every((mount: string) => mount.endsWith(':/models:ro')));
+  assert.ok(!JSON.stringify(service).includes('/config') && !JSON.stringify(service).includes('/library'));
+  assert.match(read('.gitignore'), /^\.env\.title-extractor$/m);
+});
+
+test('latest promotion keeps optional worker tags separate from the public application tags', async () => {
+  const release = parseYaml(read('.github/workflows/release.yml'));
+  const directory = mkdtempSync(join(tmpdir(), 'title-release-'));
+  const log = join(directory, 'calls.jsonl');
+  // Exercise the actual shell with a local fake registry command; this never contacts a registry.
+  writeFileSync(join(directory, 'docker'), `#!${process.execPath}\nconst fs=require('fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.TITLE_RELEASE_CALLS,JSON.stringify(args)+'\\n');if(args[2]==='inspect')console.log('Digest: sha256:${'a'.repeat(64)}');\n`, { mode: 0o755 });
+  try {
+    for (const step of release.jobs.latest.steps.filter((item: any) => item.run)) {
+      await new Promise<void>((resolve, reject) => execFile('bash', ['-c', step.run], {
+        cwd: directory, timeout: 10_000,
+        env: { ...process.env, PATH: directory + ':' + process.env.PATH, TITLE_RELEASE_CALLS: log,
+          IMAGE_TAG_PREFIXES: release.env.IMAGE_TAG_PREFIXES, GITHUB_REF_NAME: 'v0.102.0' },
+      }, (error) => error ? reject(error) : resolve()));
+    }
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as string[]);
+    const creates = calls.filter((args) => args[2] === 'create');
+    assert.deepEqual(creates.map((args) => args.slice(4)), [
+      ['ghcr.io/yunauuu/hbook-bff:latest', 'ghcr.io/yunauuu/hbook-bff:v0.102.0'],
+      ['ghcr.io/yunauuu/hbook-web:latest', 'ghcr.io/yunauuu/hbook-web:v0.102.0'],
+      ['ghcr.io/yunauuu/hbook:latest', 'ghcr.io/yunauuu/hbook:v0.102.0'],
+      ['ghcr.io/yunauuu/hbook:title-extractor-latest', 'ghcr.io/yunauuu/hbook:title-extractor-v0.102.0'],
+    ]);
+    assert.equal(calls.filter((args) => args[2] === 'inspect').length, 8, 'verify both tags for all four images');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a tag publishes a GitHub Release, not just images', () => {
+  const y = read('.github/workflows/release.yml');
+  const wf = parseYaml(y);
+  // ⚠️ This was manual for the whole life of the project, and three releases in a row were missed --
+  // v0.22.0, v0.23.0 and v0.24.0 all shipped, published and deployed while the Releases page still said
+  // v0.21.0. Not cosmetic: the README's "latest release" badge reads Releases rather than tags, so the
+  // front page advertised a version three behind, and docs/INSTALL.md tells people to watch Releases to
+  // know when there is something to pull.
+  assert.ok(wf.jobs.release, 'nothing publishes a GitHub Release, so tags will silently stop announcing');
+  // After the images exist. A release announcing a publish that failed is worse than no release.
+  assert.equal(wf.jobs.release.needs, 'merge');
+  // NOT gated on `latest`: a prerelease tag should still get an entry, marked as one.
+  assert.ok(!wf.jobs.release.if, 'the release job must run for prerelease tags too');
+  assert.match(code(y), /--prerelease/, 'an rc tag would be published as a normal release');
+  // The notes come from the changelog, so a release cannot describe something other than the file
+  // everyone reads. Reintroduce by switching to --generate-notes unconditionally.
+  assert.match(code(y), /CHANGELOG\.md/, 'the release notes do not come from the changelog');
+  // Write access is scoped to this one job rather than widened at the top of the file.
+  assert.equal(wf.jobs.release.permissions?.contents, 'write');
+  assert.equal(wf.permissions.contents, 'read', 'the workflow as a whole must not gain write access');
+});
+
+test('dependencies and actions are watched weekly, grouped so CI is not run thirty times', () => {
+  const d = parseYaml(read('.github/dependabot.yml'));
+  const npm = d.updates.filter((u: any) => u['package-ecosystem'] === 'npm').map((u: any) => u.directory).sort();
+  // /desktop since v0.44.0: Electron is a browser engine the app ships, and only its three newest majors get
+  // security fixes. Reintroduce by deleting the /desktop entry: this names the list.
+  assert.deepEqual(npm, ['/bff', '/desktop', '/web']);
+  for (const u of d.updates.filter((u: any) => u['package-ecosystem'] === 'npm')) {
+    assert.ok(u.groups && Object.keys(u.groups).length, `${u.directory}: npm updates are not grouped`);
+    assert.equal(u.schedule.interval, 'weekly');
+  }
+  assert.ok(d.updates.some((u: any) => u['package-ecosystem'] === 'github-actions'), 'actions are not watched');
+  const docker = d.updates.filter((u: any) => u['package-ecosystem'] === 'docker').map((u: any) => u.directory).sort();
+  assert.deepEqual(docker, ['/', '/bff', '/services/title-extractor', '/web'], 'not every Dockerfile has its base image watched');
+  // A Node major is taken deliberately, onto an even LTS line: never a weekly PR for an odd, short-lived release
+  // (#73-#75 proposed node:25 after its end of life), and never @types/node ahead of the runtime (#62, #77).
+  // Reintroduce by deleting either ignore rule from any one entry: the assertion names the directory.
+  const ignores = (u: any, dep: string) =>
+    (u.ignore ?? []).some((i: any) => i['dependency-name'] === dep && (i['update-types'] ?? []).includes('version-update:semver-major'));
+  for (const u of d.updates.filter((u: any) => u['package-ecosystem'] === 'docker')) {
+    const runtime = u.directory === '/services/title-extractor' ? 'python' : 'node';
+    assert.ok(ignores(u, runtime), `docker ${u.directory}: ${runtime} majors arrive as weekly PRs`);
+  }
+  for (const u of d.updates.filter((u: any) => u['package-ecosystem'] === 'npm'))
+    assert.ok(ignores(u, '@types/node'), `npm ${u.directory}: @types/node can run ahead of the Node runtime`);
+  const cq = parseYaml(read('.github/workflows/codeql.yml'));
+  assert.match(JSON.stringify(cq), /javascript-typescript/);
+  assert.equal(cq.permissions['security-events'], 'write');
+});
+
+test('every CI job has a timeout, and installs from the lockfile', () => {
+  const y = read('.github/workflows/ci.yml');
+  const ci = parseYaml(y);
+  // release.yml had a timeout on every job since v0.19.0 and ci.yml had one only on e2e, so a hung
+  // integration test sat for GitHub's 360-minute default with the whole queue behind it. Reintroduce by
+  // removing timeout-minutes from the test job: this names it.
+  for (const j of Object.keys(ci.jobs)) assert.ok(ci.jobs[j]['timeout-minutes'], `ci.yml job "${j}" has no timeout`);
+  // And not a timeout the job cannot meet: Tests took 54-58 minutes on every green run 2026-09-25..26, and
+  // v0.48.4's first run was cancelled at a 60-minute limit with all 1988 tests passed.
+  assert.ok(ci.jobs.test['timeout-minutes'] >= 80, 'the test job timeout is below what a green run needs');
+  assert.ok(ci.jobs.e2e['timeout-minutes'] >= 80, 'the browser timeout cannot hold the baseline, embedded and feature walks');
+  // What keeps a green run inside that limit since v0.49.0: the bff files run a few at a time, each on a fresh
+  // database of its own (test/run-shards.mjs), not one after another on one database. Reintroduce by putting
+  // `npm test` back in the BFF step: this names it.
+  const bffStep = (ci.jobs.test.steps ?? []).find((st: any) => st.name === 'BFF tests');
+  assert.ok(bffStep, 'the BFF tests step went missing');
+  assert.match(String(bffStep.run), /\bnpm run test:ci\b/, 'CI runs the bff files one at a time on one database again');
+  const pkg = JSON.parse(read('bff/package.json'));
+  assert.equal(pkg.scripts['test:ci'], 'node test/run-shards.mjs', 'test:ci no longer runs the files on databases of their own');
+  // `npm install` may resolve differently from package-lock.json and rewrites it on the runner, so a
+  // Dependabot lockfile bump was never what CI tested; `npm ci` refuses a lockfile that disagrees.
+  // Reintroduce by changing one `npm ci` back to `npm install`: this names the step.
+  const steps = Object.values(ci.jobs).flatMap((j: any) => (j.steps ?? []).map((st: any) => ({ job: j.name, name: st.name, run: String(st.run ?? '') })));
+  const installs = steps.filter((st) => /\bnpm (install|ci)\b/.test(st.run));
+  assert.ok(installs.length >= 3, 'the install steps went missing');
+  for (const st of installs) assert.ok(!/\bnpm install\b/.test(st.run), `${st.job} / ${st.name} uses npm install instead of npm ci`);
+
+  // Build once, then resolve that tag to an immutable image id in up.sh for every stack. Building inside a later
+  // phase made a green feature walk evidence for different bytes than the baseline (and than another phase).
+  const e2e = ci.jobs.e2e.steps ?? [];
+  const image = e2e.find((st: any) => st.name === 'Build the exact browser AIO image once');
+  assert.match(String(image?.run), /docker build -f Dockerfile\.aio -t hbook:e2e-ci \./,
+    'the browser job does not build its one AIO image explicitly');
+  for (const name of ['Bring it up and drive it', 'Bring it up again with the embedded database, and drive it']) {
+    const run = String(e2e.find((st: any) => st.name === name)?.run ?? '');
+    assert.match(run, /E2E_SKIP_BUILD=1/, `${name} silently rebuilds the image`);
+    assert.match(run, /E2E_IMAGE=hbook:e2e-ci/, `${name} does not use the exact browser image`);
+  }
+  assert.match(String(e2e.find((st: any) => st.name === 'Drive every v0.55.8 feature phase on that image')?.run),
+    /E2E_IMAGE=hbook:e2e-ci bash test\/e2e\/run-v558\.sh/,
+    'the required Browser end-to-end check omits the v0.55.8 feature walk');
+  const feature = read('web/test/e2e/run-v558.sh');
+  for (const phase of ['librarysort', 'homelists', 'anilistprivacy', 'bulkdelete'])
+    assert.match(feature, new RegExp(`run_phase ${phase}\\s`), `the browser gate omits ${phase}`);
+  assert.match(feature, /E2E_SKIP_BUILD=1 E2E_IMAGE="\$IMAGE"/, 'a feature phase may rebuild or retag the tested image');
+  const up = read('web/test/e2e/up.sh');
+  assert.match(up, /LIB="\$LIB" E2E_NET="\$NET" node "\$WALK_SCRIPT"/,
+    'the selected feature walk cannot use its disposable filesystem/database, or loses its exit code');
+});
+
+/**
+ * What Unraid's dockerMan needs to read a template at all, shared by both templates.
+ *
+ * Walked with indexOf rather than a `<!--([\s\S]*?)-->` regex: this is XML, where `--!>` is not a terminator and
+ * `--` in the body is the actual fault, but CodeQL's js/bad-tag-filter (#28) reads any comment regex as an HTML
+ * sanitiser and re-fires on every edit of the line. A plain scan says the same thing without giving the rule a
+ * regex to misjudge, and a comment that never closes fails here by name instead of as a mismatch of two counts.
+ */
+function assertParsableTemplate(x: string, file: string): void {
+  for (let at = 0; ; ) {
+    const s = x.indexOf('<!--', at);
+    if (s < 0) break;
+    const e = x.indexOf('-->', s + 4);
+    assert.ok(e >= 0, `${file}: an XML comment that never closes: ${x.slice(s, s + 60).trim()}…`);
+    const body = x.slice(s + 4, e);
+    assert.ok(!body.includes('--'), `${file}: "--" inside an XML comment, which no parser accepts: ${body.trim().slice(0, 60)}…`);
+    at = e + 3;
+  }
+  // The same parser would also refuse a `-` glued to the closing `-->`.
+  assert.ok(!/--->/.test(x), `${file}: a comment ending in "--->" is malformed`);
+  // Both files CA moderators read must start with the XML declaration and carry one root element each.
+  assert.match(x, /^<\?xml version="1\.0"\?>\n/, `${file}: the template lacks the XML declaration`);
+  // Well-formed enough: every <Config ...> is closed on its own line.
+  const opens = (x.match(/<Config /g) || []).length, closes = (x.match(/<\/Config>/g) || []).length;
+  assert.equal(opens, closes, `${file}: an unclosed <Config> element`);
+}
+
+test('the Unraid template names every volume, the ports, and the ids, and stops gracefully', () => {
+  const x = read('templates/hbook.xml');
+  assert.match(x, /<Repository>ghcr\.io\/yunauuu\/hbook<\/Repository>/);
+  assert.match(x, /<WebUI>http:\/\/\[IP\]:\[PORT:3000\]\/<\/WebUI>/, 'the WebUI link does not map the container port');
+  for (const target of ['/library', '/data', '/config', '/library-dl', '/cache', '/backups']) {
+    assert.match(x, new RegExp(`Target="${target}"[^>]*Type="Path"`), `no Path config for ${target}`);
+  }
+  for (const v of ['PUID', 'PGID', 'PUBLIC_ORIGIN']) assert.match(x, new RegExp(`Target="${v}"[^>]*Type="Variable"`), `no ${v} variable`);
+  assert.match(x, /Target="3000"[^>]*Type="Port"/, 'no port mapping for 3000');
+  // Reintroduce by deleting ExtraParams: Unraid stops the container with Docker's 10 s default and Postgres
+  // is killed mid-checkpoint on every "Update" and every array stop.
+  assert.match(x, /--stop-timeout 40/, 'no stop timeout for the embedded database');
+  // A Config element, not a mention: the template's own comment explains that DATABASE_URL is unset.
+  assert.ok(!/Target="DATABASE_URL"/.test(x), 'the template sets DATABASE_URL, which turns the embedded database off');
+  // ⚠️ `--` inside an XML comment is illegal (XML 1.0 §2.5), and Unraid's dockerMan parses the template with
+  // a real parser. The v0.21.0 rewrite of the header comment -- the one that fixed the install steps after
+  // hawwwwwk's first report -- wrote "never read -- so", and from then until v0.34.0 the file could not be
+  // installed by anyone: the parse fails at the comment, before the first <Config>. Every check above passed
+  // the whole time, because none of them parsed. hawwwwwk found that too (PR #50). There is no XML parser
+  // among the dependencies, so the comment bodies are checked by hand, the way a parser would refuse them.
+  // Reintroduce by writing `--` back into the header comment: this names the offending comment.
+  assertParsableTemplate(x, 'templates/hbook.xml');
+  const ca = read('ca_profile.xml');
+  assert.match(ca, /^<\?xml version="1\.0"\?>\n<CommunityApplications>[\s\S]*<\/CommunityApplications>\s*$/, 'ca_profile.xml is not a CommunityApplications document');
+  // The icon must be the app's own icon, the same file the template shows; the CA listing reads ca_profile.
+  assert.match(ca, /<Icon>https:\/\/raw\.githubusercontent\.com\/YUnauuu\/hbook\/main\/web\/public\/icons\/icon-512\.png<\/Icon>/, 'the CA profile icon is not the app icon');
+  assert.ok(existsSync(join(REPO, 'web/public/icons/icon-512.png')), 'the icon both files point at is not in the repo');
+  // The main repo is the CA template repository now; a TemplateURL at the old unraid-templates repo would
+  // have Unraid refresh the template from a file that is only kept for old links.
+  assert.match(x, /<TemplateURL>https:\/\/raw\.githubusercontent\.com\/YUnauuu\/hbook\/main\/templates\/hbook\.xml<\/TemplateURL>/, 'TemplateURL does not point at this repo');
+});
+
+/** One <Config> element of a template, by Target: its attributes and its value. */
+function configOf(x: string, target: string): { attrs: string; value: string } | null {
+  const m = x.match(new RegExp(`<Config ([^>]*Target="${target.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"[^>]*)>([^<]*)</Config>`));
+  return m ? { attrs: m[1], value: m[2] } : null;
+}
+
+/**
+ * #72: the extension engine for Unraid, as a template of its own, set up the way the compose files set it up.
+ * Before it, an Unraid user had to find, pin and configure a Suwayomi container by hand, and the one shipped
+ * uncapped in every layout until v0.46.0 took a quarter of the host's memory (discussion #72).
+ *
+ * Reintroduce by deleting `--memory=2048m` from ExtraParams: the uncapped JVM is back on Unraid. Or write `--`
+ * into its header comment: dockerMan cannot parse the file (PR #50), and the helper above names it.
+ *
+ * #275: Unraid has no swap by default, so the ceiling is a hard wall there, and 1536m killed engines that needed
+ * 1.4 GB (630 MB of it heap). Reintroduce by putting `1536m` back, raising -Xmx alone, or deleting MALLOC_ARENA_MAX.
+ */
+test('the Unraid engine template is the bundled engine', () => {
+  const file = 'templates/hbook-suwayomi.xml';
+  const x = read(file);
+  assertParsableTemplate(x, file);
+  assert.match(x, /<Repository>ghcr\.io\/suwayomi\/suwayomi-server:v[\d.]+<\/Repository>/, 'the engine image is not pinned (enginePins.test.ts holds the version)');
+  assert.match(x, /<ExtraParams>[^<]*--memory=\d+[mg]\b[^<]*<\/ExtraParams>/, 'no memory ceiling: a JVM sizes its heap from the whole server');
+  assert.match(configOf(x, 'JAVA_TOOL_OPTIONS')?.value ?? '', /-Xmx\d+[mMgG]/, "the engine's heap is not capped");
+  const ceiling = x.match(/<ExtraParams>[^<]*--memory=(\d+)([mg])\b/);
+  const heap = (configOf(x, 'JAVA_TOOL_OPTIONS')?.value ?? '').match(/-Xmx(\d+)([mMgG])/);
+  const mib = (n: string, unit: string) => Number(n) * (/^[gG]$/.test(unit) ? 1024 : 1);
+  assert.ok(ceiling && heap && mib(ceiling[1], ceiling[2]) - mib(heap[1], heap[2]) >= 1280,
+    "the ceiling leaves less than 1.25 GB above the heap: with no swap the kernel kills the engine there (#275)");
+  const arenas = configOf(x, 'MALLOC_ARENA_MAX');
+  assert.equal(arenas?.value, '2', 'glibc may keep freed memory in up to eight arenas per CPU (#275)');
+  assert.match(arenas!.attrs, /Default="2"/, "MALLOC_ARENA_MAX's default is not 2");
+  const data = configOf(x, '/home/suwayomi/.local/share/Tachidesk');
+  assert.ok(data && /Type="Path"/.test(data.attrs), "no Path for the engine's data: every install would lose its extensions and series links on update");
+  assert.match(data!.value, /^\/mnt\/user\/appdata\/hbook-suwayomi$/, 'the engine data is not in its own appdata folder');
+  assert.ok(/Type="Port"/.test(configOf(x, '4567')?.attrs ?? ''), 'no port 4567 for hbook to reach');
+  for (const [k, v] of [['AUTO_DOWNLOAD_CHAPTERS', 'false'], ['DOWNLOAD_AS_CBZ', 'true'], ['WEB_UI_ENABLED', 'false'], ['FLARESOLVERR_ENABLED', 'true']] as const) {
+    const c = configOf(x, k);
+    assert.equal(c?.value, v, `${k} is not ${v} on the Unraid engine`);
+    assert.match(c!.attrs, new RegExp(`Default="${v}"`), `${k}'s default is not ${v}`);
+  }
+  assert.ok(configOf(x, 'FLARESOLVERR_URL'), 'no FLARESOLVERR_URL to point the engine at a solver');
+  assert.match(configOf(x, 'AUTH_PASSWORD')?.attrs ?? '', /Mask="true"/, "the engine's password is shown in clear");
+  // v0.73.0: the port is published on the bridge network, so a new install signs in. Reintroduce the empty AUTH_MODE
+  // (or a password Unraid lets you leave blank): a new engine starts with no password, and these fail.
+  // An install from before keeps its own values: the three variables have been here since the template's first version.
+  const auth = configOf(x, 'AUTH_MODE');
+  assert.equal(auth?.value, 'basic_auth', 'a new Unraid engine starts with its sign-in off');
+  assert.match(auth!.attrs, /Default="basic_auth"/, "AUTH_MODE's default is not basic_auth");
+  assert.match(configOf(x, 'AUTH_PASSWORD')!.attrs, /Required="true"/, 'the engine can be installed without a password');
+  assert.equal(configOf(x, 'AUTH_PASSWORD')!.value, '', 'the template ships a password everyone knows');
+  assert.match(x, /<TemplateURL>https:\/\/raw\.githubusercontent\.com\/YUnauuu\/hbook\/main\/templates\/hbook-suwayomi\.xml<\/TemplateURL>/, 'TemplateURL does not point at this file');
+  // The way in: the main template's help names the engine template, and it can pass the engine's credentials.
+  const main = read('templates/hbook.xml');
+  assert.match(configOf(main, 'SUWAYOMI_URL')?.attrs ?? '', /Description="[^"]*hbook-suwayomi[^"]*:4567/, "the main template's SUWAYOMI_URL help does not point at the engine template");
+  assert.ok(configOf(main, 'SUWAYOMI_USERNAME'), 'the main template cannot pass the engine user name');
+  // The two user names match out of the box, so a new install types the password twice and nothing else.
+  assert.equal(configOf(main, 'SUWAYOMI_USERNAME')!.value, configOf(x, 'AUTH_USERNAME')?.value, 'the two templates name different engine users');
+  assert.ok(configOf(x, 'AUTH_USERNAME')?.value, 'the engine has no user name');
+  assert.match(configOf(main, 'SUWAYOMI_PASSWORD')?.attrs ?? '', /Mask="true"/, "the main template shows the engine's password in clear");
+});
+
+test('the Umbrel package is the one under review: proxy block, PUID, digest pin, data under app-data', () => {
+  // Mirrors what was submitted to getumbrel/umbrel-apps and linted there with `lint:apps --check-images`.
+  const m = parseYaml(read('deploy/umbrel/hbook/umbrel-app.yml'));
+  assert.equal(m.manifestVersion, 1); assert.equal(m.id, 'hbook');
+  // 8110: unique across the store's manifest ports and raw compose ports at submission time (8080 was not).
+  assert.equal(m.port, 8110);
+  for (const k of ['name', 'tagline', 'description', 'developer', 'repo', 'support', 'category', 'version', 'submitter']) assert.ok(m[k], `manifest lacks ${k}`);
+  assert.deepEqual(m.gallery, [], 'the store adds gallery images; the package ships none');
+  assert.deepEqual(m.permissions, ['STORAGE_DOWNLOADS'], 'the library is read from Umbrel Downloads, which needs this permission');
+  assert.match(m.submission, /getumbrel\/umbrel-apps\/pull\/\d+$/, 'submission must be the store PR');
+  const c = parseYaml(read('deploy/umbrel/hbook/docker-compose.yml'));
+  assert.ok(c.services.app_proxy, 'no app_proxy service: Umbrel cannot route to the app');
+  assert.equal(c.services.app_proxy.environment.APP_HOST, 'hbook_server_1');
+  assert.equal(c.services.app_proxy.environment.APP_PORT, 3000);
+  // OPDS readers and API-token scripts cannot carry the Umbrel cookie; first-run setup must stay behind it.
+  assert.match(String(c.services.app_proxy.environment.PROXY_AUTH_WHITELIST), /\/opds\/\*.*\/img\/\*.*\/api\/\*/);
+  assert.match(String(c.services.app_proxy.environment.PROXY_AUTH_BLACKLIST), /\/api\/setup/, 'first-run setup is reachable without Umbrel login');
+  // The Mihon/Tachiyomi extension (AngeloSha/hbook-extension, probeServer/probeToken) tests a server address on
+  // GET /healthz and a token on GET /auth/me before it browses /api and /img. Behind the Umbrel login both answer
+  // with Umbrel's sign-in page, and the extension reports "No hbook at ..." for a server that works. Exact paths:
+  // the rest of /auth (sign-in, registration) stays behind Umbrel, like first-run setup.
+  const whitelisted = String(c.services.app_proxy.environment.PROXY_AUTH_WHITELIST).split(',');
+  for (const p of ['/healthz', '/auth/me']) assert.ok(whitelisted.includes(p), `${p} is behind the Umbrel login: the Mihon extension's connection check fails there`);
+  assert.deepEqual(whitelisted.filter((p) => p.startsWith('/auth')), ['/auth/me'], 'more of /auth than /auth/me is outside the Umbrel login');
+  const s = c.services.server;
+  // PUID/PGID, not user:: the image has a permission-fixing root entrypoint (the store guide's own rule).
+  assert.equal(s.user, undefined, 'user: forces a uid on an image whose entrypoint must start as root');
+  assert.equal(String(s.environment.PUID), '1000'); assert.equal(String(s.environment.PGID), '1000');
+  assert.match(s.image, /^ghcr\.io\/yunauuu\/hbook:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/, 'Umbrel requires the image pinned by digest');
+  assert.ok(!/0{64}/.test(s.image), 'the digest is still the placeholder');
+  assert.ok(!('DATABASE_URL' in (s.environment ?? {})), 'DATABASE_URL set: the embedded database is off and there is no other');
+  assert.ok(s.volumes.some((v: string) => v.startsWith('${APP_DATA_DIR}/data/db:') && v.endsWith(':/data')), 'the database must live under app-data');
+  assert.ok(s.volumes.some((v: string) => v.includes('/data/storage/downloads/') && v.endsWith(':/library')), 'the library must come from Umbrel Downloads');
+  // umbrelOS 2.0 (2026-09-22). `storage` lets a user move the app's data to an external drive (ext4 only), and a
+  // version without it cannot start an install whose data was moved -- so once declared it is never removed. It moves
+  // `${APP_DATA_DIR}/data` and nothing else, which is why every app-data mount must come from under data/.
+  assert.deepEqual(m.storage, { dataRoot: 'data' }, 'storage was removed: installs whose data was moved cannot start');
+  for (const v of s.volumes.filter((v: string) => v.startsWith('${APP_DATA_DIR}'))) assert.match(v, /^\$\{APP_DATA_DIR\}\/data\/[a-z]+:/, `${v} is outside data/, which umbrelOS moves with the app`);
+  // The library's folder setting. umbrelOS makes one from the Downloads mount on its own, with the id
+  // `umbrel-downloads:<folder>` (umbreld apps/app.ts); this entry gives it a name and a note. A different id, service
+  // or target would be a second, empty setting, and changing the id later drops every user's chosen folder.
+  const lib = (m.folderAccess ?? []).find((x: any) => x.id === 'umbrel-downloads:manga');
+  assert.ok(lib && lib.name && lib.note, 'the library has no named folder setting (folderAccess umbrel-downloads:manga)');
+  assert.deepEqual(lib.mounts, [{ service: 'server', targetPath: '/library' }]);
+  assert.ok(s.volumes.includes('${UMBREL_ROOT}/data/storage/downloads/manga:/library'), 'the folder setting no longer names the compose mount');
+  assert.match(String(s.stop_grace_period), /40s/);
+  assert.ok(s.image.includes(`:v${m.version}@`), `manifest version ${m.version} does not match the pinned image ${s.image}`);
+  assert.match(String(s.environment.JWT_SECRET), /APP_HBOOK_JWT_SECRET/, 'the session secret should come from exports.sh');
+  // v0.49.0 (#72): Admin → Extensions opens its engine setup steps on the platform this hint names (bff
+  // lib/platform.ts), and Umbrel's say that an Umbrel app cannot add the optional engine. Nothing else gives an
+  // Umbrel install away -- no HOST_OS, no EXTENSION_ENGINE -- so without the line it reads as 'unknown' and opens on
+  // steps it cannot follow. Reintroduce by deleting the line from the compose file: this assertion names it.
+  assert.equal(s.environment.HBOOK_PLATFORM, 'umbrel', 'the Umbrel compose does not tell the app it runs on Umbrel (HBOOK_PLATFORM: umbrel)');
+  assert.match(read('deploy/umbrel/hbook/exports.sh'), /derive_entropy/, 'exports.sh does not derive the secret');
+  for (const d of ['db', 'config', 'cache', 'downloads', 'backups']) assert.ok(existsSync(join(REPO, `deploy/umbrel/hbook/data/${d}/.gitkeep`)), `data/${d} is not committed; Umbrel would mount an empty root-owned path`);
+  const f = c.services.flaresolverr;
+  assert.match(f?.image ?? '', /^ghcr\.io\/flaresolverr\/flaresolverr:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/, 'the solver sidecar is not pinned by release tag and digest');
+});
+
+test('the Umbrel package is never more than one release behind', () => {
+  // deploy/umbrel pins the image by digest, and a digest exists only once a tag's release run has published it, so
+  // the release PR itself can never carry its own version here. Nothing asked for the follow-up either, and from
+  // v0.40.0 to v0.61.2 nobody did it, while docs/INSTALL.md told Umbrel users this package was current. The rule:
+  // it pins the version in package.json or the release before it. A release PR goes red until the package pins the
+  // release that is already out; the merge job of release.yml prints that digest, and so does
+  //   docker buildx imagetools inspect ghcr.io/yunauuu/hbook:v<version>
+  // Reintroduce by leaving the pin behind at a release: this test fails on that release's PR.
+  const now = JSON.parse(read('bff/package.json')).version as string;
+  const released = [...read('CHANGELOG.md').matchAll(/^## v(\d+\.\d+\.\d+) /gm)].map((x) => x[1]);
+  const before = released.find((v) => v !== now);
+  assert.ok(before, 'CHANGELOG.md names no earlier release');
+  const pinned = String(parseYaml(read('deploy/umbrel/hbook/umbrel-app.yml')).version);
+  assert.ok([now, before].includes(pinned),
+    `deploy/umbrel pins v${pinned}, more than one release behind v${now}: pin v${now} if its images are published, else v${before} -- the version in umbrel-app.yml, the image tag and digest in docker-compose.yml`);
+});
+
+test('an Unraid or Umbrel user can still get from the README to their manifest', () => {
+  // The property is that the path exists, not that it is one hop. The per-platform install moved out of the
+  // README in v0.24.0 -- it was longer on its own than five comparable projects' entire READMEs -- so this
+  // follows it, and additionally pins the link that makes it reachable. Reintroduce by dropping either the
+  // README's pointer to the install guide or one of the manifest links inside it: a NAS user lands on a
+  // quick start that assumes Docker Compose and never learns their platform has a one-click template.
+  const r = read('README.md');
+  assert.match(r, /docs\/INSTALL\.md/, 'the README no longer points anywhere for platform installs');
+  const i = read('docs/INSTALL.md');
+  // `templates/hbook.xml` since PR #50: the layout Community Applications reads from the main repo.
+  assert.match(i, /templates\/hbook\.xml/, 'the install guide does not point Unraid users at the template');
+  assert.ok(!/deploy\/unraid\//.test(i), 'the install guide still names the pre-#50 template path, which no longer exists');
+  assert.ok(existsSync(join(REPO, 'templates/hbook.xml')), 'the Unraid template moved');
+  assert.match(i, /deploy\/umbrel\/hbook/, 'the install guide does not point Umbrel users at the manifest');
+  assert.ok(existsSync(join(REPO, 'deploy/casaos/docker-compose.yml')), 'the CasaOS manifest moved');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// hbook Desktop (beta), since v0.44.0: the same tag also builds Windows and macOS installers and attaches them
+// to the Release. What must not happen: the desktop build (30-60 minutes on three OSes, and a live MangaDex in its
+// product smoke) holding up the images every existing install pulls; an update feed going up before the file it
+// names; the extension-engine release becoming "latest" and being offered to every desktop app as an update; and
+// a pinned engine pack being replaced under the hash every install checks it against.
+
+/** node on a script, asynchronously: the pin test's HTTP server lives in THIS process, so spawnSync would starve it. */
+function runNode(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(process.execPath, args, { cwd: REPO, timeout: 60_000 }, (err, stdout, stderr) => {
+      resolve({ code: err ? (typeof (err as any).code === 'number' ? (err as any).code : 1) : 0, stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
+
+test('the desktop app is built beside the images, never in front of them, and published only when every leg is green', () => {
+  const y = read('.github/workflows/release.yml');
+  const wf = parseYaml(y);
+  const desk = wf.jobs.desktop;
+  assert.ok(desk, 'release.yml no longer builds the desktop app');
+  assert.equal(desk.uses, './.github/workflows/desktop.yml');
+  // Reintroduce by adding `needs: build` to the desktop job: a macOS queue then decides when the images publish.
+  assert.equal(desk.needs, undefined, 'the desktop build waits on the image build');
+  // ...and nothing on the images' path may wait for it either.
+  for (const j of ['build', 'merge', 'latest', 'release']) {
+    const needs = [wf.jobs[j].needs ?? []].flat();
+    assert.ok(!needs.includes('desktop') && !needs.includes('desktop-publish'), `${j} waits on the desktop build`);
+  }
+  assert.equal(desk.permissions?.contents, 'read', 'the desktop build must not be able to write to the repo');
+
+  const pub = wf.jobs['desktop-publish'];
+  assert.ok(pub, 'nothing attaches the installers to the Release');
+  // The Release must exist (the release job makes it), and EVERY desktop leg must be green. Reintroduce by
+  // dropping `release` from its needs: the upload can then start before the Release it uploads to exists.
+  assert.deepEqual([pub.needs].flat().sort(), ['desktop', 'release']);
+  assert.ok(!pub.if, 'desktop-publish must not run when a desktop leg failed (no `if: always()`)');
+  assert.deepEqual(pub.permissions, { contents: 'write' }, 'write access is scoped to the job that uploads, and only contents');
+  assert.equal(wf.permissions.contents, 'read');
+  assert.ok(pub['timeout-minutes'], 'desktop-publish has no timeout');
+
+  const run: string = pub.steps.map((s: any) => String(s.run ?? '')).join('\n');
+  // Every feed is checked against the installers it names (sizes and SHA-512) before anything is uploaded.
+  for (const f of ['desktop-dist-win-x64/latest.yml', 'desktop-dist-mac-arm64/latest-mac.yml', 'desktop-dist-mac-x64/latest-mac.yml']) {
+    assert.match(run, new RegExp(`check-feed\\.mjs dist/${reLiteral(f)}`), `${f} is not checked before upload`);
+  }
+  assert.match(run, /merge-latest-mac\.mjs --out feeds\/latest-mac\.yml/, 'the two macOS feeds are not merged');
+  assert.match(run, /--version "\$dv"/);
+  assert.match(run, /\$\{ver%%-\*\}/, 'the desktop version is not held to the tag');
+
+  // ⚠️ ORDER: binaries first, the feeds last and in a call of their own. Reintroduce by moving
+  // feeds/latest.yml into the first upload: gh uploads one call's files in parallel, so a Windows install
+  // could read a feed whose installer is not there yet.
+  const uploads = run.split('\n').filter((l) => /gh release upload/.test(l));
+  assert.equal(uploads.length, 2, `expected two upload calls (installers, then feeds), found ${uploads.length}`);
+  assert.ok(!/latest/.test(uploads[0]), 'the feeds go up in the same call as the installers');
+  assert.match(uploads[1], /feeds\/latest\.yml/);
+  assert.match(uploads[1], /feeds\/latest-mac\.yml/);
+  assert.ok(run.indexOf(uploads[0]) < run.indexOf(uploads[1]), 'the feeds are uploaded before the installers');
+  // The notes section is idempotent: a re-run replaces it rather than stacking a second one.
+  assert.match(run, /desktop-beta:start/);
+  assert.match(run, /skip=1/, 'a re-run of the notes step would add the downloads section twice');
+
+  // desktop.yml is callable, and publishes nothing itself.
+  const d = parseYaml(read('.github/workflows/desktop.yml'));
+  assert.ok('workflow_call' in d.on, 'desktop.yml cannot be called from the release');
+  assert.equal(d.permissions.contents, 'read');
+  assert.ok(!/gh release/.test(code(read('.github/workflows/desktop.yml'))), 'desktop.yml publishes on its own');
+  // What desktop-publish downloads is what desktop.yml uploads.
+  assert.match(read('.github/workflows/desktop.yml'), /name: desktop-dist-\$\{\{ matrix\.platform \}\}/);
+  assert.deepEqual(d.jobs.build.strategy.matrix.include.map((m: any) => m.platform).sort(), ['mac-arm64', 'mac-x64', 'win-x64']);
+});
+
+test('the permanent download links the docs give are files every release uploads, never a feed', () => {
+  // Since v0.45.0 the README, docs/DESKTOP.md and hbook.com/download link to
+  // https://github.com/YUnauuu/hbook/releases/latest/download/<name>, which only works for a file name that
+  // is the same in every release -- and electron-builder names every installer after its version. So the publish
+  // job uploads copies under fixed names beside the versioned files. What must not happen: a link in the docs to
+  // a name nothing uploads (a 404 on the one button a beginner presses), a copy of the wrong file (a Mac user
+  // handed the Windows installer), or a copy riding in the feeds' call, whose ORDER exists for the updater.
+  // Reintroduce by renaming `permanent/hbook-Setup.exe` in release.yml, by linking a versioned name through
+  // /releases/latest/download/ in README.md, or by dropping the copies from the installers' upload.
+  const wf = parseYaml(read('.github/workflows/release.yml'));
+  const steps: any[] = wf.jobs['desktop-publish'].steps;
+  const run: string = steps.map((st) => String(st.run ?? '')).join('\n');
+  const uploads = run.split('\n').filter((l) => /gh release upload/.test(l) && !l.trim().startsWith('#'));
+  // Each fixed name is a byte copy of the versioned file the feed-check step verified for that platform.
+  const PERMANENT: Record<string, string> = {
+    'hbook-Setup.exe': 'dist/desktop-dist-win-x64/hbook-Setup-$dv.exe',
+    'hbook-mac-arm64.dmg': 'dist/desktop-dist-mac-arm64/hbook-$dv-arm64.dmg',
+    'hbook-mac-x64.dmg': 'dist/desktop-dist-mac-x64/hbook-$dv-x64.dmg',
+  };
+  const copyStep = steps.findIndex((st) => /permanent\//.test(String(st.run ?? '')) && /\bcp\b/.test(String(st.run ?? '')));
+  const uploadStep = steps.findIndex((st) => /gh release upload/.test(String(st.run ?? '')));
+  assert.ok(copyStep >= 0 && copyStep < uploadStep, 'the permanent copies are not made before the upload step');
+  for (const [name, from] of Object.entries(PERMANENT)) {
+    assert.ok(run.includes(`cp "${from}" permanent/${name}`), `permanent/${name} is not a copy of ${from}`);
+    assert.ok(uploads[0]?.includes(`permanent/${name}`), `${name} is not uploaded with the installers`);
+    assert.ok(!uploads.slice(1).some((u) => u.includes(name)), `${name} goes up in the feeds' call`);
+  }
+
+  // Every /releases/latest/download/ link in the docs names one of them.
+  const docs = ['README.md', 'CHANGELOG.md', ...readdirSync(join(REPO, 'docs')).filter((f) => f.endsWith('.md')).map((f) => `docs/${f}`)];
+  const seen: Record<string, Set<string>> = {};
+  const bad: string[] = [];
+  for (const f of docs) {
+    for (const m of read(f).matchAll(/releases\/latest\/download\/([^)\s"'<>\]`]+)/g)) {
+      (seen[f] ??= new Set()).add(m[1]);
+      if (!(m[1] in PERMANENT)) bad.push(`${f}: releases/latest/download/${m[1]} -- no release uploads a file by that name`);
+    }
+  }
+  assert.deepEqual(bad, [], bad.join('\n'));
+  // ...and the two places a beginner starts from offer all three.
+  for (const f of ['README.md', 'docs/DESKTOP.md']) {
+    assert.deepEqual([...(seen[f] ?? [])].sort(), Object.keys(PERMANENT).sort(), `${f} does not link all three permanent downloads`);
+  }
+});
+
+test('a release never attaches a desktop app whose extension engine is not pinned to a published pack', async () => {
+  // ⚠️ With a null sha256 the app says "the extension engine download is not available" and never fetches
+  // anything -- and every desktop check still passes, because the smokes build their own pack when the pin is
+  // empty (engine-fixture.mjs). So a v* tag pushed before the engine-v* prerelease is published and pinned shipped
+  // a desktop app whose Admin -> Extensions is broken for every user, from a fully green run. The gate is a
+  // script, run before anything is downloaded or uploaded.
+  const wf = parseYaml(read('.github/workflows/release.yml'));
+  const steps: any[] = wf.jobs['desktop-publish'].steps;
+  const at = (re: RegExp) => steps.findIndex((s) => re.test(String(s.run ?? '')) || re.test(String(s.uses ?? '')));
+  const gate = at(/check-pin\.mjs/);
+  // Reintroduce by deleting the "pinned to a published pack" step: this names it.
+  assert.ok(gate >= 0, 'desktop-publish does not check the engine pin');
+  assert.ok(gate < at(/download-artifact/), 'the engine pin is checked after the installers are downloaded');
+  assert.ok(gate < at(/gh release upload/), 'the engine pin is checked after something is uploaded');
+  assert.ok(!steps[gate].if && !steps[gate]['continue-on-error'], 'the pin check can be skipped or ignored');
+  // desktop.yml fails a TAG in seconds instead of after the 30-60 minute build; branches build unpinned on purpose.
+  const pre: any[] = parseYaml(read('.github/workflows/desktop.yml')).jobs.prebuild.steps;
+  const early = pre.find((s) => /check-pin\.mjs/.test(String(s.run ?? '')));
+  assert.ok(early, 'a desktop build on a release tag does not check the engine pin');
+  assert.equal(early.if, "startsWith(github.ref, 'refs/tags/v')");
+
+  // The script itself, on pins it must refuse and one it must pass.
+  const dir = mkdtempSync(join(tmpdir(), 'uchi-checkpin-'));
+  try {
+    const real = JSON.parse(read('desktop/src/engine-pin.json'));
+    const withPacks = (packs: Record<string, any>) => {
+      const f = join(dir, `pin-${Object.keys(packs).length}-${Math.random().toString(36).slice(2)}.json`);
+      writeFileSync(f, JSON.stringify({ ...real, packs }));
+      return f;
+    };
+    const filled = Object.fromEntries(Object.entries<any>(real.packs).map(([k, v], i) => [k, { ...v, sha256: String(i).repeat(64), bytes: 1000 + i }]));
+    const ok = await runNode(['desktop/scripts/release/check-pin.mjs', '--pin', withPacks(filled)]);
+    assert.equal(ok.code, 0, `a fully pinned engine was refused: ${ok.stdout}${ok.stderr}`);
+    // Every pack unpublished (the tree as the engine build left it): refused, naming all three.
+    const none = Object.fromEntries(Object.entries<any>(real.packs).map(([k, v]) => [k, { ...v, sha256: null, bytes: null }]));
+    const r = await runNode(['desktop/scripts/release/check-pin.mjs', '--pin', withPacks(none)]);
+    assert.equal(r.code, 1, 'an unpinned engine passed the release gate');
+    assert.match(r.stdout, /^::error::/m);
+    for (const k of Object.keys(real.packs)) assert.match(r.stdout, new RegExp(`${k} \\(no sha256, no size\\)`));
+    assert.match(r.stdout, /pin-engine\.mjs/, 'the refusal does not say how to fix it');
+    // One platform missing is still a broken Extensions tab on that platform; a hash that is not one is no pin.
+    const one = { ...filled, 'mac-x64': { ...filled['mac-x64'], sha256: null } };
+    const r1 = await runNode(['desktop/scripts/release/check-pin.mjs', '--pin', withPacks(one)]);
+    assert.equal(r1.code, 1);
+    assert.match(r1.stdout, /mac-x64 \(no sha256\)/);
+    assert.doesNotMatch(r1.stdout, /win-x64|mac-arm64/);
+    const junk = { ...filled, 'win-x64': { ...filled['win-x64'], sha256: 'not-a-sha256', bytes: 0 } };
+    const r2 = await runNode(['desktop/scripts/release/check-pin.mjs', '--pin', withPacks(junk)]);
+    assert.equal(r2.code, 1);
+    assert.match(r2.stdout, /win-x64 \(no sha256, no size\)/);
+    assert.equal((await runNode(['desktop/scripts/release/check-pin.mjs', '--pin', withPacks({})])).code, 1, 'a pin with no packs passed');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the desktop app is built and tested before a release tag, on every change that reaches it', () => {
+  // Until v0.44.0 desktop.yml ran only on the desktop branch, so after the merge nothing built the shell, the
+  // installers or the smokes until the tag -- and a leg that first goes red at the tag ships a Release with no
+  // latest.yml, so every Windows install's updater gets a 404 from the newest release. Reintroduce by dropping
+  // pull_request from desktop.yml's `on:`: this names it.
+  const d = parseYaml(read('.github/workflows/desktop.yml'));
+  assert.ok(d.on.pull_request, 'desktop.yml does not run on pull requests');
+  assert.ok(d.on.push?.branches?.includes('main'), 'desktop.yml does not run on pushes to main');
+  for (const trig of ['push', 'pull_request']) {
+    const paths: string[] = d.on[trig].paths ?? [];
+    // What the app ships: the shell, the bff it runs (the desktop switch, routes, backups) and the web it shows.
+    for (const p of ['desktop/**', 'bff/src/**', 'web/**', '.github/workflows/desktop.yml']) {
+      assert.ok(paths.includes(p), `desktop.yml ${trig} does not run for ${p}`);
+    }
+  }
+  assert.ok('workflow_call' in d.on && 'workflow_dispatch' in d.on);
+  // main is never cancelled (ci.yml's reason: a cancelled run is a red run); a superseded PR push is.
+  const cancel = String(d.concurrency['cancel-in-progress']);
+  assert.match(cancel, /github\.event_name == 'pull_request'/);
+  assert.doesNotMatch(cancel, /refs\/heads\/main|event_name == 'push'/, 'a push to main can cancel the desktop run before it');
+});
+
+test('the Phase 0 spike workflows are gone, and nothing points at the spike folders', () => {
+  // They only ran on their spike branches, but they referenced desktop-engine/ and desktop-spike-solver/, which
+  // the product build moved into desktop/. A workflow file that cannot work is a trap for the next person who
+  // pushes one of those branches. Reintroduce by restoring either file: this names it.
+  const wfs = readdirSync(join(REPO, '.github/workflows'));
+  assert.deepEqual(wfs.filter((f) => /spike/.test(f)), [], 'a spike workflow is still in .github/workflows');
+  for (const f of wfs) {
+    const y = code(read(`.github/workflows/${f}`));
+    assert.ok(!/desktop-engine\/|desktop-spike-solver/.test(y), `${f} still uses a spike folder`);
+  }
+  // The image builds never see the desktop app (its staged resources run to hundreds of MB).
+  const ignore = read('.dockerignore').split('\n').map((l) => l.trim());
+  assert.ok(ignore.includes('desktop/'), '.dockerignore does not exclude desktop/');
+});
+
+test('the extension engine is published on a prerelease the app pins, and a pinned pack is never replaced', () => {
+  const y = read('.github/workflows/engine-pack.yml');
+  const wf = parseYaml(y);
+  const pin = JSON.parse(read('desktop/src/engine-pin.json'));
+  // Its own tag family: release.yml fires on `v*`, and GitHub's "latest release" is what both updaters follow.
+  assert.deepEqual(wf.on.push.tags, ['engine-v*']);
+  assert.ok('workflow_dispatch' in wf.on);
+  assert.match(pin.tag, /^engine-v/, 'the pin names a v* tag: release.yml would build images for it');
+  assert.match(pin.tag, new RegExp(`^engine-${reLiteral(pin.version)}(-\\d+)?$`), 'the engine tag does not name the Suwayomi version');
+  const packMjs = read('desktop/engine/pack.mjs');
+  assert.match(packMjs, new RegExp(`version: '${reLiteral(pin.version)}'`), 'pack.mjs builds a different Suwayomi than the pin names');
+  // One pack per platform the app ships, each built on its own OS.
+  const legs = wf.jobs.pack.strategy.matrix.include.map((m: any) => m.platform).sort();
+  assert.deepEqual(legs, Object.keys(pin.packs).sort());
+  for (const [p, v] of Object.entries<any>(pin.packs)) assert.equal(v.file, `engine-pack-${p}.zip`);
+  // Built AND booted before anything is published.
+  assert.match(code(y), /desktop\/engine\/run\.mjs --pack/, 'the packs are published without being started once');
+  assert.equal(wf.jobs.publish.needs, 'pack');
+  assert.ok(!wf.jobs.publish.if, 'publish must not run when a pack failed');
+  assert.deepEqual(wf.jobs.publish.permissions, { contents: 'write' });
+  assert.equal(wf.permissions.contents, 'read');
+  for (const j of Object.keys(wf.jobs)) assert.ok(wf.jobs[j]['timeout-minutes'], `engine-pack.yml job ${j} has no timeout`);
+  const pub = wf.jobs.publish.steps.map((s: any) => String(s.run ?? '')).join('\n');
+  // Reintroduce by dropping --prerelease from the create: the engine release can become "latest", and every
+  // desktop install is offered it as an app update.
+  assert.match(pub, /gh release create "\$tag"[^\n]*--prerelease/, 'the engine release is not created as a prerelease');
+  assert.match(pub, /gh release edit "\$tag" --prerelease/, 'an existing engine release is not forced back to prerelease');
+  assert.match(pub, /isPrerelease/, 'nothing checks it is still a prerelease after the upload');
+  // Reintroduce by deleting the refusal loop: a re-run after the pin landed clobbers the file every installed app
+  // version checks its download against.
+  assert.match(pub, /\.packs\[\$p\]\.sha256/, 'the publish job does not refuse to replace a pinned pack');
+  assert.match(pub, /sha256sum -c/, 'the packs are not checked against their .sha256 before upload');
+});
+
+// Fixture feeds shaped exactly like electron-builder's (js-yaml, lineWidth 8000).
+function feedFixture(dir: string, version: string, files: Array<[string, string]>, extra = '') {
+  const entries = files.map(([name, body]) => {
+    writeFileSync(join(dir, name), body);
+    const sha512 = createHash('sha512').update(body).digest('base64');
+    return `  - url: ${name}\n    sha512: ${sha512}\n    size: ${Buffer.byteLength(body)}`;
+  });
+  const first = files[0][0];
+  return `version: ${version}\nfiles:\n${entries.join('\n')}\npath: ${first}\nsha512: ${createHash('sha512').update(files[0][1]).digest('base64')}\n${extra}releaseDate: '2026-09-24T01:02:03.000Z'\n`;
+}
+
+test('the macOS feeds merge into one that serves each Mac its own build, and a bad feed stops the release', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'feeds-'));
+  try {
+    const arm = feedFixture(dir, '0.44.0', [['hbook-0.44.0-arm64.zip', 'arm zip'], ['hbook-0.44.0-arm64.dmg', 'arm dmg']]);
+    const x64 = feedFixture(dir, '0.44.0', [['hbook-0.44.0-x64.zip', 'intel zip'], ['hbook-0.44.0-x64.dmg', 'intel dmg']]);
+    writeFileSync(join(dir, 'arm.yml'), arm);
+    writeFileSync(join(dir, 'x64.yml'), x64);
+    const merge = 'desktop/scripts/release/merge-latest-mac.mjs';
+    const out = join(dir, 'latest-mac.yml');
+    const ok = await runNode([merge, '--out', out, '--version', '0.44.0', join(dir, 'arm.yml'), join(dir, 'x64.yml')]);
+    assert.equal(ok.code, 0, ok.stderr);
+    const m = parseYaml(readFileSync(out, 'utf8'));
+    assert.equal(m.version, '0.44.0');
+    assert.deepEqual(m.files.map((f: any) => f.url).sort(), ['hbook-0.44.0-arm64.dmg', 'hbook-0.44.0-arm64.zip', 'hbook-0.44.0-x64.dmg', 'hbook-0.44.0-x64.zip']);
+    // The legacy fields point at the build every Mac can run (Rosetta runs x64; nothing runs arm64 on Intel).
+    assert.equal(m.path, 'hbook-0.44.0-x64.zip');
+    assert.equal(m.sha512, parseYaml(x64).sha512);
+    for (const f of m.files) assert.ok(f.sha512 && f.size, `${f.url} lost its sha512/size in the merge`);
+
+    // Two feeds for ONE architecture (a matrix typo) would publish a feed with no build for the other Macs.
+    // Reintroduce by dropping the "two feeds for the same architecture" check: this merge then succeeds.
+    const twice = await runNode([merge, '--out', join(dir, 'bad.yml'), join(dir, 'arm.yml'), join(dir, 'arm.yml')]);
+    assert.equal(twice.code, 1, 'two arm64 feeds merged into one');
+    assert.match(twice.stderr, /same architecture/);
+    // A leg built from a stale desktop/package.json announces the wrong version.
+    const stale = await runNode([merge, '--out', join(dir, 'bad.yml'), '--version', '0.45.0', join(dir, 'arm.yml'), join(dir, 'x64.yml')]);
+    assert.equal(stale.code, 1, 'a feed for the wrong version was merged');
+
+    // check-feed: every file the feed names is there with that size and SHA-512 -- or the release stops.
+    const check = 'desktop/scripts/release/check-feed.mjs';
+    const good = await runNode([check, join(dir, 'x64.yml'), dir, '--version', '0.44.0']);
+    assert.equal(good.code, 0, good.stderr);
+    assert.equal(good.stdout.trim(), '0.44.0');
+    // Reintroduce by skipping the SHA-512 comparison in check-feed.mjs: a feed that disagrees with its installer
+    // then goes out, and every Windows update fails with "sha512 checksum mismatch".
+    writeFileSync(join(dir, 'hbook-0.44.0-x64.dmg'), 'intel dmg, rebuilt');
+    const bad = await runNode([check, join(dir, 'x64.yml'), dir]);
+    assert.equal(bad.code, 1, 'a feed whose installer changed was accepted');
+    assert.match(bad.stderr, /hbook-0\.44\.0-x64\.dmg: sha512/);
+    rmSync(join(dir, 'hbook-0.44.0-arm64.zip'));
+    const missing = await runNode([check, join(dir, 'arm.yml'), dir]);
+    assert.equal(missing.code, 1);
+    assert.match(missing.stderr, /arm64\.zip: not among the built files/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('pin-engine pins what the release actually serves, and only from a prerelease', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pin-'));
+  const packs: Record<string, Buffer> = {
+    'engine-pack-win-x64.zip': Buffer.from('win pack'),
+    'engine-pack-mac-arm64.zip': Buffer.from('arm pack!'),
+    'engine-pack-mac-x64.zip': Buffer.from('intel pack'),
+  };
+  const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+  let prerelease = true;
+  let lie = '';
+  const srv = createServer((req, res) => {
+    const u = req.url || '';
+    if (u === '/api') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ tag_name: 'engine-v2.3.2243', prerelease })); return; }
+    // The pack is found in the table and the .sha256 line names it from there: nothing of the request's own text is
+    // written back (echoing the path is what CodeQL reads as reflected XSS, js/reflected-xss, test server or not).
+    const f = Object.keys(packs).find((k) => u === `/dl/${k}` || u === `/dl/${k}.sha256`);
+    if (f && u.endsWith('.sha256')) { res.end(`${f === lie ? '0'.repeat(64) : sha(packs[f])}  ${f}\n`); return; }
+    if (f) { res.end(packs[f]); return; }
+    res.statusCode = 404; res.end();
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+  const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  try {
+    const pinFile = join(dir, 'engine-pin.json');
+    const original = read('desktop/src/engine-pin.json');
+    writeFileSync(pinFile, JSON.stringify({ ...JSON.parse(original), packs: Object.fromEntries(Object.entries(JSON.parse(original).packs).map(([k, v]: [string, any]) => [k, { ...v, sha256: null, bytes: null }])) }, null, 2));
+    const args = ['desktop/scripts/release/pin-engine.mjs', '--pin', pinFile, '--base-url', `${base}/dl`, '--api', `${base}/api`, '--cache', join(dir, 'cache')];
+
+    // Reintroduce by dropping the prerelease check: this pins from a release that could become "latest".
+    prerelease = false;
+    const notPre = await runNode(args);
+    assert.equal(notPre.code, 1, 'pinned from a release that is not a prerelease');
+    assert.match(notPre.stderr, /not marked as a prerelease/);
+    prerelease = true;
+
+    // The published .sha256 and the bytes served must agree.
+    lie = 'engine-pack-mac-arm64.zip';
+    const liar = await runNode(args);
+    assert.equal(liar.code, 1, 'pinned a pack whose download does not match its .sha256');
+    lie = '';
+
+    const ok = await runNode(args);
+    assert.equal(ok.code, 0, ok.stderr);
+    const pin = JSON.parse(readFileSync(pinFile, 'utf8'));
+    for (const [k, v] of Object.entries<any>(pin.packs)) {
+      assert.equal(v.sha256, sha(packs[v.file]), `${k}: pinned the wrong hash`);
+      assert.equal(v.bytes, packs[v.file].length, `${k}: pinned the wrong size`);
+      assert.equal(statSync(join(dir, 'cache', v.file)).size, packs[v.file].length);
+    }
+    // The layout the file is kept in: one line per pack.
+    assert.match(readFileSync(pinFile, 'utf8'), /\n {4}"win-x64": \{ "file": "engine-pack-win-x64\.zip", "sha256": "[0-9a-f]{64}", "bytes": 8 \},\n/);
+    assert.equal((await runNode([...args, '--check'])).code, 0, '--check disagrees with what was just written');
+
+    // Reintroduce by dropping the "already pinned" comparison: a pack replaced on the release after it was pinned
+    // is then silently re-pinned, and every install of the older app version refuses its download.
+    packs['engine-pack-win-x64.zip'] = Buffer.from('replaced pack');
+    const replaced = await runNode(args);
+    assert.equal(replaced.code, 1, 'a pinned pack that changed on the release was re-pinned');
+    assert.match(replaced.stderr, /already pinned/);
+  } finally {
+    srv.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the engine canary only reads, unless the owner switches its reporting on -- and then never touches main, a tag or a PR', () => {
+  // .github/workflows/engine-canary.yml tests every new Suwayomi-Server every week (the engine upgrade). It runs on a
+  // schedule with the repository's token, so its shape is pinned: scheduled and dispatched only (never on a push or a
+  // pull request, where a fork's code would run with it), read-only at the top, the write permissions on the report
+  // job alone and that job behind the ENGINE_CANARY_POST switch, no secret but GITHUB_TOKEN, a timeout on every job,
+  // and the one push it makes is the engine-bump/<tag> branch. Reintroduce `contents: write` at the top, a
+  // `secrets.SOMETHING`, `pull_request:` in `on`, a report job without the switch, or a `git push origin HEAD:main` in
+  // scripts/engine/report.mjs: each names itself below.
+  const y = read('.github/workflows/engine-canary.yml');
+  const wf = parseYaml(y);
+  assert.deepEqual(Object.keys(wf.on).sort(), ['schedule', 'workflow_dispatch'], 'the canary runs on something other than its schedule and a dispatch');
+  assert.equal(wf.on.schedule[0].cron, '23 5 * * 1');
+  assert.deepEqual(Object.keys(wf.on.workflow_dispatch.inputs).sort(), ['preview', 'version']);
+  assert.equal(wf.on.workflow_dispatch.inputs.preview.default, true);
+  assert.deepEqual(wf.permissions, { contents: 'read' }, 'the canary has write permissions outside its report job');
+  assert.ok(wf.concurrency?.group, 'two canaries could run at once');
+  for (const [name, job] of Object.entries<any>(wf.jobs)) {
+    assert.ok(job['timeout-minutes'], `engine-canary.yml job "${name}" has no timeout`);
+    const writes = Object.entries(job.permissions ?? {}).filter(([, v]) => v === 'write').map(([k]) => k);
+    if (name === 'report') assert.deepEqual(writes.sort(), ['contents', 'issues']);
+    else assert.deepEqual(writes, [], `job "${name}" may write`);
+  }
+  assert.match(String(wf.jobs.report.if), /vars\.ENGINE_CANARY_POST == 'on'/, 'the report job posts without the owner\'s switch');
+  const secrets = [...code(y).matchAll(/secrets\.([A-Za-z_]+)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(secrets)], ['GITHUB_TOKEN'], 'the canary reads a secret other than its own token');
+  // The pushes: the workflow makes none itself, and report.mjs makes exactly one, to the bump branch.
+  assert.ok(!/git push|gh pr create|refs\/tags/.test(code(y)), 'the workflow pushes or opens a pull request itself');
+  const report = read('scripts/engine/report.mjs');
+  const pushes = [...report.matchAll(/git\('push'[^\n]*/g)].map((m) => m[0]);
+  assert.equal(pushes.length, 1, 'report.mjs pushes in more than one place');
+  assert.match(pushes[0], /`HEAD:refs\/heads\/\$\{branch\}`/);
+  assert.match(report, /const branch = `engine-bump\/\$\{r\.tag\}`;/, 'the branch report.mjs pushes is not engine-bump/<tag>');
+  assert.ok(!/refs\/tags|\/pulls|'main'|"main"/.test(report.replace(/^\s*\/\/.*$/gm, '')), 'report.mjs touches a tag, main or a pull request');
+});

@@ -1,0 +1,925 @@
+// Owned catalog backend: a drop-in for the `komga` client, returning Komga-shaped series/book DTOs from
+// the lib_* tables. enrichSeries/booksForUser in catalog.ts then add per-user state exactly as before.
+import { q, one } from './db';
+import { cbzPageDims, DL_ROOT, LIBRARY_ROOT, persistScan } from './library';
+import { ViewCtx, Params, visible, browsable, ADULT_RATING } from './visibility';
+import { cleanDescription } from './htmlText';
+import { effectiveLang } from './seriesLang';
+import { noticeBook, noticeShown, visibleBookCount } from './noticeChapters';
+import { rangeEnd, numberText } from './chapterRanges';
+import { anilistScoreOf } from './anilistScores';
+import { AUTO_DETAILS, authorOf, genresOf, summaryOf } from './autoDetailsSql';
+import { lineHas, nameKeys } from './authorNames';
+import { pageCleanupMetadata, pageFileVersion } from './pageCleanupFiles';
+import { env } from '../env';
+import path from 'node:path';
+
+interface Page<T> { content: T[]; totalElements: number; totalPages: number; number: number; size: number; first: boolean; last: boolean }
+
+/** v0.61.0: the AniList score (out of 100) a series needs to be one of Home's Hidden gems. */
+export const GEM_MIN_SCORE = 75;
+function page<T>(content: T[], total: number, p: number, size: number): Page<T> {
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  return { content, totalElements: total, totalPages, number: p, size, first: p <= 0, last: p >= totalPages - 1 };
+}
+
+// ⚠️ Every name here must ALSO be produced by the inner SELECT of `seriesSrcWith` below, which enumerates
+// its columns explicitly. Adding one to only one of the two makes EVERY series read fail with "column does
+// not exist" -- the series page, the library grid, search, the home rails, OPDS, all of it.
+const SERIES_COLS = 'id, title, summary, status, genres, author, age_rating, reading_direction, books_count, cover_book_id, web, created_at, latest_mtime, auto_update, library_id, library_pinned, source_chapters, source_missing, source_checked_at, source_id, lang, work_id';
+
+/**
+ * The one place a series is read from.
+ *
+ * Two things have to be true of every series query and were previously true of almost none of them:
+ *   1. the admin's title/summary override wins, so a renamed series is findable by its new name, sorts under
+ *      it, and carries it into the reader, OPDS and offline manifests -- not just its own detail page;
+ *   2. a deleted or merged-away series is invisible.
+ *
+ * Doing it in a subquery rather than at each call site means `title ILIKE`, `ORDER BY title` and every rail
+ * agree by construction. `GET /api/series/:id` still reads series_overrides directly afterwards, because it
+ * additionally returns `overrides` and `artVersion` for the edit modal and thumbnail cache-busting.
+ */
+type Gate = (alias: string, ctx: ViewCtx, p: Params) => string;
+
+const seriesSrcWith = (gate: Gate, ctx: ViewCtx, p: Params, alias: string) => `(
+  SELECT s.id, COALESCE(o.title, s.title) AS title,
+         -- The description, genres and author: the admin's, else the series' own, else what the server filled in where
+         -- both were empty (v0.73.0, lib/autoDetailsSql.ts) -- below the scan, so it never hides a scanned value.
+         ${summaryOf('o', 's', 'sad')} AS summary,
+         COALESCE(o.status, s.status) AS status, ${genresOf('o', 's', 'sad')} AS genres,
+         ${authorOf('o', 's', 'sad')} AS author,
+         COALESCE(o.age_rating, s.age_rating) AS age_rating,
+         -- The admin's direction, else what the evidence said (lib/readingDirection.ts), else NULL: unknown.
+         COALESCE(o.reading_direction, s.reading_direction) AS reading_direction,
+         -- The stored count less the notice chapters this series hides (lib/noticeChapters.ts), so every badge,
+         -- filter and sort over it, and the Komga-compatible series Mihon's tracker reads, counts what is listed.
+         ${visibleBookCount('s')} AS books_count, s.cover_book_id, s.web, s.created_at, s.latest_mtime,
+         s.auto_update, s.library_id, s.library_pinned,
+         -- What the source last said, so "how far behind is this?" is a column rather than a network call.
+         -- Kept in step with SERIES_COLS above; see the warning there.
+         s.source_chapters, s.source_missing, s.source_checked_at,
+         -- v0.52.0: the language a series is in (stated, else its main source's -- lib/seriesLang.ts) and the work
+         -- it is an edition of (lib/editions.ts), which the Library collapses to one card.
+         s.source_id, s.lang, s.work_id
+    FROM lib_series s LEFT JOIN series_overrides o ON o.series_id = s.id
+    LEFT JOIN ${AUTO_DETAILS} sad ON sad.series_id = s.id
+   WHERE ${gate('s', ctx, p)}
+) ${alias}`;
+
+/**
+ * For resolving ONE series the viewer already has the id of: the series page, its chapter list, the reader.
+ * No 18+ surfacing filter, because that filter is about what appears unasked and this is asked for.
+ */
+const seriesSrc = (ctx: ViewCtx, p: Params, alias = 'sv') => seriesSrcWith(visible, ctx, p, alias);
+
+/**
+ * For anything that LISTS series: the library grid, search, the home rails, genres, OPDS feeds.
+ *
+ * The split is deliberate and is the whole design of the 18+ hide -- see `browsable()` in lib/visibility.
+ * A listing that calls `seriesSrc` by mistake shows adult titles it should not; a by-id resolver that calls
+ * `browseSrc` by mistake 404s a page the reader deliberately opened. Both are one word, and the second is
+ * much the worse, which is why `seriesSrc` keeps the plain name and the default.
+ */
+const browseSrc = (ctx: ViewCtx, p: Params, alias = 'sv') => seriesSrcWith(browsable, ctx, p, alias);
+
+/**
+ * The one place a chapter is read from, so an override applies everywhere at once: the chapter list, reading
+ * order, next/previous, the OPDS feed and what the tracker is told. Mirrors SERIES_SRC.
+ */
+const booksSrc = (ctx: ViewCtx, p: Params, alias = 'bv') => `(
+  SELECT b.id, b.series_id, b.source, b.file, b.root, b.pages, b.mtime, b.published_at, b.page_dims, b.page_dims_version,
+         b.updated_at, b.fingerprint, b.scanlator, b.source_id, b.pruned_at, b.pruned_reason, b.size, b.missing_pages, b.chapter_name,
+         COALESCE(ov.number, b.number) AS number,
+         ${rangeEnd('b', 'ov')} AS number_end,
+         COALESCE(ov.title,  b.title)  AS title
+    FROM lib_books b
+    -- The join that was missing. This carried zero references to lib_series, so a book id alone opened a
+    -- chapter of a hidden series and next/previous then walked the whole thing. Every series-level rule --
+    -- soft delete, merge, and now library access -- reaches chapters only through here.
+    JOIN lib_series s ON s.id = b.series_id AND ${visible('s', ctx, p)}
+    LEFT JOIN book_overrides ov ON ov.book_id = b.id
+    -- A notice chapter the admin hides (lib/noticeChapters.ts) is not a chapter to anyone: not listed, not opened
+    -- by id, not next or previous, not in the offline plan or the Komga-compatible API. By the effective number.
+   WHERE ${noticeShown('s', 'b', 'ov')}
+) ${alias}`;
+
+/** The overridden title for one series, for the book DTOs that carry seriesTitle. */
+const SERIES_TITLE_SQL = 'COALESCE(o.title, s.title)';
+const SERIES_TITLE_JOIN = 'JOIN lib_series s ON s.id = %col% LEFT JOIN series_overrides o ON o.series_id = s.id';
+
+function seriesDto(r: any) {
+  const genres: string[] = r.genres ?? [];
+  // Cleaned on the way OUT, whatever wrote the column. The add path has stripped Markdown since v0.34.0,
+  // but every MangaDex series added before it still holds `**Year:** 1997 ---` in lib_series.summary
+  // (the scanner copied the ComicInfo Summary verbatim, and the ComicInfo was written from the raw
+  // description), and a migration over free text would have to guess which rows were Markdown. The
+  // strip is idempotent, so a clean row costs a regex pass and changes nothing. Reintroduce by reading
+  // `r.summary ?? ''` here: "a summary stored with Markdown is answered as plain text" in
+  // addSeries.int.test.ts sees the asterisks.
+  const summary: string = cleanDescription(r.summary);
+  const count: number = r.books_count ?? 0;
+  return {
+    id: r.id,
+    libraryId: r.library_id ?? 'lib',
+    // Whether an admin filed this series into that library by hand. Shown so the edit modal can say
+    // "automatic" honestly rather than implying every placement was a decision someone made.
+    libraryPinned: r.library_pinned === true,
+    name: r.title,
+    created: r.created_at ? new Date(r.created_at).toISOString() : null, // when the series entered the library
+    booksCount: count,
+    booksReadCount: 0,
+    booksUnreadCount: count,
+    booksInProgressCount: 0,
+    metadata: {
+      title: r.title,
+      status: r.status ? String(r.status).toUpperCase() : '',
+      summary,
+      // The series' own direction, WEBTOON when nothing knows it (#102). This was that constant for every
+      // series, so the reader's "Series default" never read right to left, a right-to-left spread was never
+      // put back together, a downloaded chapter carried WEBTOON offline, and the Komga-compatible API told
+      // Mihon that every manga was a webtoon -- all four read this one field. Reintroduce the constant:
+      // readingDirection.int.test.ts "THE POINT: a right-to-left series says so to the reader, offline and to
+      // Mihon" finds WEBTOON on all three.
+      readingDirection: r.reading_direction ?? 'WEBTOON',
+      author: r.author ?? '',
+      publisher: r.author ?? '',
+      genres,
+      tags: [],
+      ageRating: r.age_rating ?? null,
+      // The language the series is in (v0.52.0): its own, else its main source's, else the server's unstated
+      // language -- what Komga's `metadata.language` tells Mihon, and what the series page names. Was 'en' for
+      // every series.
+      language: effectiveLang(r.lang, r.source_id),
+    },
+    booksMetadata: { summary, genres, tags: [] },
+    // v0.52.0 (#72): the series' language, and the work it is a language edition of, or null on its own
+    // (lib/editions.ts). enrichSeries adds which other editions this viewer may browse.
+    lang: effectiveLang(r.lang, r.source_id),
+    workId: r.work_id ?? null,
+    // whether the scheduled updater pulls new chapters for this series; settable from the series page
+    autoUpdate: r.auto_update !== false,
+    // What the source said when it was last asked. ONE nested object, present or null, because "never
+    // checked" and "checked, nothing new" are genuinely different states and a flat `sourceMissing: 0`
+    // cannot tell them apart. `missing` stays nullable inside it: the updater stamps `checked_at` whenever
+    // it ASKED, including when the source errored and answered nothing, and a failed check must not be
+    // rendered as "0 chapters behind".
+    source: r.source_checked_at
+      ? {
+          missing: r.source_missing ?? null,
+          chapters: r.source_chapters ?? null,
+          checkedAt: new Date(r.source_checked_at).toISOString(),
+        }
+      : null,
+  };
+}
+
+function bookDto(r: any) {
+  const num: number = r.number ?? 0;
+  // The last chapter of a file holding several (v0.55.2, #150: `Batman 01-07` is 1 to 7), null for one chapter
+  // (lib/chapterRanges.ts). `number`/`numberSort` stay the start -- the book's place in every order, and the number
+  // the Komga API hands Mihon -- while `metadata.number`, which is display only, says the whole range: "1–7".
+  // Reintroduce `String(num)` below: "the chapter list says the range" in chapterRanges.int.test.ts reads "1".
+  const end: number | null = r.number_end == null ? null : Number(r.number_end);
+  // release date: the source's chapter date when stamped, else when the file landed in the library
+  const released = r.published_at
+    ? new Date(r.published_at).toISOString()
+    : r.mtime && Number(r.mtime) > 0
+      ? new Date(Number(r.mtime)).toISOString()
+      : null;
+  return {
+    id: r.id,
+    seriesId: r.series_id,
+    seriesTitle: r.series_title ?? '',
+    name: r.title,
+    number: num,
+    numberEnd: end,
+    media: { pagesCount: r.pages ?? 0, mediaType: 'application/vnd.comicbook+zip', status: 'READY' },
+    metadata: { title: r.title, number: numberText(num, end), numberSort: num, summary: '', releaseDate: released },
+    // The chapter's own name as its source gave it (lib/library.ts chapterName), null when it had none. NOT
+    // `name`/`metadata.title`, which are the filename's and keep saying so for every client that prints them.
+    chapterName: r.chapter_name ?? null,
+    // Who released the file on disk and which adapter it came from (setBookMeta in lib/library.ts). Both
+    // null for a book the scanner found rather than the downloader wrote. These are read through booksSrc's
+    // explicit column list above: a name dropped there does not error, it silently reads as null here.
+    scanlator: r.scanlator ?? null,
+    sourceId: r.source_id ?? null,
+    // The file's size on disk (lib_books.size, stamped by the scanner and the downloader). A bigint reaches
+    // node as a STRING, so it is numbered here once rather than by every reader; null when never stamped.
+    // The Komga-compatible chapter list shows it -- the extension's default chapter name is
+    // `{number} - {title} ({size})`, and before this column rode along every chapter read "(0 B)".
+    sizeBytes: r.size == null ? null : Number(r.size),
+    // The file was deleted by the read-chapter cleanup and the row kept as a tombstone (lib/chapterCleanup).
+    // The chapter must still be LISTED -- it is part of the series, it is read, and everyone's progress and
+    // counts refer to it -- but nothing may offer to open or download it, because there are no pages behind
+    // it any more. A client that ignores this gets a 404 from the image server, which is the honest failure
+    // but a poor thing to find out by tapping.
+    pruned: !!r.pruned_at,
+    // WHY the file is gone, while it is (v0.55.4; the column note in lib/migrate.ts): 'deleted' by Delete files or by
+    // Rescan everything (lib/rescan.ts), 'missing' by Verify chapter files, null by the read-chapter cleanup, a
+    // chapter's own delete, or a mark from before v0.37.0. The series page words a tombstone by it: one in a library
+    // you built by hand that Rescan everything found gone reads "File no longer on disk", never "Deleted from the
+    // server" -- nothing deleted it. Read through booksSrc's column list, like every field here.
+    // Reintroduce by dropping it (or `b.pruned_reason` above): "a chapter Rescan everything marked says why" in
+    // rescan.int.test.ts reads undefined.
+    prunedReason: r.pruned_at ? (r.pruned_reason ?? null) : null,
+    // The 1-based pages that are placeholders in the file: the chapter was saved with these missing
+    // (lib/partial.ts) and the sweep is still trying to fetch them. null when the chapter is complete. The
+    // series page draws the badge from this; the reader learns which pages from /api/books/:id/pages.
+    missingPages: Array.isArray(r.missing_pages) && r.missing_pages.length ? r.missing_pages.map(Number) : null,
+    // Downloaded by this server, as opposed to found in somebody's read library. Only such a chapter may be
+    // deleted from the server or fetched again: we put those bytes there and can put them back; a file under
+    // LIBRARY_ROOT is a collection we did not assemble and do not get to remove. The web greys out Delete and
+    // Fetch again per row from this rather than asking the server and being told no.
+    owned: !!r.root && r.root === DL_ROOT,
+  };
+}
+
+function mediaType(name: string): string {
+  const e = name.toLowerCase().split('.').pop();
+  return e === 'png' ? 'image/png' : e === 'webp' ? 'image/webp' : e === 'gif' ? 'image/gif' : e === 'avif' ? 'image/avif' : 'image/jpeg';
+}
+
+// Translate the subset of Komga's condition tree the app actually builds into a SQL predicate.
+/** A filter the query cannot express. Surfaced as a 400 rather than silently widened. */
+export class UnsupportedFilter extends Error {
+  constructor(public predicate: string) {
+    super(`unsupported filter: ${predicate}`);
+  }
+}
+
+/**
+ * Translate a condition tree into SQL.
+ *
+ * Unknown predicates THROW rather than returning TRUE. Returning TRUE is what this did for everything except
+ * genre, which meant "show me only what I have not read" silently returned the entire library: no error, no
+ * empty result, nothing to debug against. A filter that appears to work and does nothing is worse than one
+ * that refuses.
+ *
+ * `hasUser` gates the per-user predicates. They read a `mine` CTE that is only joined in when the caller
+ * said who is asking.
+ */
+function condSql(cond: any, params: any[], hasUser = false): string {
+  assertCondBounded(cond);
+  return condSqlOf(cond, params, hasUser);
+}
+
+/**
+ * The largest condition tree a search may send. The Library builds one flat allOf (a library, the two source filters,
+ * a read state, a status and one leaf per chosen genre) and Komga clients nest an anyOf in it at most, so these are far
+ * above any real search. Without a bound the tree was the member's to size: a 1.9 MB body compiled to a 3 MB SQL
+ * string with 40,000 parameters that held a pooled connection for seconds (and each search runs it twice), and a
+ * 2,000-deep allOf chain overflowed this function's own recursion. Reintroduce by removing the call in condSql:
+ * conditionBounds.test.ts compiles the 40,000-leaf tree.
+ */
+export const MAX_COND_NODES = 128;
+export const MAX_COND_DEPTH = 6;
+
+function assertCondBounded(root: any): void {
+  let nodes = 0;
+  const walk = (c: any, depth: number) => {
+    if (!c || typeof c !== 'object') return;
+    if (depth > MAX_COND_DEPTH) throw new UnsupportedFilter('condition nested too deep');
+    if (++nodes > MAX_COND_NODES) throw new UnsupportedFilter('too many conditions');
+    const kids = Array.isArray(c.allOf) ? c.allOf : Array.isArray(c.anyOf) ? c.anyOf : null;
+    if (kids) for (const k of kids) walk(k, depth + 1);
+  };
+  walk(root, 0);
+}
+
+function condSqlOf(cond: any, params: any[], hasUser: boolean): string {
+  if (!cond || typeof cond !== 'object') return 'TRUE';
+  if (Array.isArray(cond.allOf)) return cond.allOf.length ? '(' + cond.allOf.map((c: any) => condSqlOf(c, params, hasUser)).join(' AND ') + ')' : 'TRUE';
+  if (Array.isArray(cond.anyOf)) return cond.anyOf.length ? '(' + cond.anyOf.map((c: any) => condSqlOf(c, params, hasUser)).join(' OR ') + ')' : 'TRUE';
+
+  if (cond.genre && cond.genre.value != null) {
+    params.push(String(cond.genre.value));
+    const ex = `EXISTS (SELECT 1 FROM unnest(genres) AS g WHERE lower(g) = lower($${params.length}))`;
+    return cond.genre.operator === 'isNot' ? `NOT ${ex}` : ex;
+  }
+
+  // Which library. `visible()` has already narrowed the source to what this viewer may open, so naming a
+  // library they cannot see returns nothing rather than an error that would confirm it exists.
+  if (cond.libraryId && cond.libraryId.value != null) {
+    params.push(String(cond.libraryId.value));
+    const ex = `library_id = $${params.length}`;
+    return cond.libraryId.operator === 'isNot' ? `NOT (${ex})` : `(${ex})`;
+  }
+
+  if (cond.status && cond.status.value != null) {
+    params.push(String(cond.status.value));
+    const ex = `lower(status) = lower($${params.length})`;
+    return cond.status.operator === 'isNot' ? `NOT (${ex})` : `(${ex})`;
+  }
+
+  // A single free-text column that often holds several names, so contains rather than equals.
+  if (cond.author && cond.author.value != null) {
+    params.push(`%${String(cond.author.value)}%`);
+    const ex = `author ILIKE $${params.length}`;
+    return cond.author.operator === 'isNot' ? `NOT (${ex})` : `(${ex})`;
+  }
+
+  if (cond.readStatus && cond.readStatus.value != null) {
+    if (!hasUser) throw new UnsupportedFilter('readStatus (no user context)');
+    const done = 'COALESCE(m.done, 0)';
+    const started = 'COALESCE(m.started, 0)';
+    const v = String(cond.readStatus.value).toUpperCase();
+    const sql =
+      v === 'UNREAD' ? `${done} = 0 AND ${started} = 0`
+      : v === 'IN_PROGRESS' ? `(${started} > 0 OR (${done} > 0 AND ${done} < books_count))`
+      : v === 'READ' ? `books_count > 0 AND ${done} >= books_count`
+      : null;
+    if (!sql) throw new UnsupportedFilter(`readStatus:${v}`);
+    return cond.readStatus.operator === 'isNot' ? `NOT (${sql})` : `(${sql})`;
+  }
+
+  // Which source a series comes from (the library's source filters). `mainSource` is the source it
+  // was added from; `anySource` is that OR one it follows as a fallback (series_sources). The id is compared
+  // as stored, so a source that is no longer installed still filters. Correlated on `sv.id` -- the alias
+  // every listing reads series through -- because an unqualified `id` inside the subquery is its own row's.
+  if (cond.mainSource && cond.mainSource.value != null) {
+    params.push(String(cond.mainSource.value));
+    const ex = `EXISTS (SELECT 1 FROM lib_series src_s WHERE src_s.id = sv.id AND src_s.source_id = $${params.length})`;
+    return cond.mainSource.operator === 'isNot' ? `NOT ${ex}` : ex;
+  }
+  if (cond.anySource && cond.anySource.value != null) {
+    params.push(String(cond.anySource.value));
+    const n = params.length;
+    const ex = `(EXISTS (SELECT 1 FROM lib_series src_s WHERE src_s.id = sv.id AND src_s.source_id = $${n})
+                 OR EXISTS (SELECT 1 FROM series_sources src_f WHERE src_f.series_id = sv.id AND src_f.source_id = $${n}))`;
+    return cond.anySource.operator === 'isNot' ? `NOT ${ex}` : ex;
+  }
+  // #149: whether a series has a main source at all, in Komga's boolean shape (`isTrue` / `isFalse`, no value).
+  // `isFalse` is the Library's "No source": a folder added by hand, or a series never matched to a site -- an empty
+  // `source_id`, whatever it follows. A key of its own, never `mainSource` with a magic id: a site added by address
+  // takes its id from the name the admin gives it, so any word may be a real source's id, and an older server would
+  // answer that with an empty grid where an unknown key is a 400. `sv` carries source_id (SERIES_SRC, since v0.52.0).
+  if (cond.hasMainSource && typeof cond.hasMainSource === 'object') {
+    const op = cond.hasMainSource.operator;
+    if (op !== 'isTrue' && op !== 'isFalse') throw new UnsupportedFilter(`hasMainSource:${op}`);
+    return op === 'isFalse' ? '(sv.source_id IS NULL)' : '(sv.source_id IS NOT NULL)';
+  }
+
+  // v0.100.0 (#338): an `authorName` leaf, already answered by resolveAuthorNames below as the series it names.
+  // Never built from a request body: JSON cannot make one, so a client sending its own id list gets a 400 below.
+  if (cond instanceof AuthorIds) {
+    if (!cond.ids.length) return cond.negate ? 'TRUE' : 'FALSE';
+    params.push(cond.ids);
+    const ex = `sv.id = ANY($${params.length}::text[])`;
+    return cond.negate ? `NOT (${ex})` : `(${ex})`;
+  }
+
+  throw new UnsupportedFilter(Object.keys(cond).filter((k) => k !== 'operator')[0] || 'unknown');
+}
+
+/** The series one `authorName` leaf names, worked out before the tree is compiled (resolveAuthorNames). */
+export class AuthorIds {
+  constructor(readonly ids: string[], readonly negate: boolean) {}
+}
+
+/**
+ * v0.100.0 (#338): the Library's "by this author" (`{authorName: {operator: is|isNot, value}}`), answered here rather
+ * than in SQL. A whole name, in any of its spellings (lib/authorNames.ts): the folding is Unicode's letters and
+ * digits, which a database's collation would answer differently, and the name it is asked for came from the very
+ * line JavaScript split on the series page. Every series' line is read once per search -- one short column, only
+ * when the condition is there -- and each leaf becomes the ids it names; the listing's own gate (browseSrc) still
+ * decides what the viewer sees of them. Bounded first, as condSql is, so a huge tree is refused before any work.
+ */
+export async function resolveAuthorNames(cond: unknown): Promise<unknown> {
+  if (!cond || typeof cond !== 'object' || !JSON.stringify(cond).includes('"authorName"')) return cond;
+  assertCondBounded(cond);
+  let lines: Array<{ id: string; author: string | null }> | null = null;
+  const all = async () => (lines ??= await q<{ id: string; author: string | null }>(
+    `SELECT s.id, ${authorOf('o', 's', 'sad')} AS author
+       FROM lib_series s LEFT JOIN series_overrides o ON o.series_id = s.id
+       LEFT JOIN ${AUTO_DETAILS} sad ON sad.series_id = s.id`));
+  const walk = async (c: any): Promise<any> => {
+    if (!c || typeof c !== 'object') return c;
+    if (Array.isArray(c.allOf)) return { ...c, allOf: await Promise.all(c.allOf.map(walk)) };
+    if (Array.isArray(c.anyOf)) return { ...c, anyOf: await Promise.all(c.anyOf.map(walk)) };
+    if (!c.authorName || typeof c.authorName !== 'object') return c;
+    const { operator, value } = c.authorName;
+    if (operator !== 'is' && operator !== 'isNot') throw new UnsupportedFilter(`authorName:${operator}`);
+    if (typeof value !== 'string' || !value.trim() || value.length > 200) throw new UnsupportedFilter('authorName');
+    const wanted = nameKeys(value);
+    const ids = wanted.length ? (await all()).filter((r) => lineHas(r.author, wanted)).map((r) => r.id) : [];
+    return new AuthorIds(ids, operator === 'isNot');
+  };
+  return walk(cond);
+}
+
+/** Exposed for tests: the translator is pure apart from the params it pushes. */
+export const _condSql = condSql;
+
+/**
+ * @param perUser whether the `mine`/`fav` joins are present in the FROM clause. The per-user sorts name
+ *   those aliases, and naming an alias that was not joined is a SQL error, not an empty column -- so
+ *   without a user they degrade to title order rather than to a 500.
+ */
+function sortSql(sort?: string, perUser = false): string {
+  if (!sort) return 'title ASC';
+  const [field, dir0] = String(sort).split(',');
+  const dir = (dir0 || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  // v0.61.0, Releasing soon: the release radar's estimate (lib/releaseRadar.ts), soonest first -- only while the
+  // series is monitored and not yet quiet; one with no estimate, a quiet one and one nobody updates come after every
+  // dated series, whichever the direction, then by title. FIRST, so no older branch's pattern can take the field.
+  // Reintroduce by dropping it: "Releasing soon orders the Library by the radar" in releaseRadar.int.test.ts reads A-Z.
+  if (/releasing/i.test(field)) {
+    return `(SELECT CASE WHEN r.quiet_after > now() AND sv.auto_update THEN r.next_at END FROM series_radar r WHERE r.series_id = sv.id) ${dir} NULLS LAST, title ASC`;
+  }
+  if (/random/i.test(field)) return 'random()';
+  if (/title|name/i.test(field)) return `title ${dir}`;
+  if (/created|added/i.test(field)) return `created_at ${dir}`;
+  if (/updated|date|modified/i.test(field)) return `latest_mtime ${dir}`;
+  if (/author/i.test(field)) return `author ${dir} NULLS LAST`;
+  // real unread count, which needs the `mine` CTE; the library page used to sort by total chapters and
+  // label it "Most chapters" because this was not expressible
+  if (/unread/i.test(field)) return perUser ? `(books_count - COALESCE(m.done, 0)) ${dir}` : `title ${dir}`;
+  // "Popular", for a personal library. Mihon requires every source to have a popular listing, and for a
+  // shelf of one's own reading the honest meaning is: what you starred, then what you are furthest
+  // behind on. Needs both per-user CTEs (`mine` for unread, `fav` for the star); `desc` is the only
+  // sensible direction, so `asc` is simply the reverse rather than a different rule.
+  if (/favou?rites?/i.test(field)) {
+    return perUser ? `(f.series_id IS NOT NULL) ${dir}, (books_count - COALESCE(m.done, 0)) ${dir}, title ASC` : 'title ASC';
+  }
+  // v0.58.0, the owner's sorts. The outside rating (lib/anilistScores.ts): how many AniList users list it, and its
+  // score out of 100 -- read through the series' checked AniList link; a series with none goes after every series that
+  // has one, whichever the direction. Then the viewer's own stars (per-user, $1), the chapters the series shows, and when
+  // the viewer last read in it (the `mine` CTE's last_at). Every one ties on the title. Reintroduce the fall-through
+  // (drop a branch): "each new sort orders the Library by its own value" in anilistScores.int.test.ts reads A-Z.
+  if (/popularity/i.test(field)) return `${anilistScoreOf('sv', 'popularity')} ${dir} NULLS LAST, title ASC`;
+  if (/score/i.test(field)) return `${anilistScoreOf('sv', 'score')} ${dir} NULLS LAST, title ASC`;
+  if (/rating/i.test(field)) {
+    return perUser ? `(SELECT r.stars FROM ratings r WHERE r.user_id = $1 AND r.series_id = sv.id) ${dir} NULLS LAST, title ASC` : `title ${dir}`;
+  }
+  if (/chapters/i.test(field)) return `books_count ${dir}, title ASC`;
+  if (/lastread/i.test(field)) return perUser ? `m.last_at ${dir} NULLS LAST, title ASC` : `title ${dir}`;
+  return `title ${dir}`;
+}
+
+/**
+ * Per-user reading state, rolled up once.
+ *
+ * One indexed pass over read_progress for this user (idx_rp_series is (user_id, series_id)), joined once,
+ * rather than a correlated count re-run for every predicate on every candidate series. Only emitted when a
+ * per-user filter or sort is actually asked for, so the ordinary "everything, A to Z" query is unchanged.
+ *
+ * userId is always $1 when present, because condSql pushes its own parameters as it walks the tree.
+ * Built per query, not once: the notice fragment in it is a constant while nothing hides (lib/noticeChapters.ts).
+ */
+const mineCte = () => `WITH mine AS (
+  SELECT series_id,
+         count(*) FILTER (WHERE completed)::int     AS done,
+         count(*) FILTER (WHERE NOT completed)::int AS started,
+         -- When this viewer last read in the series: the edition of a work the Library shows (searchSeries).
+         max(updated_at)                            AS last_at
+    FROM read_progress WHERE user_id = $1
+     -- Against the count that leaves hidden notice chapters out (seriesSrcWith), so a read notice cannot fill in
+     -- for an unread chapter in "read" and "in progress".
+     AND NOT ${noticeBook('read_progress.book_id')}
+   GROUP BY series_id
+), fav AS (
+  SELECT series_id FROM favorites WHERE user_id = $1
+)`;
+
+/**
+ * The Library's search with one card per work (v0.52.0, #72, `collapseEditions`): of the editions that pass the
+ * filters and the gates, the one this viewer read most recently, else the oldest -- the original. The window runs
+ * over the ALREADY filtered set, so a search that matches only the Spanish title shows the Spanish edition, and a
+ * viewer who may browse one edition sees that one. `total` counts works, so the grid's paging agrees with its cards.
+ * The outer query reads the per-user CTEs again by the chosen row's id: `sortSql` names `m` and `f`, and a filter
+ * already applied inside is not applied twice.
+ *
+ * Reintroduce by returning the plain search: "the Library shows one card per work" in editions.int.test.ts finds
+ * two cards, and none for a title only the Spanish edition carries if the window runs before the filter.
+ */
+async function collapsedSearch(cte: string, from: string, where: string, p: Params, pg: number, size: number, order: string, perUser: boolean) {
+  const t = (await one<{ c: number }>(
+    `${cte} SELECT count(DISTINCT COALESCE(sv.work_id::text, sv.id))::int AS c FROM ${from} WHERE ${where}`,
+    clone(p).values as any[],
+  ))?.c ?? 0;
+  const mine = perUser ? 'm.last_at DESC NULLS LAST, ' : '';
+  const joins = perUser ? 'LEFT JOIN mine m ON m.series_id = sv.id LEFT JOIN fav f ON f.series_id = sv.id' : '';
+  const rows = await q(
+    `${cte} SELECT ${SERIES_COLS} FROM (
+       SELECT sv.*, row_number() OVER (PARTITION BY COALESCE(sv.work_id::text, sv.id) ORDER BY ${mine}sv.created_at, sv.id) AS edition_pick
+         FROM ${from} WHERE ${where}
+     ) sv ${joins}
+     WHERE sv.edition_pick = 1 ORDER BY ${order} LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+    p.values as any[],
+  );
+  return page(rows.map(seriesDto), t, pg, size);
+}
+
+/**
+ * The chapter before or after this one, within the same series.
+ *
+ * Both directions were byte-identical apart from two comparison operators, and both had to be kept in step
+ * with the (number, file) tuple ordering, so they share one body.
+ */
+async function adjacentBook(ctx: ViewCtx, id: string, dir: 'next' | 'prev') {
+  const pb = new Params();
+  const bsrc0 = booksSrc(ctx, pb);
+  const b = await one<{ series_id: string; number: number; file: string }>(
+    `SELECT series_id, number, file FROM ${bsrc0} WHERE id = ${pb.add(id)}`,
+    pb.values as any[],
+  );
+  if (!b) throw Object.assign(new Error('not found'), { statusCode: 404 });
+
+  const cmp = dir === 'next' ? '>' : '<';
+  const order = dir === 'next' ? 'ASC' : 'DESC';
+  const p = new Params();
+  const bsrc = booksSrc(ctx, p, 'bk');
+  const n = await one(
+    `SELECT bk.*, ${SERIES_TITLE_SQL} AS series_title FROM ${bsrc} ${SERIES_TITLE_JOIN.replace('%col%', 'bk.series_id')}
+      WHERE bk.series_id = ${p.add(b.series_id)} AND (bk.number, bk.file) ${cmp} (${p.add(b.number)}, ${p.add(b.file)})
+        -- A tombstone (lib/chapterCleanup.ts) is listed, but it is not a place to go: a reader pressing
+        -- "next" must not land on a chapter whose pages were deleted. The current chapter itself may be one
+        -- (its neighbours are still meaningful); only the candidates are filtered.
+        AND bk.pruned_at IS NULL
+      ORDER BY bk.number ${order}, bk.file ${order} LIMIT 1`,
+    p.values as any[],
+  );
+  if (!n) throw Object.assign(new Error(dir === 'next' ? 'no next' : 'no previous'), { statusCode: 404 });
+  return bookDto(n);
+}
+
+/** A copy, so a count query and its page query can each own their parameter list without re-pushing. */
+const clone = (p: Params): Params => {
+  const c = new Params();
+  for (const v of p.values) c.add(v);
+  return c;
+};
+
+const total = async (ctx: ViewCtx, where = 'TRUE', p = new Params(), cte = '', from?: string) =>
+  (await one<{ c: number }>(
+    `${cte} SELECT count(*)::int AS c FROM ${from ?? browseSrc(ctx, p)} WHERE ${where}`,
+    p.values as any[],
+  ))?.c ?? 0;
+
+export const owned = {
+  libraries: async (ctx: ViewCtx) => {
+    const rows = await q<{ id: string; name: string; age_rating: number | null }>(
+      'SELECT id, name, age_rating FROM libraries ORDER BY sort_order, name',
+    );
+    // A restricted viewer is told about the libraries they hold, not all of them: the list itself would
+    // otherwise leak the existence and names of everything they cannot open.
+    const held = ctx.libraryIds ? rows.filter((r) => ctx.libraryIds!.includes(r.id)) : rows;
+    // A library rated above this viewer's cap is one they can never open, so naming it is the same leak in
+    // a different shape. This list had no notion of the age cap at all, which meant a 13+ account was shown
+    // the name of the 18+ shelf and a tab that could only ever be empty.
+    const allowed = ctx.maxAgeRating === null
+      ? held
+      : held.filter((r) => r.age_rating === null || r.age_rating <= ctx.maxAgeRating!);
+    // `adult` rides along rather than being filtered out here: the web app needs to know an 18+ library
+    // EXISTS in order to offer the button that reveals it, and it hides those tabs itself while the filter
+    // is on. What must not leak is the CONTENT, and that is `browsable()`'s job, not this list's.
+    return allowed.map((r) => ({ id: r.id, name: r.name, adult: (r.age_rating ?? 0) >= ADULT_RATING }));
+  },
+
+  /**
+   * Every genre with how much of THIS viewer's library sits in it, plus the covers to build a tile from.
+   *
+   * The browse page had genre NAMES and nothing else, so it painted them with six stock images shared
+   * between forty genre names: on the real library the same night-market photo appears under Comedy,
+   * Cooking, Historical, Music, School Life, Slice of Life and Sports, and fifty-six genres including the
+   * second-largest one get no image at all and render as a near-black rectangle. Covers from the viewer's
+   * own library cannot repeat like that and cannot be wrong, because they ARE the thing behind the label.
+   *
+   * Everything comes from seriesSrc, so the override-aware genre list, the soft-delete rule, per-library
+   * access and the age cap all apply by construction: a viewer restricted to one library sees counts for
+   * that library alone, and a genre that exists only in what they cannot open does not appear at all. A
+   * count is a disclosure -- "Horror (12)" says twelve horror series exist somewhere -- so this mattering
+   * is the reason it is not a separate query.
+   *
+   * GROUPED CASE-INSENSITIVELY, because `condSql` already filters genres with `lower(g) = lower($n)`.
+   * "Slice of life" and "Slice of Life" are one filter, so they must be one tile, or the tile promises a
+   * number the grid behind it does not deliver. For the same reason the count is over distinct series
+   * rather than over rows: a series carrying both spellings would otherwise be counted twice.
+   */
+  genreOverview: async (ctx: ViewCtx, covers = 4) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    // Bounded here rather than interpolated blindly: it reaches SQL as an identifier position in the slice.
+    const n = Math.max(1, Math.min(12, Math.trunc(covers) || 4));
+    return q<{ key: string; label: string; series: number; covers: string[] }>(
+      `WITH tagged AS (
+         SELECT sv.id, sv.title, sv.books_count, sv.latest_mtime, sv.created_at,
+                lower(btrim(g)) AS key, btrim(g) AS label
+           FROM ${src}, unnest(sv.genres) AS g
+          WHERE btrim(g) <> ''
+       ),
+       one_per_series AS (
+         SELECT DISTINCT ON (key, id) key, id, label, title, books_count, latest_mtime, created_at
+           FROM tagged ORDER BY key, id, label
+       ),
+       ranked AS (
+         -- Biggest and most recently touched first, so a mosaic shows what is alive in a genre rather
+         -- than whatever happens to sort first alphabetically.
+         SELECT o.*, row_number() OVER (
+                  PARTITION BY key
+                  ORDER BY books_count DESC, latest_mtime DESC NULLS LAST, created_at DESC NULLS LAST, title ASC
+                ) AS rn
+           FROM one_per_series o
+       )
+       SELECT key,
+              -- The spelling the library actually uses most, so the tile is labelled the way its series are.
+              mode() WITHIN GROUP (ORDER BY label) AS label,
+              count(*)::int AS series,
+              coalesce(array_agg(id ORDER BY rn) FILTER (WHERE rn <= ${n}), '{}') AS covers
+         FROM ranked
+        GROUP BY key
+        ORDER BY count(*) DESC, key ASC`,
+      p.values as any[],
+    );
+  },
+
+  /**
+   * Every source the viewer's library comes from, for the library's two source filters: `main` counts the
+   * series added from it, `any` the series that read from it at all -- added from it, or following it as a
+   * fallback. Counted over browseSrc, so the numbers are the ones the filtered grid will show (the same
+   * disclosure rule as genreOverview: a source only this viewer's hidden libraries use is not named).
+   * The route names each one by the #115 rule (lib/health.ts sourceLabel), so this carries the engine's stored
+   * name for an extension source. Not the series' folder label (`lib_series.source`): that is the folder a
+   * series sits in, which only a main source has, and which a series at the library's root or in a folder of
+   * your own reads as a source name that is not one.
+   */
+  librarySources: async (ctx: ViewCtx) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    return q<{ id: string; engine_name: string | null; main: number; any: number }>(
+      `WITH vs AS (SELECT sv.id FROM ${src}),
+       used AS (
+         SELECT s.id AS series_id, s.source_id, true AS main
+           FROM lib_series s JOIN vs ON vs.id = s.id WHERE s.source_id IS NOT NULL
+         UNION ALL
+         SELECT ss.series_id, ss.source_id, false AS main
+           FROM series_sources ss JOIN vs ON vs.id = ss.series_id
+       )
+       SELECT u.source_id AS id,
+              -- The engine's name for an extension source that is not registered right now (the engine is down,
+              -- or the source is switched off), as Health reads it.
+              (SELECT sn.name FROM suwayomi_sources sn WHERE 'sw:' || sn.source_id = u.source_id LIMIT 1) AS engine_name,
+              count(DISTINCT u.series_id) FILTER (WHERE u.main)::int AS main,
+              count(DISTINCT u.series_id)::int AS any
+         FROM used u GROUP BY u.source_id ORDER BY count(DISTINCT u.series_id) DESC, u.source_id`,
+      p.values as any[],
+    );
+  },
+
+  /**
+   * How many of the viewer's series have no main source (#149): the Library's "No source" chip. Counted over browseSrc
+   * like librarySources, with the search's own predicate (condSql `hasMainSource: isFalse`), so the number beside the
+   * chip is what tapping it returns. Reintroduce a predicate of its own that also asks series_sources: "the No source
+   * count is what its search returns" in sourceFilters.int.test.ts finds the series that follows a source counted out.
+   */
+  seriesWithoutSource: async (ctx: ViewCtx) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    const where = condSql({ hasMainSource: { operator: 'isFalse' } }, p.values as any[]);
+    return (await one<{ n: number }>(`SELECT count(*)::int AS n FROM ${src} WHERE ${where}`, p.values as any[]))?.n ?? 0;
+  },
+
+  genres: async (ctx: ViewCtx) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    return (await q<{ g: string }>(`SELECT DISTINCT g FROM ${src}, unnest(genres) AS g ORDER BY g`, p.values as any[]))
+      .map((r) => r.g);
+  },
+
+  series: async (ctx: ViewCtx, id: string) => {
+    const p = new Params();
+    const src = seriesSrc(ctx, p);
+    const r = await one(`SELECT ${SERIES_COLS} FROM ${src} WHERE id = ${p.add(id)}`, p.values as any[]);
+    if (!r) throw Object.assign(new Error('series not found'), { statusCode: 404 });
+    return seriesDto(r);
+  },
+
+  seriesNew: async (ctx: ViewCtx, pg = 0, size = 20) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    const rows = await q(
+      `SELECT ${SERIES_COLS} FROM ${src} ORDER BY created_at DESC, title ASC LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(seriesDto), await total(ctx), pg, size);
+  },
+
+  seriesUpdated: async (ctx: ViewCtx, pg = 0, size = 20) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    const rows = await q(
+      `SELECT ${SERIES_COLS} FROM ${src} ORDER BY latest_mtime DESC, title ASC LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(seriesDto), await total(ctx), pg, size);
+  },
+
+  /**
+   * v0.58.0, Home's "Most popular in your library": the series this viewer may browse that have an outside popularity
+   * (lib/anilistScores.ts, through the series' checked AniList link), the most listed on AniList first. A series with
+   * none is not on the rail. Reintroduce the plain order: "Home's Most popular rail" in anilistScores.int.test.ts finds
+   * an unscored series on it.
+   */
+  seriesPopular: async (ctx: ViewCtx, pg = 0, size = 20) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    const pop = anilistScoreOf('sv', 'popularity');
+    const rows = await q(
+      `SELECT ${SERIES_COLS} FROM ${src} WHERE ${pop} IS NOT NULL ORDER BY ${pop} DESC, title ASC LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(seriesDto), rows.length, pg, size);
+  },
+
+  /**
+   * v0.61.0, Home's "Hidden gems": what the household is sleeping on. Series this viewer may browse whose AniList score
+   * (lib/anilistScores.ts, through the checked link) is at least GEM_MIN_SCORE, and that NOBODY has a read_progress row
+   * for -- not in this series, and not in any other language edition of its work (another member reading the English
+   * edition is not a gem in Spanish). One card per work, the best-scored edition; best score first, then the more
+   * popular. A series with no score is never a gem: there is nothing to say it is good. Reintroduce by checking the
+   * series alone, or by dropping DISTINCT ON: "Hidden gems: well rated, read by nobody in any edition, one card per work"
+   * in homeRails.int.test.ts finds the Spanish edition, or a second edition of one work.
+   */
+  seriesGems: async (ctx: ViewCtx, pg = 0, size = 20) => {
+    const p = new Params();
+    const src = browseSrc(ctx, p);
+    const score = anilistScoreOf('sv', 'score');
+    const pop = anilistScoreOf('sv', 'popularity');
+    // A place another member kept under Incognito is not "read by the household": counting it showed this viewer
+    // which unread, well-rated series that member had opened privately (v0.69.1). The viewer's own private places
+    // still count -- they know what they opened. Reintroduce by dropping the incognito clause: "an Incognito read
+    // leaves another member's Hidden gems alone" in gemsIncognito.int.test.ts sees the gem disappear.
+    const counts = `(NOT rp.incognito OR rp.user_id = ${p.add(ctx.userId ?? null)})`;
+    const rows = await q(
+      `SELECT ${SERIES_COLS} FROM (
+         SELECT DISTINCT ON (COALESCE(sv.work_id::text, sv.id)) sv.*, ${score} AS gem_score, ${pop} AS gem_pop
+           FROM ${src}
+          WHERE ${score} >= ${GEM_MIN_SCORE}
+            AND NOT EXISTS (SELECT 1 FROM read_progress rp WHERE rp.series_id = sv.id AND ${counts})
+            AND NOT EXISTS (SELECT 1 FROM read_progress rp JOIN lib_series ed ON ed.id = rp.series_id WHERE ed.work_id = sv.work_id AND ${counts})
+          ORDER BY COALESCE(sv.work_id::text, sv.id), gem_score DESC, gem_pop DESC NULLS LAST, sv.title ASC
+       ) g
+       ORDER BY gem_score DESC, gem_pop DESC NULLS LAST, title ASC LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(seriesDto), rows.length, pg, size);
+  },
+
+  booksOnDeck: async (_ctx: ViewCtx, _p = 0, size = 20) => page([] as any[], 0, 0, size), // owned: continue-reading is served from read_progress in catalog
+
+  /**
+   * Per-user filters and sorts are answered in SQL rather than by filtering the page afterwards:
+   * enrichSeries runs after LIMIT/OFFSET, so post-filtering would return short pages, a totalElements that
+   * disagrees with them, and an infinite scroll that stops early.
+   *
+   * mineCte needs the user id as $1, so it is pushed before anything else and the visibility predicate
+   * follows. Nothing here counts placeholders by hand.
+   */
+  searchSeries: async (ctx: ViewCtx, body: any, pg = 0, size = 40, sort?: string) => {
+    const collapse = body?.collapseEditions === true;
+    const wantsUser = !!ctx.userId
+      && (collapse || JSON.stringify(body?.condition ?? {}).includes('readStatus') || /unread|favou?rite|rating|lastread/i.test(sort || ''));
+    const p = new Params();
+    const cte = wantsUser ? mineCte() : '';
+    if (wantsUser) p.add(ctx.userId); // mineCte reads $1
+    const src = browseSrc(ctx, p);
+    const from = wantsUser
+      ? `${src} LEFT JOIN mine m ON m.series_id = sv.id LEFT JOIN fav f ON f.series_id = sv.id`
+      : src;
+
+    const condition = body?.condition ? await resolveAuthorNames(body.condition) : undefined;
+    let where = condition ? condSql(condition, p.values as any[], wantsUser) : 'TRUE';
+    if (body?.fullTextSearch) {
+      // v0.100.0 (#338): the author line too, so typing a name finds what that person wrote.
+      const term = p.add(`%${body.fullTextSearch}%`);
+      where = `(${where}) AND (title ILIKE ${term} OR author ILIKE ${term})`;
+    }
+    if (collapse) return collapsedSearch(cte, from, where, p, pg, size, sortSql(sort, wantsUser), wantsUser);
+    const t = await total(ctx, where, clone(p), cte, from);
+    const rows = await q(
+      `${cte} SELECT ${SERIES_COLS} FROM ${from} WHERE ${where} ORDER BY ${sortSql(sort, wantsUser)} LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(seriesDto), t, pg, size);
+  },
+
+  seriesBooks: async (ctx: ViewCtx, id: string, pg = 0, size = 100, sort = 'metadata.numberSort,asc') => {
+    const dir = /desc/i.test(sort) ? 'DESC' : 'ASC';
+    const ps = new Params();
+    const ssrc = seriesSrc(ctx, ps);
+    const st = (await one<{ title: string }>(`SELECT title FROM ${ssrc} WHERE id = ${ps.add(id)}`, ps.values as any[]))?.title ?? '';
+
+    const pc = new Params();
+    const bsrcCount = booksSrc(ctx, pc);
+    const t = (await one<{ c: number }>(
+      `SELECT count(*)::int AS c FROM ${bsrcCount} WHERE series_id = ${pc.add(id)}`, pc.values as any[],
+    ))?.c ?? 0;
+
+    const p = new Params();
+    const bsrc = booksSrc(ctx, p);
+    const rows = await q(
+      `SELECT * FROM ${bsrc} WHERE series_id = ${p.add(id)} ORDER BY number ${dir}, file ${dir} LIMIT ${p.add(size)} OFFSET ${p.add(pg * size)}`,
+      p.values as any[],
+    );
+    return page(rows.map((r) => bookDto({ ...r, series_title: st })), t, pg, size);
+  },
+
+  /**
+   * Every chapter this viewer may list, a page of them (v0.61.2, #204): the Komga API's GET /api/v1/books, which a
+   * Komga client reads for the library's chapter count (`totalElements`) -- Homepage's Komga widget, for its Books
+   * tile. Listed as the Library lists series (browsable: soft delete, merge, the grants, the age cap and the 18+ hide)
+   * and as each series lists its chapters (booksSrc: overrides, hidden notice chapters left out); by series title, then
+   * number. `search` matches a chapter's or its series' name; `readyOnly` leaves out pruned tombstones.
+   */
+  allBooks: async (ctx: ViewCtx, o: { page: number; size: number; desc: boolean; search: string | null; libraryIds: string[]; readyOnly: boolean }) => {
+    const p = new Params();
+    const from = `${booksSrc(ctx, p, 'b')} ${SERIES_TITLE_JOIN.replace('%col%', 'b.series_id')}`;
+    const where = [browsable('s', ctx, p)];
+    if (o.search) {
+      const term = p.add(`%${o.search}%`);
+      where.push(`(b.title ILIKE ${term} OR ${SERIES_TITLE_SQL} ILIKE ${term})`);
+    }
+    if (o.libraryIds.length) where.push(`s.library_id = ANY(${p.add(o.libraryIds)})`);
+    if (o.readyOnly) where.push('b.pruned_at IS NULL');
+    const cond = where.join(' AND ');
+    const t = (await one<{ c: number }>(`SELECT count(*)::int AS c FROM ${from} WHERE ${cond}`, [...p.values] as any[]))?.c ?? 0;
+    const dir = o.desc ? 'DESC' : 'ASC';
+    const rows = await q(
+      `SELECT b.*, ${SERIES_TITLE_SQL} AS series_title FROM ${from} WHERE ${cond}
+        ORDER BY ${SERIES_TITLE_SQL} ${dir}, b.series_id ${dir}, b.number ${dir}, b.file ${dir}
+        LIMIT ${p.add(o.size)} OFFSET ${p.add(o.page * o.size)}`,
+      p.values as any[],
+    );
+    return page(rows.map(bookDto), t, o.page, o.size);
+  },
+
+  book: async (ctx: ViewCtx, id: string) => {
+    const p = new Params();
+    const bsrc = booksSrc(ctx, p, 'b');
+    const r = await one(
+      `SELECT b.*, ${SERIES_TITLE_SQL} AS series_title FROM ${bsrc} ${SERIES_TITLE_JOIN.replace('%col%', 'b.series_id')} WHERE b.id = ${p.add(id)}`,
+      p.values as any[],
+    );
+    if (!r) throw Object.assign(new Error('book not found'), { statusCode: 404 });
+    return bookDto(r);
+  },
+
+  bookPages: async (ctx: ViewCtx, id: string) => {
+    // Goes through booksSrc so page dimensions cannot enumerate a chapter of a hidden series.
+    const p = new Params();
+    const bsrc = booksSrc(ctx, p);
+    const r = await one<{ file: string; root: string; pruned_at: string | null; missing_pages: number[] | null; page_dims_version: string | null; page_dims: Array<{ name: string; width: number | null; height: number | null }> | null }>(
+      `SELECT file, root, pruned_at, missing_pages, page_dims, page_dims_version FROM ${bsrc} WHERE id = ${p.add(id)}`,
+      p.values as any[],
+    );
+    if (!r) return [];
+    // The read-chapter cleanup deleted the file. page_dims is a CACHE and it outlives the pages it describes,
+    // so without this the reader would open a pruned chapter, lay out the right number of pages, and 404
+    // every single one of them. No pages is the truth.
+    if (r.pruned_at) return [];
+    // A page that is a placeholder in the file (lib/partial.ts) is marked here, inside bookPages rather than
+    // on the route, so the offline manifest and the Komga-compatible API see it as well as the reader. It
+    // stays a page -- it has a real image behind it and keeps its number -- the mark only says what the
+    // image is. Same idiom as `junk` on the route.
+    const missing = new Set(Array.isArray(r.missing_pages) ? r.missing_pages.map(Number) : []);
+    const contentVersion = await pageFileVersion(path.join(r.root || LIBRARY_ROOT, r.file)).catch(() => undefined);
+    const cleanup = await pageCleanupMetadata({ bookId: id, file: path.join(r.root || LIBRARY_ROOT, r.file), store: path.join(env.CONFIG_DIR, 'page-trash') });
+    const mark = <T extends { number: number }>(pg: T) => ({ ...pg,
+      ...(missing.has(pg.number) ? { missing: true as const } : {}),
+      ...(contentVersion ? { contentVersion } : {}),
+      ...(cleanup.removed.has(pg.number) ? { removed: true as const, restorable: cleanup.restorable.has(pg.number), junk: true, width: 32, height: 48 } : {}),
+    });
+    const stable = async <T>(listed: T[]): Promise<T[]> => {
+      const after = await pageFileVersion(path.join(r.root || LIBRARY_ROOT, r.file)).catch(() => undefined);
+      if (after !== contentVersion) throw Object.assign(new Error('The chapter changed while its page list was being read. Reload it.'), { statusCode: 409 });
+      return listed;
+    };
+    if (Array.isArray(r.page_dims) && r.page_dims.length && (!cleanup.revision || !contentVersion || r.page_dims_version === contentVersion)) {
+      return stable(r.page_dims.map((pd, i) => mark({ number: i + 1, fileName: pd.name, mediaType: mediaType(pd.name), width: pd.width ?? null, height: pd.height ?? null, sizeBytes: null })));
+    }
+    const dims = await cbzPageDims(`${r.root || LIBRARY_ROOT}/${r.file}`).catch(() => [] as Array<{ name: string; width: number | null; height: number | null }>);
+    // This is a cache, so a failed write must never hide readable pages; but once this call resolves a
+    // second reader should be able to use the cache instead of opening the archive again. Fire-and-forget
+    // made that ordering depend on database load and was exposed by the partial-chapter completion suite.
+    if (dims.length) await q('UPDATE lib_books SET pages = $1, page_dims = $2, page_dims_version = $4 WHERE id = $3', [dims.length, JSON.stringify(dims), id, contentVersion ?? null]).catch(() => {});
+    return stable(dims.map((pd, i) => mark({ number: i + 1, fileName: pd.name, mediaType: mediaType(pd.name), width: pd.width, height: pd.height, sizeBytes: null })));
+  },
+
+  // Next/previous compare (number, file) rather than number alone. Two chapters legitimately share a
+  // number -- a duplicate that merge deliberately keeps, or a manual renumber -- and comparing the number
+  // by itself then makes "next" arbitrary, and can hand back the chapter you are already reading.
+  // The tuple matches the ORDER BY number, file used everywhere else, so the reader walks one order.
+  bookNext: async (ctx: ViewCtx, id: string) => adjacentBook(ctx, id, 'next'),
+  bookPrevious: async (ctx: ViewCtx, id: string) => adjacentBook(ctx, id, 'prev'),
+
+  setReadProgress: async () => {}, // owned: read_progress is the source of truth (no native store to mirror to)
+
+  // Answers the scan's counts (v0.49.0): POST /api/refresh -- the admin hero's "Scan library now" -- says what
+  // it found instead of a bare "scanned".
+  scanLibrary: async () => persistScan(),
+
+  seriesThumbPath: (id: string) => `/img/lib/series/${encodeURIComponent(id)}/thumb`,
+  bookThumbPath: (id: string) => `/img/lib/books/${encodeURIComponent(id)}/thumb`,
+  bookPagePath: (id: string, n: number) => `/img/lib/books/${encodeURIComponent(id)}/page/${n}`,
+};

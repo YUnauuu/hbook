@@ -1,0 +1,39 @@
+{
+  "name": "hbook-desktop",
+  "productName": "hbook",
+  "version": "0.104.0",
+  "description": "hbook as a Windows/macOS app: the same server and web app, with the library on this PC.",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/main.js",
+  "author": "Angelo Shaheen <angeloshaheen@gmail.com>",
+  "license": "MPL-2.0",
+  "homepage": "https://hbook.com",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.check.json",
+    "stage": "node scripts/stage.mjs",
+    "pg-dist": "node scripts/pg-dist.mjs",
+    "engine-pack": "node engine/pack.mjs",
+    "start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir --publish never",
+    "dist": "npm run build && electron-builder --publish never",
+    "test": "node --import tsx --test --test-timeout=60000 \"test/*.test.mjs\" test/solver.contract.test.ts test/solver.pool.test.ts",
+    "test:solver": "node --import tsx --test --test-timeout=30000 test/solver.contract.test.ts",
+    "test:electron": "npm run build && electron out/test/solver.electron.test.js"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "puppeteer-core": "25.16.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

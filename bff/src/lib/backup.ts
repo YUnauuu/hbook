@@ -1,0 +1,407 @@
+// Built-in backup task: dumps the Postgres database and archives CONFIG_DIR, keeping the newest N runs.
+//
+// Deliberately NOT backed up: CACHE_DIR (content-addressed image cache — regenerated on demand and already
+// size-swept) and the downloaded-chapter dir (tens of GB of re-downloadable CBZs). What lives here is the
+// irreplaceable part: accounts, reading progress/history, favorites, collections, ratings, the catalog, and
+// the admin's art overrides + custom sites.
+//
+// pg_dump talks to the database over the network using DATABASE_URL — the container has no docker socket, so
+// it cannot exec into the db container. `postgresql-client` is installed in the runtime image for this.
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
+import { createWriteStream, type Dirent } from 'fs';
+import { createGzip } from 'zlib';
+import { randomBytes } from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
+import { env } from '../env';
+import { q, one } from './db';
+import { isDesktop, forDesktop, DESKTOP_FLOORS } from './desktop';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AdmZip = require('adm-zip');
+
+const run = promisify(execFile);
+
+/**
+ * A database URL without its password, and the password. Anything `new URL` cannot parse (the embedded
+ * image's socket DSN is one) comes back untouched with no password.
+ */
+export function splitPassword(url: string): { url: string; password: string | null } {
+  try {
+    const u = new URL(url);
+    if (!u.password) return { url, password: null };
+    const password = decodeURIComponent(u.password);
+    u.password = '';
+    return { url: u.toString(), password };
+  } catch {
+    return { url, password: null };
+  }
+}
+
+/**
+ * pg_dump as the desktop app runs it: the binary the shell bundles (PG_DUMP_PATH), and the password in the
+ * child's environment rather than on its command line.
+ *
+ * ⚠️ macOS `ps` shows every user's command lines, so a password inside the URL argument is readable by any
+ * other account on the Mac for as long as the dump runs. The shell already passes it as PGPASSWORD with a
+ * password-free URL; a URL that carries one anyway is split here so it still never reaches argv.
+ * Reintroduce by passing the URL through unsplit: backupSchedule.test.ts "the desktop dump keeps the password
+ * off the command line" and desktopBackup.test.ts find it in the arguments.
+ */
+export function desktopDumpCommand(args: string[], url: string, parent: NodeJS.ProcessEnv): {
+  bin: string; args: string[]; env: NodeJS.ProcessEnv;
+} {
+  const { url: bare, password } = splitPassword(url);
+  return {
+    bin: parent.PG_DUMP_PATH || 'pg_dump',
+    args: [...args, bare],
+    env: password ? { ...parent, PGPASSWORD: password } : { ...parent },
+  };
+}
+
+function desktopDump(args: string[]) {
+  const c = desktopDumpCommand(args, env.DATABASE_URL, process.env);
+  return spawn(c.bin, c.args, { env: c.env, windowsHide: true });
+}
+
+/** pg_dump → gzip → file. Plain SQL (not -Fc) on purpose: the bundled client is a newer major than the
+ *  server, and a newer custom-format archive can't be read by the older pg_restore. Plain SQL restores with
+ *  any psql (including the db container's own), which is what you actually want at 3am in a crisis. */
+function dumpSql(target: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const pg = isDesktop()
+      ? desktopDump(['--no-owner', '--no-acl', '--clean', '--if-exists'])
+      : spawn('pg_dump', ['--no-owner', '--no-acl', '--clean', '--if-exists', env.DATABASE_URL]);
+    const gz = createGzip();
+    const out = createWriteStream(target, { mode: RUN_FILE_MODE });
+    let stderr = '';
+    let exited: number | null = null;
+    // The write stream still finishes when pg_dump never ran at all -- an empty pipe closes cleanly and gzip
+    // emits its 20-byte header/trailer. Resolving on `finish` alone therefore called an absent pg_dump a
+    // success, which is how the all-in-one image shipped two releases writing empty archives. Both halves
+    // now have to agree: the process exited 0 AND the file closed.
+    const settle = () => { if (exited === 0 && out.closed) resolve(); };
+    pg.stderr.on('data', (d) => { stderr += String(d); });
+    pg.on('error', (e: NodeJS.ErrnoException) =>
+      reject(e?.code === 'ENOENT'
+        // Say which binary and where it comes from: the failure is a missing package in the image, not
+        // anything the operator did, and the message is the only thing they will have to go on.
+        ? new Error(forDesktop(
+          'pg_dump not found in the image — the backup task needs the postgresql client installed',
+          'The bundled database tools are missing; reinstall hbook.',
+        ))
+        : e));
+    out.on('error', reject);
+    gz.on('error', reject);
+    pg.on('close', (code) => {
+      exited = code;
+      if (code !== 0) reject(new Error(`pg_dump exited ${code}: ${stderr.slice(0, 500)}`));
+      else settle();
+    });
+    out.on('close', settle);
+    pg.stdout.pipe(gz).pipe(out);
+  });
+}
+
+/**
+ * CONFIG_DIR as a zip, for the desktop app. The server keeps `tar`.
+ *
+ * ⚠️ Not `tar` on the desktop: Windows has one (bsdtar in System32), but a `tar` found first on PATH is
+ * often Git for Windows' GNU tar, which reads `C:\…` as a remote host and fails. adm-zip is already here,
+ * is pure JavaScript, and the shell's "Restore backup…" unpacks .zip (and a server's .tar.gz).
+ * Written as `.part` and renamed, the same rule as the dump: a half-written archive must never look like one.
+ */
+export async function zipConfig(from: string, to: string, skip: string[] = []): Promise<void> {
+  const part = `${to}.part`;
+  try {
+    // Walked by hand rather than addLocalFolder: that stores directory entries with the platform separator
+    // (`series-art\` on Windows), and its async twin strips every non-ASCII character from the names. Here
+    // every entry is a file, named with `/`, spelled exactly as on disk. `skip` is backupSkips(): the backup
+    // folder, wherever it shows up inside this one, is never part of it.
+    const zip = new AdmZip();
+    const walk = async (dir: string, rel: string): Promise<void> => {
+      for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+        const name = rel ? `${rel}/${e.name}` : e.name;
+        if (skip.includes(name)) continue;
+        if (e.isDirectory()) await walk(path.join(dir, e.name), name);
+        else if (e.isFile()) zip.addFile(name, await fs.readFile(path.join(dir, e.name)));
+      }
+    };
+    await walk(from, '');
+    await fs.writeFile(part, zip.toBuffer(), { mode: RUN_FILE_MODE });
+    await fs.rename(part, to);
+  } catch (e) {
+    await fs.rm(part, { force: true }).catch(() => {});
+    throw e;
+  }
+}
+
+export interface BackupResult {
+  dir: string;
+  bytes: number;
+  ms: number;
+  /** true when the config archive was skipped because CONFIG_DIR held nothing */
+  configEmpty?: boolean;
+  /** dirSize could not measure the folder. Distinct from a genuinely empty one, which is a failure. */
+  sizeUnknown?: boolean;
+}
+
+/** UTC timestamp folder name, matching the host's existing <name>-<YYYYMMDD-HHMMSS> convention. */
+function stamp(d = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+}
+
+async function dirSize(dir: string): Promise<number> {
+  let total = 0;
+  for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) total += await dirSize(full);
+    else total += (await fs.stat(full)).size.valueOf();
+  }
+  return total;
+}
+
+/** The folders this task makes, one per run. Nothing else in BACKUP_DIR is ever pruned or left out. */
+const RUN_DIR = /^\d{8}-\d{6}$/;
+
+/**
+ * The most a backup may be readable by (v0.77.1): its folder 0750, its files 0640. A dump holds every account's password
+ * hash and API tokens, and the config archive holds jwt.secret, the key every session is signed with; under Docker's
+ * default umask both were 0644 in a 0755 folder, so anyone who could read the backup folder -- a shared NAS folder,
+ * another container's mount -- could read them. The group keeps read access on purpose, for a backup job that runs as
+ * another member of it. Modes only ever tighten: a stricter umask, or a mode someone set by hand, is kept.
+ */
+const RUN_DIR_MODE = 0o750;
+const RUN_FILE_MODE = 0o640;
+
+/** Take `p` down to at most `cap`, keeping its setgid and sticky bits (a group-inheriting share stays one). */
+async function tighten(p: string, cap: number): Promise<void> {
+  const mode = (await fs.stat(p)).mode;
+  const want = (mode & 0o7000) | (mode & cap);
+  if ((mode & 0o7777) !== want) await fs.chmod(p, want);
+}
+
+/**
+ * Every run folder in BACKUP_DIR and the files in it, down to RUN_DIR_MODE and RUN_FILE_MODE: the ones made before
+ * v0.77.1 too, which were written readable by everyone. Best effort, one entry at a time: a folder this process does
+ * not own (a restore made as root) is left as it is. Reintroduce by dropping a tighten: "a backup is readable by the
+ * app's user and group only" in backup.int.test.ts finds the earlier run, or this one's archive, readable by others.
+ */
+export async function tightenBackups(root = env.BACKUP_DIR): Promise<void> {
+  let runs: Dirent[];
+  try { runs = await fs.readdir(root, { withFileTypes: true }); } catch { return; }
+  for (const run of runs) {
+    if (!run.isDirectory() || !RUN_DIR.test(run.name)) continue;
+    const dir = path.join(root, run.name);
+    await tighten(dir, RUN_DIR_MODE).catch(() => {});
+    let files: Dirent[];
+    try { files = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const f of files) if (f.isFile()) await tighten(path.join(dir, f.name), RUN_FILE_MODE).catch(() => {});
+  }
+}
+
+/**
+ * The nightly switch and how many runs to keep, as Admin → Settings → Updates & schedules has them (v0.61.1, #199).
+ * `backup_keep` NULL is "what BACKUP_KEEP says" (14 unless set), so an install that set the variable keeps its number
+ * until someone saves one on that page. Unreadable settings read as the defaults, on and BACKUP_KEEP: a database hiccup
+ * must neither skip a night nor prune by a number nobody chose.
+ */
+export async function backupSettings(): Promise<{ enabled: boolean; keep: number }> {
+  const row = await one<{ enabled: boolean | null; keep: number | null }>(
+    'SELECT backup_enabled AS enabled, backup_keep AS keep FROM server_settings WHERE id = 1',
+  ).catch(() => null);
+  const keep = Number(row?.keep);
+  return { enabled: row?.enabled !== false, keep: Number.isInteger(keep) && keep >= 1 && keep <= 365 ? keep : env.BACKUP_KEEP };
+}
+
+/** A folder name as tar's --exclude matches it literally: both tars (BusyBox in the all-in-one, GNU in the API image)
+ *  read the pattern with fnmatch, where a backslash makes the next character plain. */
+export const globLiteral = (s: string): string => s.replace(/[\\*?[\]]/g, '\\$&');
+
+/**
+ * The server's config archive: `tar` over CONFIG_DIR, leaving out `skip` (backupSkips). `./name` because members are
+ * named `./…` under `-C dir .`, which also anchors the pattern: `./backups` leaves out that folder and never a
+ * `series-art/backups` or a `backupsX`. Both tars were run against these arguments, odd names included.
+ */
+export const configTarArgs = (to: string, from: string, skip: string[]): string[] =>
+  ['-czf', to, ...skip.map((s) => `--exclude=./${globLiteral(s)}`), '-C', from, '.'];
+
+/**
+ * What to leave out of the config archive: wherever this run's backup folder shows up inside CONFIG_DIR.
+ *
+ * #199: with the backup folder inside the config folder -- `/backups` and `/config` mapped to one host folder, or to a
+ * folder and one inside it -- every config archive carried every earlier backup, each of which carried the ones before
+ * it, so the folder grew exponentially however few runs were kept. Inside the container the two never look alike
+ * (`/backups` and `/config/backups` are two mounts of one host folder), and an inode cannot be trusted to say so:
+ * Unraid's shfs gives several disks one st_dev, and v0.48.2 dropped real folders on such a match. So the run looks for
+ * ITSELF: its folder holds a file with a random name (`marker`), and a folder under CONFIG_DIR through which that file
+ * is reached is the backup folder. Links are not followed, as tar follows none.
+ *
+ * A folder inside CONFIG_DIR is left out whole. CONFIG_DIR itself (both mapped to one folder) keeps its config and
+ * loses only the run folders. Relative paths, with `/`.
+ * Reintroduce by returning []: backup.int.test.ts "a backup folder inside the config folder" finds the earlier run
+ * inside the new archive.
+ */
+export async function backupSkips(configDir: string, runDir: string, marker: string): Promise<string[]> {
+  const run = path.basename(runDir);
+  const holdsThisRun = (dir: string) => fs.lstat(path.join(dir, run, marker)).then((st) => st.isFile(), () => false);
+  if (await holdsThisRun(configDir)) {
+    return (await fs.readdir(configDir, { withFileTypes: true })).filter((e) => e.isDirectory() && RUN_DIR.test(e.name)).map((e) => e.name);
+  }
+  const skips: string[] = [];
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    let entries: Dirent[];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = rel ? `${rel}/${e.name}` : e.name;
+      if (await holdsThisRun(path.join(dir, e.name))) skips.push(name);
+      else await walk(path.join(dir, e.name), name);
+    }
+  };
+  await walk(configDir, '');
+  return skips;
+}
+
+/** Delete all but the newest `keep` backup folders. Only touches dirs this task created. */
+export async function pruneBackups(keep = env.BACKUP_KEEP): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = (await fs.readdir(env.BACKUP_DIR, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && RUN_DIR.test(e.name))
+      .map((e) => e.name)
+      .sort(); // lexicographic == chronological for this format
+  } catch {
+    return [];
+  }
+  const doomed = entries.slice(0, Math.max(0, entries.length - keep));
+  for (const name of doomed) {
+    await fs.rm(path.join(env.BACKUP_DIR, name), { recursive: true, force: true }).catch(() => {});
+  }
+  return doomed;
+}
+
+/** Persist a failed run where the admin UI reads it. Without this the Tasks panel keeps showing the last
+ *  SUCCESSFUL backup, so an install whose backups have been broken for weeks still reports a healthy one --
+ *  which is exactly how a missing pg_dump went unnoticed across two releases. */
+async function recordFailure(e: unknown): Promise<void> {
+  const error = e instanceof Error ? e.message : String(e);
+  await q(
+    `UPDATE server_settings SET backup_last_run = now(), backup_last_result = $1 WHERE id = 1`,
+    [JSON.stringify({ error: error.slice(0, 500), failed: true })],
+  ).catch(() => {});
+}
+
+/** Dump the database + config into BACKUP_DIR/<stamp>/, then prune old runs. Throws on dump failure. */
+export async function runBackup(): Promise<BackupResult> {
+  const started = Date.now();
+  const dir = path.join(env.BACKUP_DIR, stamp());
+  try {
+    // 0750 as it is made (RUN_DIR_MODE), before anything is written into it.
+    await fs.mkdir(dir, { recursive: true, mode: RUN_DIR_MODE });
+  } catch (e) {
+    // The usual cause is a host directory bind-mounted at BACKUP_DIR that the app's user can't write.
+    // This runs unattended overnight, so say exactly how to fix it rather than leaving a bare errno.
+    if ((e as NodeJS.ErrnoException)?.code === 'EACCES' || (e as NodeJS.ErrnoException)?.code === 'EPERM') {
+      throw new Error(forDesktop(
+        `cannot write to ${env.BACKUP_DIR} — the backup directory must be writable by uid 10002. ` +
+          `If it is a host folder, run:  docker run --rm -v <that folder>:/b alpine chown 10002:10002 /b`,
+        `Can't write to ${env.BACKUP_DIR}; check your account can write to it.`,
+      ));
+    }
+    throw e;
+  }
+  // And taken down to it if the folder was already there.
+  await tighten(dir, RUN_DIR_MODE).catch(() => {});
+
+  try {
+    // Written as .part and renamed once pg_dump has exited 0 and the file has closed. A SIGKILL or OOM in the
+    // middle used to leave a partial db.sql.gz that `ls` and pruneBackups() both counted as a run.
+    await dumpSql(path.join(dir, 'db.sql.gz.part'));
+    await fs.rename(path.join(dir, 'db.sql.gz.part'), path.join(dir, 'db.sql.gz'));
+  } catch (e) {
+    // Leave nothing that looks like a backup. A directory holding a 20-byte archive reads as a successful
+    // run in `ls`, and rotation counts it, so a week of failures can push the last good dump out of KEEP.
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await recordFailure(e);
+    throw e;
+  }
+
+  // config: jwt.secret, sites.json, series-art/ overrides. Small; tar keeps permissions/layout intact.
+  // Never the backup folder, when it sits inside this one (#199, backupSkips): the marker lets the run find itself.
+  let configEmpty = false;
+  const marker = `.hbook-run-${randomBytes(8).toString('hex')}`;
+  try {
+    const items = await fs.readdir(env.CONFIG_DIR);
+    await fs.writeFile(path.join(dir, marker), '');
+    const skip = await backupSkips(env.CONFIG_DIR, dir, marker);
+    if (items.some((n) => !skip.includes(n))) {
+      if (isDesktop()) await zipConfig(env.CONFIG_DIR, path.join(dir, 'config.zip'), skip);
+      else await run('tar', configTarArgs(path.join(dir, 'config.tar.gz'), env.CONFIG_DIR, skip), { timeout: 5 * 60 * 1000 });
+    } else configEmpty = true;
+  } catch {
+    configEmpty = true; // no config dir mounted — the dump alone is still worth keeping
+  } finally {
+    await fs.rm(path.join(dir, marker), { force: true }).catch(() => {});
+  }
+  // tar writes its archive with the umask's mode; this run's files, and every earlier run's, end at 0640 at most.
+  await tightenBackups().catch(() => {});
+
+  // `bytes` is the ONLY health signal this task has ever shown, so it must never be able to report the
+  // failure value on a good run. `.catch(() => 0)` did exactly that: a readdir or stat hiccup inside dirSize
+  // rendered a complete backup as '0 B' -- the identical signal to the empty-archive bug this file was
+  // rewritten to prevent. `null` says "not measured", which is a different sentence from "nothing here".
+  const bytes = await dirSize(dir).catch(() => null);
+  // How many to keep is a setting since v0.61.1 (#199); the oldest beyond it go here, after a run, never on save.
+  await pruneBackups((await backupSettings()).keep).catch(() => {});
+  const res: BackupResult = { dir, bytes: bytes ?? 0, sizeUnknown: bytes === null, ms: Date.now() - started, configEmpty };
+
+  // persist last-run so the admin UI still reports it after a container restart (runtime.* is in-memory)
+  //
+  // configEmpty and sizeUnknown are carried through here on purpose. Both were computed and then dropped at
+  // this line, so a backup that had silently lost jwt.secret, sites.json and every series-art override was
+  // stored as, and displayed as, a clean run.
+  await q(
+    `UPDATE server_settings SET backup_last_run = now(), backup_last_result = $1 WHERE id = 1`,
+    [JSON.stringify({ bytes: res.bytes, ms: res.ms, dir: path.basename(dir), configEmpty: res.configEmpty, sizeUnknown: res.sizeUnknown })],
+  ).catch(() => {});
+  return res;
+}
+
+/** ms until the next occurrence of `hour` (local time), used to line nightly runs up with a wall clock. */
+export function msUntilHour(hour: number, now = new Date()): number {
+  const next = new Date(now);
+  next.setHours(hour, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * How long until the next backup should start.
+ *
+ * The server backs up at `hour` every night and nothing else: it is always on, so the hour always comes.
+ * A PC is not. One that is off at three in the morning, every night, would never back up at all -- so on
+ * the desktop, when the last run (or the last attempt this process made) is more than a day old, the backup
+ * runs shortly after the app starts instead of waiting for an hour it may sleep through again.
+ *
+ * `lastAttempt` is the in-memory stamp server.ts sets as each run starts. A failed run stamps the database
+ * too (recordFailure), so there is no retry loop -- but when the database is the thing that is down it
+ * cannot be stamped, and without the in-memory one every re-arm would try again in five minutes.
+ * With `desktop` off this is exactly `msUntilHour(hour)`, whatever the stamps say.
+ * Reintroduce by dropping the `o.desktop &&`: backupSchedule.test.ts "the server ignores a month-old stamp"
+ * gets five minutes.
+ */
+export function backupDelay(o: { hour: number; lastRun: number | null; lastAttempt: number; now: number; desktop: boolean }): number {
+  if (o.desktop && o.now - Math.max(o.lastRun ?? 0, o.lastAttempt) > DAY) return DESKTOP_FLOORS.backupCatchUp;
+  return msUntilHour(o.hour, new Date(o.now));
+}
+
+/**
+ * The first run of a job that should happen every `interval`, counted from its last stamp: whatever is left
+ * of the interval, never sooner than `floor`. No stamp (`last` 0) means now, at the floor.
+ */
+export const stampDelay = (o: { last: number; interval: number; floor: number; now: number }): number =>
+  Math.max(o.floor, o.last + o.interval - o.now);

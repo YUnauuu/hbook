@@ -1,0 +1,440 @@
+name: Release
+
+# Publishes multi-arch Docker images to GHCR when you push a version tag (e.g. `git tag v0.1.0 && git push --tags`).
+# Uses the built-in GITHUB_TOKEN plus the id-token for attestations. The published images are what make the
+# CasaOS/Unraid/Umbrel one-click manifests installable.
+#
+# Three things here are scars rather than style.
+#
+# Each architecture is built on a runner OF that architecture, and the two results are merged into one
+# index afterwards. Until v0.19.0 arm64 was cross-built under QEMU on an amd64 runner, and that broke four of
+# five releases: the native-module builds (sharp, mupdf, argon2) either hung until the timeout or died with
+# SIGILL, and `gh run rerun --failed` was the standing workaround. Native runners remove the cause; the
+# merge step is what keeps "one tag, both architectures" true.
+#
+# `timeout-minutes` exists because v0.7.0's web leg stalled inside QEMU and sat there for the full six-hour
+# GitHub maximum before anyone found out. A healthy build of either image is two to eight minutes.
+#
+# `:latest` is moved by a separate job that runs only after EVERY image has published under the version tag.
+# The legs are independent, so before this an image that built in two minutes would move its own `:latest`
+# while another was still going, and if that one then failed, `docker compose pull` handed people a bff from
+# one release and a web from another. v0.5.1 half-published this way and v0.7.0 did it again.
+#
+# Since v0.44.0 the same tag also builds hbook Desktop (beta): `desktop` runs desktop.yml -- installers built
+# and exercised on real Windows and macOS runners -- beside the images, never in front of them, and
+# `desktop-publish` attaches the installers to the Release this workflow just created. The Docker images do not
+# wait for the desktop build and a red desktop build never holds them back; it only means the Release carries no
+# desktop downloads until the desktop jobs are re-run.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+  # for the build provenance attestation
+  id-token: write
+  attestations: write
+
+env:
+  # image=tag-prefix pairs. Reuse the existing public AIO package for the optional worker: new GHCR
+  # packages start private, and repository permission inheritance does not make their visibility public.
+  IMAGE_TAG_PREFIXES: ghcr.io/yunauuu/hbook-bff= ghcr.io/yunauuu/hbook-web= ghcr.io/yunauuu/hbook= ghcr.io/yunauuu/hbook=title-extractor-
+
+jobs:
+  build:
+    name: build ${{ matrix.service }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      # Publish whichever image can be published: a failure in one leg should not cancel a working build of
+      # the other. `latest` is gated on all of them succeeding, so a half-publish cannot reach anyone via :latest.
+      fail-fast: false
+      matrix:
+        service: [bff, web, aio, title-extractor]
+        arch: [amd64, arm64]
+        include:
+          - { service: bff, image: ghcr.io/yunauuu/hbook-bff, context: ./bff,  file: ./bff/Dockerfile }
+          - { service: web, image: ghcr.io/yunauuu/hbook-web, context: ./web,  file: ./web/Dockerfile }
+          # The single-container build: the same API serving the web app itself. Its context is the repo
+          # root because it builds both halves.
+          - { service: aio, image: ghcr.io/yunauuu/hbook,     context: .,      file: ./Dockerfile.aio }
+          # Optional CPU inference image: no checkpoints, OCR pack or user data are baked in.
+          - { service: title-extractor, image: ghcr.io/yunauuu/hbook, context: ./services/title-extractor, file: ./services/title-extractor/Dockerfile, license: 'MPL-2.0 AND Apache-2.0' }
+          # Native runners, no emulation: ubuntu-24.04-arm is a real arm64 machine (free for public repos).
+          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out pinned title segmentation source
+        if: matrix.service == 'title-extractor'
+        uses: actions/checkout@v7
+        with:
+          repository: ymy-k/Hi-SAM
+          ref: 69009434d4dba5541f228d8f5acb0754c333d417
+          path: .title-extractor-source
+          persist-credentials: false
+      - name: Stage optional title extractor context
+        if: matrix.service == 'title-extractor'
+        id: title_context
+        run: |
+          title_context="$RUNNER_TEMP/title-extractor-context"
+          python3 scripts/title-art/build-worker.py --hi-sam-dir .title-extractor-source --prepare-context "$title_context"
+          echo "path=$title_context" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.service }} for ${{ matrix.arch }}, by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.title_context.outputs.path || matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/${{ matrix.arch }}
+          # No tag here: each architecture is pushed by digest and the merge job below writes the tag over
+          # both. A per-arch tag would be a moment where the tag pointed at one architecture only.
+          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          # OCI labels: what the GHCR package page shows, and how tooling traces an image back to its
+          # source and release. Absent until v0.9.2, so package pages had no description or licence.
+          labels: |
+            org.opencontainers.image.title=hbook (${{ matrix.service }})
+            org.opencontainers.image.description=Self-hosted manga & manhwa reader that also fetches — webtoon-first OLED PWA
+            org.opencontainers.image.source=https://github.com/YUnauuu/hbook
+            org.opencontainers.image.url=https://hbook.com
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=${{ matrix.license || 'MPL-2.0' }}
+      - name: Record the digest
+        # ⚠️ FAIL HERE RATHER THAN LATER. build-push-action only sets this output `if (digest)`, so a build
+        # that somehow succeeds without producing image metadata leaves it empty -- and this step used to
+        # write that empty string into the artifact the merge job reads back. `imagetools create` would then
+        # be handed a bare `image@` and the version tag could end up written over one architecture, or over
+        # nothing. That half-published-tag failure is not hypothetical: it happened at v0.5.1 and v0.7.0.
+        # The merge matrix is `fail-fast: false`, so a silent empty digest is exactly the shape that gets
+        # through. Reintroduce by deleting the guard: nothing else checks this value before it is used.
+        run: |
+          digest='${{ steps.build.outputs.digest }}'
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "::error::empty or malformed digest for ${{ matrix.service }}/${{ matrix.arch }}: '$digest'"; exit 1 ;;
+          esac
+          mkdir -p digests
+          echo "$digest" > "digests/${{ matrix.service }}-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.service }}-${{ matrix.arch }}
+          path: digests/*
+          retention-days: 1
+
+  # One index per image, written over both architectures' digests, and only then the version tag exists.
+  merge:
+    name: merge ${{ matrix.service }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: bff, image: ghcr.io/yunauuu/hbook-bff }
+          - { service: web, image: ghcr.io/yunauuu/hbook-web }
+          - { service: aio, image: ghcr.io/yunauuu/hbook }
+          - { service: title-extractor, image: ghcr.io/yunauuu/hbook, tag_prefix: title-extractor- }
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ matrix.service }}-*
+          path: digests
+          merge-multiple: true
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Write ${{ matrix.image }}:${{ matrix.tag_prefix }}${{ github.ref_name }} over both architectures
+        id: index
+        run: |
+          set -euo pipefail
+          ls digests
+          refs=""
+          for f in digests/${{ matrix.service }}-*; do refs="$refs ${{ matrix.image }}@$(cat "$f")"; done
+          docker buildx imagetools create -t "${{ matrix.image }}:${{ matrix.tag_prefix }}${{ github.ref_name }}" $refs
+          # Inspect ONCE into a variable and read from that. Piping the inspect into `grep -q` or an awk
+          # that exits early closes the pipe under it; buildx then dies of SIGPIPE, and with pipefail that
+          # is the step's exit status (255) -- which is exactly how the first run of this pipeline failed
+          # all three merges after every build had succeeded.
+          out=$(docker buildx imagetools inspect "${{ matrix.image }}:${{ matrix.tag_prefix }}${{ github.ref_name }}")
+          printf '%s\n' "$out"
+          # Both architectures must be in the index, or the tag is a half-publish with a new spelling.
+          for arch in amd64 arm64; do
+            grep -q "linux/$arch" <<<"$out" \
+              || { echo "::error::${{ matrix.image }}:${{ matrix.tag_prefix }}${{ github.ref_name }} has no linux/$arch"; exit 1; }
+          done
+          digest=$(awk '/^Digest:/ && !d {print $2; d=1}' <<<"$out")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "::notice title=${{ matrix.image }}:${{ matrix.tag_prefix }}${{ github.ref_name }}::$digest   (this is the digest an Umbrel manifest pins)"
+      # A signed statement, verifiable with `gh attestation verify oci://<image>:<tag> --owner AngeloSha`,
+      # that this index was built by this workflow from this commit.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ matrix.image }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+  # Only once EVERY image exists at this version does `latest` move. Re-tagging a manifest copies no layers,
+  # so this is a few seconds and cannot itself half-apply in a way that matters.
+  #
+  # ⚠️ AND ONLY FOR A REAL RELEASE. The trigger is `tags: ['v*']`, which matches v0.21.0-rc1 just as happily
+  # as v0.21.0 -- so without this guard the first release candidate ever tagged would retag `:latest` onto
+  # itself and hand a prerelease to every self-hoster who pulls `latest`, silently and immediately. A
+  # prerelease is exactly a tag with a hyphen after the version (semver's build/prerelease separator), so
+  # that is the test. The version tag itself is still published for an rc, which is the whole point of
+  # cutting one: you can pull ghcr.io/…:v0.21.0-rc1 by name and nobody else is affected.
+  latest:
+    needs: merge
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point latest at ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for entry in $IMAGE_TAG_PREFIXES; do
+            img=${entry%=*}; prefix=${entry#*=}
+            echo "retagging $img:${prefix}${GITHUB_REF_NAME} -> :${prefix}latest"
+            docker buildx imagetools create -t "$img:${prefix}latest" "$img:${prefix}${GITHUB_REF_NAME}"
+          done
+      - name: Verify every image resolves to the same digest under both tags
+        run: |
+          set -euo pipefail
+          # No early-exiting awk on a pipe from buildx: see the merge job for why.
+          digest_of() { local out; out=$(docker buildx imagetools inspect "$1"); awk '/^Digest:/ && !d {print $2; d=1}' <<<"$out"; }
+          for entry in $IMAGE_TAG_PREFIXES; do
+            img=${entry%=*}; prefix=${entry#*=}
+            v=$(digest_of "$img:${prefix}${GITHUB_REF_NAME}")
+            l=$(digest_of "$img:${prefix}latest")
+            echo "$img  version=$v  latest=$l"
+            [ -n "$v" ] && [ "$v" = "$l" ] || { echo "::error::$img latest does not match ${GITHUB_REF_NAME}"; exit 1; }
+          done
+
+  # A tag publishes the images. It does NOT publish a GitHub Release -- those are a separate object, and for
+  # the whole life of this project they were created by hand. Three in a row were missed (v0.22.0, v0.23.0,
+  # v0.24.0 all shipped and deployed while the Releases page still said v0.21.0), which is not a cosmetic
+  # gap: the README's "latest release" badge reads Releases and not tags, so the front page advertised a
+  # version three behind, and docs/INSTALL.md tells people to watch Releases to know when to pull.
+  #
+  # It runs after `merge`, never before: a Release announcing images that failed to publish is worse than no
+  # Release. It is NOT gated on `latest` -- a prerelease tag should still get its own entry, marked as one.
+  release:
+    needs: merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The only job that writes to the repo. Scoped here rather than widened at the top of the file, so
+      # nothing else in this workflow gains the ability to push.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish the GitHub Release for ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          # The notes are the CHANGELOG section for this version -- one source of truth, so a release cannot
+          # describe something different from the file everyone reads. `--generate-notes` is the fallback for
+          # a tag with no entry (an rc, typically), rather than publishing an empty body.
+          flag='${{ contains(github.ref_name, '-') && '--prerelease' || '--latest' }}'
+          awk -v v="$ver" '$0 ~ "^## v" v " " {f=1; next} /^## v/ {f=0} f' CHANGELOG.md > notes.md || true
+
+          # Idempotent on purpose. A release run gets re-run by hand often enough here -- a flaked leg, a
+          # registry hiccup -- and `gh release create` fails outright on a tag that already has one, which
+          # would turn a successful retry into a red pipeline for no reason.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release already exists; updating it in place"
+            action=edit
+          else
+            action=create
+          fi
+
+          if [ -s notes.md ]; then
+            title=$(awk '/^### /{sub(/^### /,""); print; exit}' notes.md)
+            echo "notes: $(wc -l < notes.md) lines from CHANGELOG.md"
+            gh release "$action" "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME: ${title:-$GITHUB_REF_NAME}" \
+              --notes-file notes.md $flag
+          elif [ "$action" = create ]; then
+            # An rc tag, typically: no CHANGELOG entry yet. Better a generated body than an empty one.
+            echo "::warning::no CHANGELOG section for $ver; generating notes from commits"
+            gh release create "$GITHUB_REF_NAME" --generate-notes $flag
+          else
+            echo "::warning::no CHANGELOG section for $ver; leaving the existing release untouched"
+          fi
+
+  # hbook Desktop (beta): desktop.yml builds the Windows installer and both macOS builds, each on its own
+  # runner (no cross-building, the same rule as the images), and runs the product checks there -- first run,
+  # the sign-in handshake, a real download read in the window, the extension engine, quit and relaunch, the
+  # Windows update over a running app. Nothing in it publishes.
+  #
+  # ⚠️ NO `needs`, on purpose, and nothing may ever need it except desktop-publish. It takes 30-60 minutes on
+  # three OSes and depends on things the images do not (a live MangaDex in the product smoke, macOS runner
+  # capacity); the images are two to eight minutes and are what every existing install pulls. Reintroduce by
+  # adding `needs: build` here or `needs: desktop` to `latest` or `release`: a macOS queue then holds up
+  # `:latest` for everyone.
+  desktop:
+    name: Desktop app
+    uses: ./.github/workflows/desktop.yml
+    permissions:
+      contents: read
+
+  # Attaches what `desktop` built to the Release `release` just created. It needs BOTH: the Release must exist
+  # (made from the CHANGELOG by the job above), and every desktop leg must be green -- a Release offering the
+  # Windows installer but no Mac one, or an installer without its update feed, is worse than a Release with no
+  # desktop section yet. A red desktop build therefore leaves the Release as the images alone; re-running the
+  # failed jobs finishes it.
+  #
+  # ⚠️ ORDER. electron-updater on Windows asks GitHub for the latest release, downloads latest.yml from it, then
+  # downloads the installer latest.yml names and checks it against the SHA-512 in the feed. Upload the feed first
+  # and, for those seconds, every Windows install that checks is handed a file that 404s. So the installers and
+  # blockmaps go up first, and latest.yml / latest-mac.yml last, in a call of their own (gh uploads the files of
+  # one call in parallel, so "later in the list" is not "later").
+  desktop-publish:
+    name: Attach the desktop app to the release
+    needs: [release, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Scoped here like the release job's; the workflow as a whole stays read-only.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # ⚠️ Before anything is downloaded or uploaded: an app whose engine-pin.json names no published pack tells
+      # every user "the extension engine download is not available", and every desktop check passes anyway (the
+      # smokes build their own pack). Push the engine-v* tag and commit pin-engine.mjs's pin BEFORE the v* tag.
+      - name: The extension engine is pinned to a published pack
+        run: node desktop/scripts/release/check-pin.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          # One folder per platform: both macOS legs write a file called latest-mac.yml.
+          pattern: desktop-dist-*
+          path: dist
+      - name: Check every installer against its update feed, and merge the two macOS feeds
+        run: |
+          set -euo pipefail
+          ls -laR dist
+          ver="${GITHUB_REF_NAME#v}"
+          # The installers are named from desktop/package.json. desktopParity.test.ts holds that equal to
+          # bff/package.json; this holds it equal to the TAG, which nothing else does. An rc tag (v0.45.0-rc1) may
+          # carry the plain version, because nobody bumps package.json for an rc.
+          dv=$(node desktop/scripts/release/check-feed.mjs dist/desktop-dist-win-x64/latest.yml dist/desktop-dist-win-x64)
+          if [ "$dv" != "$ver" ] && [ "$dv" != "${ver%%-*}" ]; then
+            echo "::error::the desktop build is $dv but the tag is $GITHUB_REF_NAME -- bump desktop/package.json with the other versions"
+            exit 1
+          fi
+          node desktop/scripts/release/check-feed.mjs dist/desktop-dist-mac-arm64/latest-mac.yml dist/desktop-dist-mac-arm64 --version "$dv"
+          node desktop/scripts/release/check-feed.mjs dist/desktop-dist-mac-x64/latest-mac.yml dist/desktop-dist-mac-x64 --version "$dv"
+          mkdir -p feeds
+          cp dist/desktop-dist-win-x64/latest.yml feeds/latest.yml
+          node desktop/scripts/release/merge-latest-mac.mjs --out feeds/latest-mac.yml --version "$dv" \
+            dist/desktop-dist-mac-arm64/latest-mac.yml dist/desktop-dist-mac-x64/latest-mac.yml
+          # The files the notes below link to, by name.
+          for f in "win-x64/hbook-Setup-$dv.exe" "mac-arm64/hbook-$dv-arm64.dmg" "mac-x64/hbook-$dv-x64.dmg"; do
+            [ -s "dist/desktop-dist-$f" ] || { echo "::error::dist/desktop-dist-$f is missing"; exit 1; }
+          done
+          # Permanent download links (since v0.45.0): the same three files again under names with no version in
+          # them, so https://github.com/<repo>/releases/latest/download/hbook-Setup.exe always serves the
+          # newest installer -- the README, docs/DESKTOP.md and hbook.com/download link to exactly these, and
+          # releasePipeline.test.ts holds every such link to a name uploaded here. The versioned names above stay
+          # what the update feeds name (electron-updater downloads the file latest.yml names; the copies are
+          # never in a feed). Copies of the checked files, byte for byte, so the Mac download notice
+          # (updates.js matches any asset ending -arm64.dmg / -x64.dmg) is handed the same dmg whichever it finds.
+          # Outside dist/ on purpose: the upload below finds its files there, and these are named explicitly.
+          # ⚠️ "latest" is whichever Release the `release` job made last, and this job runs 30-60 minutes after
+          # it: until it finishes (or while a red desktop leg waits for a re-run) the permanent links 404. The
+          # docs say so and point at the releases page for that window.
+          mkdir -p permanent
+          cp "dist/desktop-dist-win-x64/hbook-Setup-$dv.exe" permanent/hbook-Setup.exe
+          cp "dist/desktop-dist-mac-arm64/hbook-$dv-arm64.dmg" permanent/hbook-mac-arm64.dmg
+          cp "dist/desktop-dist-mac-x64/hbook-$dv-x64.dmg" permanent/hbook-mac-x64.dmg
+          echo "DESKTOP_VERSION=$dv" >> "$GITHUB_ENV"
+      - name: Upload the installers, then the update feeds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t bins < <(find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' \) | sort)
+          printf '%s\n' "${bins[@]}"
+          [ "${#bins[@]}" -ge 5 ] || { echo "::error::expected at least the exe and two dmg + zip pairs"; exit 1; }
+          # --clobber: a re-run replaces its own earlier upload instead of failing on it. The permanent copies go
+          # up with the installers: no feed names them, so they have no place in the ORDER below.
+          gh release upload "$GITHUB_REF_NAME" --clobber "${bins[@]}" permanent/hbook-Setup.exe permanent/hbook-mac-arm64.dmg permanent/hbook-mac-x64.dmg
+          # Last, and on their own. Reintroduce by folding this into the call above: see ORDER in the job comment.
+          gh release upload "$GITHUB_REF_NAME" --clobber feeds/latest.yml feeds/latest-mac.yml
+      - name: Add the desktop downloads to the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="$DESKTOP_VERSION"
+          dl="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          docs="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME"
+          gh release view "$GITHUB_REF_NAME" --json body --jq .body > body.md
+          # Idempotent: the section a previous run added is dropped before it is added again (and the blank lines
+          # it leaves at the end with it), so a re-run never stacks two. The release job rewrites the body from the
+          # CHANGELOG on a full re-run anyway; this covers re-running only this job.
+          awk '/<!-- desktop-beta:start -->/ {skip=1}
+               !skip { if ($0 == "") blank++; else { while (blank) { print ""; blank-- } print } }
+               /<!-- desktop-beta:end -->/ {skip=0}' body.md > notes.md
+          cat >> notes.md <<EOF
+
+          <!-- desktop-beta:start -->
+          ## hbook Desktop (beta): downloads
+
+          hbook as a program on your own computer, for Windows and Mac. On first launch it asks how you want to
+          use it: **on this computer** (the whole app, with the library in a folder on your PC and no Docker or
+          server to run) or **connected to your own hbook server** (a window onto the server you already run).
+
+          | Your computer | Download |
+          |---|---|
+          | Windows (x64) | [hbook-Setup-$v.exe]($dl/hbook-Setup-$v.exe) |
+          | Mac with Apple silicon (M1 or newer) | [hbook-$v-arm64.dmg]($dl/hbook-$v-arm64.dmg) |
+          | Mac with an Intel processor | [hbook-$v-x64.dmg]($dl/hbook-$v-x64.dmg) |
+
+          Only those three are for you: the .zip, .blockmap and latest*.yml files are what the app's own updater
+          reads. The same installers are also here under names without a version (hbook-Setup.exe,
+          hbook-mac-arm64.dmg, hbook-mac-x64.dmg), which always lead to the newest release.
+
+          The app is not signed yet, so the first launch takes one extra step:
+
+          - **Windows:** "Windows protected your PC" appears once. Choose **More info**, then **Run anyway**. A PC
+            with **Smart App Control** turned on blocks unsigned apps with no way past it; use the Docker install there.
+          - **macOS:** open the dmg and drag hbook to Applications. The first time you open it, macOS refuses;
+            go to **System Settings → Privacy & Security** and choose **Open Anyway**.
+
+          Windows installs updates by itself. A Mac cannot update an unsigned app, so there a new version is a new
+          download; the menu-bar icon and Admin → Health say when one is out.
+
+          Step by step, with pictures -- which file, the first launch on each system, the two ways to use it, adding
+          sources, updates, backups, where files live and uninstalling:
+          [the desktop guide]($docs/docs/DESKTOP.md).
+          <!-- desktop-beta:end -->
+          EOF
+          gh release edit "$GITHUB_REF_NAME" --notes-file notes.md

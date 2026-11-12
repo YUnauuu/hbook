@@ -1,0 +1,260 @@
+name: CI
+
+# Builds the application images and optional CPU title extractor, and runs the test suites on every pull request
+# (and on pushes to main). A green build proves deps install and the app compiles:
+# `tsc` for the BFF and `next build` for the web app. The Tests job additionally
+# proves behaviour — including the reading-progress rules, which are enforced in
+# SQL and so run against a real Postgres.
+# All five jobs are required to pass before a PR can be merged into main (branch protection). Until
+# 2026-08-25 only the two build jobs were required, which made the entire test tier advisory: a PR with
+# failing tests could merge as long as the code compiled. The split builds stay required even though that
+# layout is deprecated: it is still published, so it still has to compile.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Pull requests: cancel superseded runs, since only the latest push matters.
+  # main: never cancel. The Tests job runs close to an hour, see the test job (integration tests are serial
+  # against a real Postgres on purpose), so two commits landing inside that window used to kill the earlier
+  # run mid-job -- and GitHub renders a *cancelled* run as a red "failing" badge even when every job that
+  # finished had passed. That badge is the first line of the README.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOCKER_BUILDKIT: "1"
+
+jobs:
+  build-bff:
+    name: Build BFF
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the BFF image
+        run: docker build -t hbook-bff:ci ./bff
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the web image
+        run: docker build -t hbook-web:ci ./web
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Chapter uploads stream through the split web proxy
+        env:
+          TEST_UPLOAD_PROXY_IMAGE: hbook-web:ci
+        run: node --test web/test/uploadProxy.test.mjs
+
+  build-aio:
+    name: Build All-in-one
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the single-container image
+        run: docker build -f Dockerfile.aio -t hbook:ci .
+
+  title-extractor:
+    name: Title extractor (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check out pinned title segmentation source
+        uses: actions/checkout@v7
+        with:
+          repository: ymy-k/Hi-SAM
+          ref: 69009434d4dba5541f228d8f5acb0754c333d417
+          path: .title-extractor-source
+          persist-credentials: false
+      - name: Test extraction boundaries without checkpoints
+        run: |
+          python -m pip install -r services/title-extractor/requirements.txt
+          python -m unittest discover -s services/title-extractor -p 'test_*.py'
+          python -m unittest discover -s scripts/title-art -p 'test_*.py'
+      - name: Build the optional inference image without models
+        run: |
+          title_context="$RUNNER_TEMP/title-extractor-context"
+          python scripts/title-art/build-worker.py --hi-sam-dir .title-extractor-source --prepare-context "$title_context"
+          docker build -t hbook-title-extractor:ci "$title_context"
+      - name: Missing checkpoints fail closed without a published port
+        run: |
+          docker run -d --name hbook-title-extractor-ci --network none --read-only --tmpfs /tmp:rw,size=134217728 \
+            --cap-drop ALL --security-opt no-new-privileges --memory 4g \
+            -e TITLE_EXTRACTOR_TOKEN=ci-only-title-extractor-token-00000000 hbook-title-extractor:ci
+          docker exec -i hbook-title-extractor-ci python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          def request(auth):
+              req = urllib.request.Request('http://127.0.0.1:3081/healthz', headers={'authorization': 'Bearer ' + os.environ['TITLE_EXTRACTOR_TOKEN']} if auth else {})
+              try:
+                  with urllib.request.urlopen(req, timeout=2) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as error:
+                  return error.code, json.load(error)
+          for attempt in range(30):
+              try:
+                  assert request(False)[0] == 401
+                  status, body = request(True)
+                  assert status == 503 and body['ready'] is False
+                  break
+              except (OSError, urllib.error.URLError):
+                  time.sleep(1)
+          else:
+              raise RuntimeError('Private worker did not answer')
+          PY
+      - name: Remove the disposable inference container
+        if: always()
+        run: docker rm -f hbook-title-extractor-ci || true
+
+  # The web tier had one test file and CI proved only that it compiles, which is how four user-facing bugs
+  # shipped in v0.8.0 -- all of them routes wired to the wrong thing, none of them visible to a test that
+  # imports a function and calls it. This brings the app up for real and drives it in a browser.
+  e2e:
+    name: Browser end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install browser tooling
+        working-directory: ./web
+        run: npm ci --no-audit --no-fund
+      - name: Build the exact browser AIO image once
+        run: docker build -f Dockerfile.aio -t hbook:e2e-ci .
+      - name: Bring it up and drive it
+        working-directory: ./web
+        run: KEEP=1 E2E_SKIP_BUILD=1 E2E_IMAGE=hbook:e2e-ci E2E_TITLE_EXTRACTION=1 npm run test:e2e
+      - name: Chapter selection and manual source matching
+        working-directory: ./web
+        run: node test/e2e/backlogWalk.mjs
+      - name: Reversible page cleanup and rule confirmations
+        working-directory: ./web
+        run: node test/e2e/pageCleanupWalk.mjs
+      - name: Manga title logos and styled fallbacks
+        working-directory: ./web
+        run: node test/e2e/titleArtWalk.mjs
+      - name: Library title artwork scan and progress
+        working-directory: ./web
+        run: node test/e2e/titleLogoScanWalk.mjs
+      - name: Extract and review title artwork from a cover
+        working-directory: ./web
+        run: node test/e2e/titleExtractionWalk.mjs
+      - name: Correct title transparency with precise brushes
+        working-directory: ./web
+        run: node test/e2e/titleMaskWalk.mjs
+      - name: Schedule cover titles and review generated artwork
+        working-directory: ./web
+        run: node test/e2e/coverTitleBatchWalk.mjs
+      # Machine-assisted translation fails in two ways a unit test cannot see: a string longer than its
+      # container, and a right-to-left language rendered inside a left-to-right frame. Both need a browser.
+      - name: Every language renders, and Arabic mirrors
+        working-directory: ./web
+        run: npm run test:i18n
+      # The same browser suite against the one-container layout: no Postgres container, DATABASE_URL unset,
+      # the image running its own database. A second STEP rather than a matrix, on purpose: the job's name
+      # is one of the five required status checks, and a matrix renames it.
+      - name: Bring it up again with the embedded database, and drive it
+        working-directory: ./web
+        run: E2E_SKIP_BUILD=1 E2E_IMAGE=hbook:e2e-ci E2E_EMBEDDED=1 E2E_NET=hbook-e2e-embedded E2E_PORT=18141 E2E_SUBNET=10.222.1.0/24 npm run test:e2e
+      - name: Drive every v0.55.8 feature phase on that image
+        working-directory: ./web
+        run: E2E_IMAGE=hbook:e2e-ci bash test/e2e/run-v558.sh
+      - name: Tear it down
+        if: always()
+        run: |
+          docker rm -f hbook-e2e hbook-e2e-db hbook-e2e-fake-a hbook-e2e-fake-b hbook-e2e-title-extractor \
+            hbook-e2e-embedded hbook-e2e-embedded-fake-a hbook-e2e-embedded-fake-b || true
+          docker ps -aq --filter 'name=^/hbook-e2e-v558-' | xargs -r docker rm -f -v || true
+          docker network rm hbook-e2e hbook-e2e-embedded || true
+          docker network rm hbook-e2e-v558-librarysort hbook-e2e-v558-homelists \
+            hbook-e2e-v558-anilistprivacy hbook-e2e-v558-bulkdelete || true
+      - name: Keep the screenshots when it fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots
+          path: |
+            web/test/e2e/shots/
+            web/test/e2e/shots-i18n/
+            web/test/e2e/shots-backlog/
+            web/test/e2e/shots-page-cleanup/
+            web/test/e2e/shots-title-art/
+            web/test/e2e/shots-title-logo-scan/
+            web/test/e2e/shots-title-extraction/
+            web/test/e2e/shots-title-mask/
+            web/test/e2e/shots-cover-title-batch/
+            web/test/e2e/shots-v558/
+          retention-days: 7
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    # ⚠️ The job grew with the suite while the bff files ran one after another on one database: 38-39 minutes
+    # on every green run 2026-09-17..19, 54-58 minutes 2026-09-25..26 -- and v0.48.4's first run was cancelled at
+    # the old 60, one second after its last test passed. Since v0.49.0 the bff files run three at a time, each on
+    # a fresh database of its own (bff/test/run-shards.mjs), which is what brings it back down. The limit stays
+    # where the one-at-a-time run needed it, so a slow runner is not a red run: a hung test used to sit for
+    # GitHub's 360-minute default. Pinned by releasePipeline.test.ts, with the build jobs' timeouts.
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: hbook_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # the reading-progress rules live in SQL, so those tests need a real database
+      TEST_DATABASE_URL: postgres://test:test@127.0.0.1:5432/hbook_test
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # `npm ci`, not `npm install`: install may resolve differently from package-lock.json and rewrites it on
+      # the runner, so a Dependabot lockfile bump (#57) was never what CI actually tested. ci fails instead.
+      # Three files at a time, each on a database of its own (see the timeout above); `npm test` is still the
+      # one-database run, for a laptop.
+      - name: BFF tests
+        working-directory: ./bff
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:ci
+      - name: Development database initialization and existing-volume compatibility
+        working-directory: ./bff
+        run: TEST_DEV_DB_INIT=1 node --import tsx --test test/devDbInit.test.ts
+      - name: Web tests
+        working-directory: ./web
+        run: |
+          npm ci --no-audit --no-fund
+          npm test

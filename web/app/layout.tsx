@@ -1,0 +1,81 @@
+import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
+// ⚠️ These are `--ff-*`, not `--font-*`, and that is load-bearing under Tailwind v4. A `@theme` entry named
+// `--font-sans` both defines the token and emits the custom property, so a next/font variable of the SAME
+// name lands on <html> as `--font-sans: <face>` while the theme says `--font-sans: var(--font-sans), ...`
+// -- self-referential, resolving to nothing, and every piece of text falls back to the browser default.
+import './globals.css';
+import { Providers } from './providers';
+import { AppShell } from '@/components/AppShell';
+import { TONE_BOOT } from '@/lib/tone';
+
+// Self-hosted rather than next/font/google: that fetches from fonts.gstatic.com at BUILD time, so a blip
+// there fails the image build outright -- which is how v0.5.1 shipped half-published, with the API image
+// pushed and the web image not. These are the same latin-subset variable files Google serves; keeping them
+// in the repo also means the image builds behind a firewall and with no third-party call.
+const display = localFont({
+  src: './fonts/SpaceGrotesk-latin.woff2',
+  variable: '--ff-display',
+  display: 'swap',
+  weight: '300 700',
+});
+const sans = localFont({
+  src: './fonts/Inter-latin.woff2',
+  variable: '--ff-sans',
+  display: 'swap',
+  weight: '100 900',
+});
+const brand = localFont({
+  src: './fonts/Unbounded-latin.woff2',
+  variable: '--ff-brand',
+  display: 'swap',
+  weight: '600 800',
+});
+
+const titleAction = localFont({ src: './fonts/BarlowCondensed-Bold.woff2', variable: '--ff-title-action', display: 'swap', weight: '700', preload: false });
+const titleFantasy = localFont({ src: './fonts/Cinzel-latin.woff2', variable: '--ff-title-fantasy', display: 'swap', weight: '400 900', preload: false });
+
+export const metadata: Metadata = {
+  title: 'hbook — your self-hosted manga server',
+  description: 'Read, download and keep up with your manga, manhwa and webtoons, on your own server.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'hbook' },
+  icons: { icon: '/icons/favicon.png', apple: '/icons/apple-touch-icon.png' },
+  openGraph: {
+    title: 'hbook',
+    description: 'Read, download and keep up with your manga, manhwa and webtoons, on your own server.',
+    images: ['/art/og.jpg'],
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image', title: 'hbook', images: ['/art/og.jpg'] },
+};
+
+// ⚠️ No `themeColor` here: TONE_BOOT (below) makes the theme-color meta. Next re-renders the viewport's metadata on every
+// client-side navigation, which put a phone's browser bar back to black under Graphite and Midnight at the first click,
+// and a meta React renders itself is matched at hydration by its content: once the boot script had coloured it, React
+// added a second one (both caught by e2e/run.mjs "look settings"). One that React never rendered, it leaves alone.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    // suppressHydrationWarning: TONE_BOOT may have put `data-tone` on <html> before React hydrates it, on purpose.
+    <html lang="en" className={`${display.variable} ${sans.variable} ${brand.variable} ${titleAction.variable} ${titleFantasy.variable}`} suppressHydrationWarning>
+      <head>
+        {/* The reader's background tone from the device's copy, and the browser bar's colour, while the page is still
+            being parsed: without it a Graphite or Midnight reader saw true black until the app booted (lib/tone.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: TONE_BOOT }} />
+      </head>
+      <body>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
+      </body>
+    </html>
+  );
+}

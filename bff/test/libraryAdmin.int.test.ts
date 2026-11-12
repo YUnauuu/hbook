@@ -1,0 +1,262 @@
+// Hiding and merging series, at the level where the data actually moves.
+//
+// The interesting cases are collisions. Favourites, ratings, series_seen and collection membership are all
+// keyed on (something, series_id), so a user who had BOTH copies of a series would violate a primary key on
+// a naive UPDATE. And mergeSeries on its own does not de-duplicate chapters: deleting a chapter row forces
+// two read_progress rows to be folded into one, which is how you silently mark something unread and then
+// push that to someone's AniList account. Since v0.57.0 the merge route and Fix everything ask it to
+// (`keepOnce`), under the rules extraCopies.int.test.ts pins; these call it as Rescan everything does.
+//
+// Skipped automatically unless TEST_DATABASE_URL is set (CI provides a throwaway Postgres service).
+import test, { before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+
+const DSN = process.env.TEST_DATABASE_URL;
+if (DSN) {
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  // The follower limit these tests count to. Three by default since v0.80.0 (lib/followLimit.ts, pinned in
+  // followLimit.test.ts); the rules here are the same at any limit, and these fixtures measure them at two.
+  process.env.MAX_FOLLOWED_SOURCES = '2';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+}
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+let q: <T = any>(sql: string, params?: any[]) => Promise<T[]>;
+let admin: typeof import('../src/lib/libraryAdmin');
+
+const A = 's_la_keep', B = 's_la_absorb';
+const users: string[] = [];
+
+async function seed() {
+  for (const [id, title] of [[A, 'Keeper'], [B, 'Absorbed']] as const) {
+    await q(
+      `INSERT INTO lib_series (id, source, title, folder, books_count) VALUES ($1,'T!la',$2,$1,0)
+       ON CONFLICT (id) DO UPDATE SET deleted_at = NULL, merged_into = NULL, title = EXCLUDED.title`,
+      [id, title],
+    );
+  }
+  for (const [sid, n] of [[A, 1], [A, 2], [B, 3], [B, 4]] as const) {
+    await q(
+      `INSERT INTO lib_books (id, series_id, source, file, number, title, mtime, root)
+       VALUES ($1,$2,'T!la',$3,$4,$1,$5,'/library')
+       ON CONFLICT (id) DO UPDATE SET series_id = EXCLUDED.series_id`,
+      [`b_la_${n}`, sid, `T!la/${sid}/ch${n}.cbz`, n, 1000 * n],
+    );
+  }
+}
+
+async function wipe() {
+  for (const t of ['read_progress', 'reading_events', 'favorites', 'ratings', 'series_seen', 'collection_items', 'notes', 'offline_downloads', 'series_trackers']) {
+    await q(`DELETE FROM ${t} WHERE series_id = ANY($1)`, [[A, B]]).catch(() => {});
+  }
+  await q(`DELETE FROM lib_books WHERE series_id = ANY($1)`, [[A, B]]);
+  await q(`DELETE FROM lib_series WHERE id = ANY($1)`, [[A, B]]);
+}
+
+before(async () => {
+  if (!DSN) return;
+  const { migrate } = await import('../src/lib/migrate');
+  ({ q } = (await import('../src/lib/db')) as any);
+  admin = await import('../src/lib/libraryAdmin');
+  await migrate();
+  for (const name of ['la_one', 'la_two']) {
+    // uq_users_username is a PARTIAL unique index (WHERE username IS NOT NULL), so a bare ON CONFLICT
+    // (username) does not match it. Simpler to make the fixture from scratch each run.
+    await q(`DELETE FROM users WHERE username = $1`, [name]);
+    const r = await q<{ id: string }>(
+      `INSERT INTO users (display_name, username, role, password_hash, auth_kind)
+       VALUES ($1,$1,'user','x','password') RETURNING id`,
+      [name],
+    );
+    users.push(r[0].id);
+  }
+});
+
+beforeEach(async () => { if (DSN) { await wipe(); await seed(); } });
+
+after(async () => {
+  if (!DSN) return;
+  await wipe().catch(() => {});
+  await q(`DELETE FROM users WHERE username = ANY($1)`, [['la_one', 'la_two']]).catch(() => {});
+});
+
+const booksOf = (id: string) => q(`SELECT id FROM lib_books WHERE series_id = $1 ORDER BY id`, [id]);
+const seriesRow = (id: string) => q(`SELECT * FROM lib_series WHERE id = $1`, [id]).then((r) => r[0]);
+
+test('delete: hides the series, keeps the chapters and the reading history', { skip }, async () => {
+  await q(
+    `INSERT INTO read_progress (user_id, book_id, series_id, page, completed) VALUES ($1,'b_la_1',$2,9,false)`,
+    [users[0], A],
+  );
+  await q(
+    `INSERT INTO reading_events (user_id, series_id, book_id, page, completed) VALUES ($1,$2,'b_la_1',9,true)`,
+    [users[0], A],
+  );
+  await q(`INSERT INTO series_trackers (series_id, provider, external_id) VALUES ($1,'anilist','123')`, [A]);
+
+  const r = await admin.deleteSeries(A);
+  assert.equal(r.books, 2, 'wrong chapter count reported');
+
+  const row = await seriesRow(A);
+  assert.ok(row.deleted_at, 'the series was not hidden');
+  assert.equal((await booksOf(A)).length, 2, 'hiding a series destroyed its chapters');
+  assert.equal((await q(`SELECT 1 FROM read_progress WHERE series_id = $1`, [A])).length, 1, 'reading progress was destroyed');
+  assert.equal((await q(`SELECT 1 FROM reading_events WHERE series_id = $1`, [A])).length, 1, 'reading history was destroyed');
+  assert.equal(
+    (await q(`SELECT 1 FROM series_trackers WHERE series_id = $1`, [A])).length,
+    0,
+    'the tracker link survived, so the duplicate health check will report it forever',
+  );
+});
+
+test('delete: restoring puts it straight back', { skip }, async () => {
+  await admin.deleteSeries(A);
+  await admin.restoreSeries(A);
+  assert.equal((await seriesRow(A)).deleted_at, null);
+});
+
+test('merge: chapters move and the absorbed series points at its survivor', { skip }, async () => {
+  const r = await admin.mergeSeries(B, A);
+  assert.equal(r.moved, 2, 'the absorbed chapters did not move');
+  assert.equal((await booksOf(A)).length, 4);
+  assert.equal((await booksOf(B)).length, 0);
+  assert.equal((await seriesRow(B)).merged_into, A);
+  assert.equal((await seriesRow(A)).books_count, 4, 'the survivor kept a stale chapter count');
+  assert.ok((await seriesRow(A)).cover_book_id, 'the survivor lost its cover');
+});
+
+test('merge: opposite concurrent requests lock in one order and only one may move the rows', { skip }, async () => {
+  const results = await Promise.allSettled([admin.mergeSeries(B, A), admin.mergeSeries(A, B)]);
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  const lost = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  assert.ok(lost, 'both stale preflight decisions were allowed to merge');
+  assert.ok(lost.reason instanceof admin.MergeConflictError, String(lost.reason));
+
+  const rows = await q<{ id: string; merged_into: string | null }>(
+    'SELECT id, merged_into FROM lib_series WHERE id = ANY($1) ORDER BY id', [[A, B]],
+  );
+  const survivor = rows.find((r) => r.merged_into === null)!;
+  const absorbed = rows.find((r) => r.merged_into !== null)!;
+  assert.equal(absorbed.merged_into, survivor.id);
+  assert.equal((await booksOf(survivor.id)).length, 4);
+  assert.equal((await booksOf(absorbed.id)).length, 0);
+});
+
+test('merge: a user who favourited BOTH ends up with one favourite, not a crash', { skip }, async () => {
+  for (const s of [A, B]) {
+    await q(`INSERT INTO favorites (user_id, series_id) VALUES ($1,$2)`, [users[0], s]);
+  }
+  // and a second user who only had the absorbed one
+  await q(`INSERT INTO favorites (user_id, series_id) VALUES ($1,$2)`, [users[1], B]);
+
+  await admin.mergeSeries(B, A);
+
+  const favs = await q(`SELECT user_id FROM favorites WHERE series_id = $1 ORDER BY user_id`, [A]);
+  assert.equal(favs.length, 2, 'the two users did not both end up favouriting the survivor');
+  assert.equal((await q(`SELECT 1 FROM favorites WHERE series_id = $1`, [B])).length, 0, 'stale favourites left behind');
+});
+
+test('merge: colliding ratings keep the survivor\'s, and the other user\'s carries over', { skip }, async () => {
+  await q(`INSERT INTO ratings (user_id, series_id, stars) VALUES ($1,$2,5)`, [users[0], A]);
+  await q(`INSERT INTO ratings (user_id, series_id, stars) VALUES ($1,$2,2)`, [users[0], B]);
+  await q(`INSERT INTO ratings (user_id, series_id, stars) VALUES ($1,$2,3)`, [users[1], B]);
+
+  await admin.mergeSeries(B, A);
+
+  const rows = await q<{ user_id: string; stars: number }>(
+    `SELECT user_id, stars FROM ratings WHERE series_id = $1`, [A],
+  );
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find((r) => r.user_id === users[0])!.stars, 5, "the survivor's own rating was overwritten");
+  assert.equal(rows.find((r) => r.user_id === users[1])!.stars, 3, 'the other rating did not carry over');
+});
+
+test('merge: every reading-progress row survives and follows its chapter', { skip }, async () => {
+  await q(`INSERT INTO read_progress (user_id, book_id, series_id, page, completed) VALUES ($1,'b_la_1',$2,3,false)`, [users[0], A]);
+  await q(`INSERT INTO read_progress (user_id, book_id, series_id, page, completed) VALUES ($1,'b_la_3',$2,7,true)`, [users[0], B]);
+  await q(`INSERT INTO reading_events (user_id, series_id, book_id, page, completed) VALUES ($1,$2,'b_la_3',7,true)`, [users[0], B]);
+
+  await admin.mergeSeries(B, A);
+
+  const prog = await q<{ book_id: string; page: number; completed: boolean }>(
+    `SELECT book_id, page, completed FROM read_progress WHERE series_id = $1 ORDER BY book_id`, [A],
+  );
+  assert.equal(prog.length, 2, 'a progress row was lost in the merge');
+  assert.equal(prog.find((p) => p.book_id === 'b_la_3')!.page, 7, 'progress on the absorbed chapter changed');
+  assert.equal(prog.find((p) => p.book_id === 'b_la_3')!.completed, true, 'a completed chapter was marked unread');
+  assert.equal((await q(`SELECT 1 FROM reading_events WHERE series_id = $1`, [A])).length, 1, 'reading history was lost');
+  assert.equal((await q(`SELECT 1 FROM read_progress WHERE series_id = $1`, [B])).length, 0);
+});
+
+test('merge: collection membership de-duplicates instead of failing', { skip }, async () => {
+  const c = await q<{ id: string }>(
+    `INSERT INTO collections (user_id, name) VALUES ($1,'la-test') RETURNING id`, [users[0]],
+  );
+  for (const s of [A, B]) {
+    await q(`INSERT INTO collection_items (collection_id, series_id, position) VALUES ($1,$2,0)`, [c[0].id, s]);
+  }
+
+  await admin.mergeSeries(B, A);
+
+  const items = await q(`SELECT series_id FROM collection_items WHERE collection_id = $1`, [c[0].id]);
+  assert.equal(items.length, 1, 'the collection ended up with the series twice, or lost it');
+  assert.equal(items[0].series_id, A);
+  await q(`DELETE FROM collections WHERE id = $1`, [c[0].id]);
+});
+
+test('merge: duplicate chapter numbers are kept, not silently dropped', { skip }, async () => {
+  // Both series have a chapter the other also has. A merge that does not ask (`keepOnce`, v0.57.0) keeps both
+  // rows: de-duplicating means deleting one and folding two progress rows together, which is where irreversible
+  // loss lives, so only the callers that ask do it, under extraCopies.ts's rules (extraCopies.int.test.ts).
+  await q(
+    `INSERT INTO lib_books (id, series_id, source, file, number, title, mtime, root)
+     VALUES ('b_la_dup',$1,'T!la','T!la/dup/ch1.cbz',1,'dup',5,'/library')`,
+    [B],
+  );
+
+  await admin.mergeSeries(B, A);
+
+  const ones = await q(`SELECT id FROM lib_books WHERE series_id = $1 AND number = 1`, [A]);
+  assert.equal(ones.length, 2, 'a duplicate chapter was dropped during the merge');
+});
+
+test("merge: the absorbed copy's working main source becomes a source the survivor follows, under the cap", { skip }, async () => {
+  // v0.55.0. A merge left the absorbed copy's main source on the absorbed row, which nothing updates any more: a duplicate
+  // merged into the copy on a dead source took the one source that worked with it. Reintroduce by dropping the carry in
+  // mergeSeries: the survivor follows nothing, and `carried` is null.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const stub = (id: string) => ({ id, name: id, lang: 'en', search: async () => [], getSeries: async () => null,
+    listChapters: async () => [], getPageUrls: async () => [], latest: async () => [] }) as any;
+  registerAdapter(stub('la-works'));
+  registerAdapter(stub('la-kept'));
+  registerAdapter(stub('la-other'));
+  await q(`DELETE FROM source_health WHERE source_id LIKE 'la-%'`);
+  await q(`DELETE FROM series_sources WHERE series_id = ANY($1)`, [[A, B]]);
+  try {
+    await q(`UPDATE lib_series SET source_id = 'la-kept', source_series_id = 'k1' WHERE id = $1`, [A]);
+    await q(`UPDATE lib_series SET source_id = 'la-works', source_series_id = 'w1' WHERE id = $1`, [B]);
+    const r = await admin.mergeSeries(B, A);
+    assert.equal(r.carried, 'la-works', "the absorbed copy's working main source is carried to the survivor");
+    assert.deepEqual(await q(`SELECT source_id, source_series_id, title FROM series_sources WHERE series_id = $1`, [A]),
+      [{ source_id: 'la-works', source_series_id: 'w1', title: 'Absorbed' }], "the survivor follows the absorbed copy's source, by its own id there");
+
+    // A source switched off carries nothing; nor does one the survivor already follows two others beside.
+    await wipe(); await seed();
+    await q(`UPDATE lib_series SET source_id = 'la-kept', source_series_id = 'k1' WHERE id = $1`, [A]);
+    await q(`UPDATE lib_series SET source_id = 'la-works', source_series_id = 'w1' WHERE id = $1`, [B]);
+    await q(`INSERT INTO source_health (source_id, status, disabled) VALUES ('la-works','ok',true)`);
+    assert.equal((await admin.mergeSeries(B, A)).carried, null, 'a switched-off source is not carried');
+    await q(`DELETE FROM source_health WHERE source_id = 'la-works'`);
+
+    await wipe(); await seed();
+    await q(`UPDATE lib_series SET source_id = 'la-kept', source_series_id = 'k1' WHERE id = $1`, [A]);
+    await q(`UPDATE lib_series SET source_id = 'la-works', source_series_id = 'w1' WHERE id = $1`, [B]);
+    await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1,'la-other','o1'), ($1,'la-gone','g1')`, [A]);
+    assert.equal((await admin.mergeSeries(B, A)).carried, null, 'two followers already: the cap holds');
+    assert.equal((await q(`SELECT 1 FROM series_sources WHERE series_id = $1`, [A])).length, 2);
+  } finally {
+    await q(`DELETE FROM series_sources WHERE series_id = ANY($1)`, [[A, B]]);
+    await q(`DELETE FROM source_health WHERE source_id LIKE 'la-%'`);
+  }
+});

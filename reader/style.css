@@ -1,0 +1,365 @@
+/* hbook — the reader's own styling.
+   Dark by default, because a reading app is mostly text on a background and the eye is the point. */
+
+:root {
+  --bg: #0e1116;
+  --panel: #161b23;
+  --panel-2: #1d2430;
+  --line: #262e3b;
+  --text: #e6eaf2;
+  --muted: #8b97ab;
+  --accent: #5b9cff;
+  --accent-2: #7ee0c0;
+  --danger: #ff6b8a;
+  --radius: 14px;
+  --cover-w: 150px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+        "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+
+/* ---------- top ---------- */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(14, 17, 22, .92);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: .04em;
+  color: var(--accent);
+  flex: none;
+}
+
+.search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 6px 4px 14px;
+  min-width: 0;
+}
+
+.search:focus-within { border-color: var(--accent); }
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 15px;
+  padding: 6px 0;
+}
+
+.search input::placeholder { color: var(--muted); }
+
+.kind { display: flex; gap: 2px; background: var(--panel-2); border-radius: 999px; padding: 2px; flex: none; }
+.kind button {
+  border: 0;
+  background: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.kind button.on { background: var(--accent); color: #0b1020; font-weight: 600; }
+
+.go {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 8px;
+  opacity: .8;
+}
+.go:hover { opacity: 1; }
+
+.adult {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  user-select: none;
+}
+.adult input { accent-color: var(--danger); margin: 0; }
+.adult.on { color: var(--danger); border-color: var(--danger); }
+
+/* The language picker. A manga site publishes every language on one site, so without this the
+   shelves fill up with whatever is biggest, which is English. */
+.lang {
+  flex: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.lang:focus { outline: none; border-color: var(--accent); }
+
+.tabs {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 8px 8px;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tabs a {
+  padding: 7px 14px;
+  border-radius: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 14px;
+}
+.tabs a:hover { background: var(--panel); color: var(--text); }
+.tabs a.on { background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+/* ---------- main ---------- */
+
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 16px 60px;
+  min-height: 60vh;
+}
+
+.loading, .empty {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+h2.section {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 22px 0 10px;
+  letter-spacing: .04em;
+}
+h2.section:first-child { margin-top: 0; }
+
+/* How many books a shelf holds, and whether more are still coming. */
+h2.section .count {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: .8;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cover-w), 1fr));
+  gap: 16px;
+}
+
+.card { cursor: pointer; }
+.card .thumb {
+  aspect-ratio: 3 / 4;
+  background: var(--panel-2);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .thumb .ph { color: var(--muted); font-size: 12px; padding: 8px; text-align: center; }
+.card .t {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card .m { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.card:hover .t { color: var(--accent); }
+
+.badge {
+  position: absolute;
+  top: 6px; left: 6px;
+  background: rgba(255, 107, 138, .92);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.badge.src {
+  left: auto; right: 6px;
+  background: rgba(0, 0, 0, .62);
+  color: var(--text);
+  font-weight: 500;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shelf { margin-bottom: 8px; }
+.shelf h3 { font-size: 14px; margin: 16px 0 8px; color: var(--text); font-weight: 600; }
+.shelf .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-size: 12px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip:hover { color: var(--text); border-color: var(--accent); }
+.chip.on { background: var(--accent); border-color: varaccent; color: #0b1020; }
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.row:hover { border-color: var(--accent); }
+.row .cover {
+  width: 46px; height: 62px; flex: none;
+  border-radius: 7px; overflow: hidden; background: var(--panel-2);
+}
+.row .cover img { width: 100%; height: 100%; object-fit: cover; }
+.row .info { min-width: 0; flex: 1; }
+.row .info .t { font-size: 14px; font-weight: 600; }
+.row .info .m { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* ---------- detail + reader ---------- */
+
+.reader {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The overlay covers the whole screen, so it has to actually go away when it is hidden.
+   The browser's own `[hidden] { display: none }` does not do it here: an author style wins over a
+   user-agent style, and the rule above says `display: flex`. So the overlay stayed on top of a
+   perfectly good page and the reader saw a blank screen -- the app was working the whole time,
+   behind a full-screen panel of the background colour. */
+.reader[hidden] { display: none; }
+
+.reader-top, .reader-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex: none;
+}
+.reader-foot { border-bottom: 0; border-top: 1px solid var(--line); justify-content: space-between; }
+.reader-top span { flex: 1; text-align: center; font-size: 14px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.ghost {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 9px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.ghost:hover { border-color: var(--accent); }
+.ghost:disabled { opacity: .35; cursor: default; }
+
+.reader-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 16px 40px;
+}
+
+/* a comic: pages, one after another */
+.pages { display: flex; flex-direction: column; gap: 2px; }
+.pages img { width: 100%; display: block; background: var(--panel-2); }
+
+/* a novel: text */
+.prose { max-width: 40em; margin: 0 auto; }
+.prose p { margin: 0 0 1.05em; text-indent: 2em; line-height: 1.95; letter-spacing: .01em; }
+.prose p.no-indent { text-indent: 0; }
+
+.chapters { max-width: 760px; margin: 0 auto; }
+.chapters a {
+  display: block;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.chapters a:hover { background: var(--panel); color: var(--accent); }
+
+.toast {
+  position: fixed;
+  left: 50%; bottom: 28px;
+  transform: translateX(-50%);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  z-index: 60;
+  max-width: 90vw;
+}
+
+@media (max-width: 560px) {
+  :root { --cover-w: 108px; }
+  .brand { font-size: 17px; }
+  .adult span { display: none; }
+  .adult { padding: 6px 9px; }
+}

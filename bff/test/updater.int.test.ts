@@ -1,0 +1,1823 @@
+// The nightly update sweep, and the difference between a quiet night and a broken one.
+//
+// This file is the updater's first test of any kind. That mattered, because every way the sweep could fail
+// returned the same bare `added: 0` -- the series being gone, the source uninstalled, the source blocked,
+// `listChapters` throwing or hanging, every chapter failing to save, or `updateSeries` throwing outright.
+// `added: 0` is also exactly what a healthy night with nothing new returns, and it was all the admin panel
+// ever received. The whole library could stop updating and every surface would report it was fine.
+//
+// That is precisely the failure the source watchdog exists to catch, and the lesson had never been applied
+// to the most-used background job in the product.
+//
+// `listChapters` was also unbounded here while the identical call is bounded at 20s on the add path, so one
+// hung site held a sequential sweep for undici's 300-second default, with every series behind it waiting.
+//
+// Skipped automatically unless TEST_DATABASE_URL is set.
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const DSN = process.env.TEST_DATABASE_URL;
+let ROOT = '';
+if (DSN) {
+  ROOT = mkdtempSync(join(tmpdir(), 'hbook-upd-'));
+  process.env.DL_ROOT = ROOT;
+  process.env.DOWNLOAD_MIN_GAP_MS = '0';
+  process.env.DOWNLOAD_PAGE_GAP_MS = '0';
+  process.env.MIN_FREE_GB = '0'; // the disk floor belongs to diskGuard.test.ts
+  process.env.DATABASE_URL = DSN;
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16-chars';
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || '/tmp/hbook-test-config';
+  process.env.LIBRARY_BACKEND = 'owned';
+  process.env.UPDATER_LIST_TIMEOUT_MS = '300'; // the real bound is 20s; nobody should wait that to prove it exists
+  process.env.SOLVER_BUDGET_MS = '800';       // and a solver-fronted source gets this instead (real: 90s)
+}
+const skip = DSN ? false : 'set TEST_DATABASE_URL to run';
+
+const LIB = 'lib_upd';
+const SRC_OK = 'upd-ok', SRC_THROW = 'upd-throw', SRC_HANG = 'upd-hang', SRC_EMPTY = 'upd-empty';
+const SRC_BLOCK = 'upd-block';
+const SRC_MANY = 'upd-many', SRC_LAND = 'upd-land', SRC_LEDGER = 'upd-ledger';
+const SRC_EVID = 'upd-evid';
+/** How upd-evid answers: its chapter list throws the engine's words, or lists a chapter whose page list throws. */
+let evidMode: 'list' | 'pages' = 'list';
+const PIXEL = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(400, 7)]);
+const png = () => new Response(PIXEL, { status: 200, headers: { 'content-type': 'image/png' } });
+/** Counts how many chapters the sweep actually ATTEMPTS against a source that is refusing. */
+let blockAsks = 0;
+const S = (k: string) => `s_upd_${k}`;
+let q: any, updateSeries: any, runUpdateAll: any;
+
+function fake(id: string, mode: 'ok' | 'throw' | 'hang' | 'empty') {
+  return {
+    id, name: id,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: id }; },
+    async listChapters() {
+      if (mode === 'throw') throw new Error('site refused');
+      if (mode === 'hang') return new Promise<any[]>(() => {});   // a site behind a challenge that never answers
+      if (mode === 'empty') return [];
+      return [{ number: 1, title: 'Chapter 1', id: 'c1' }];
+    },
+    async getPageUrls() { return []; },
+    async latest() { return []; },
+  };
+}
+
+before(async () => {
+  if (!DSN) return;
+  const { migrate } = await import('../src/lib/migrate');
+  ({ q } = (await import('../src/lib/db')) as any);
+  const { registerAdapter } = await import('../src/lib/sources');
+  ({ updateSeries, runUpdateAll } = (await import('../src/lib/updater')) as any);
+  await migrate();
+
+  registerAdapter(fake(SRC_OK, 'ok') as any);
+  registerAdapter(fake(SRC_THROW, 'throw') as any);
+  registerAdapter(fake(SRC_HANG, 'hang') as any);
+  registerAdapter(fake(SRC_EMPTY, 'empty') as any);
+  registerAdapter({
+    id: SRC_BLOCK, name: SRC_BLOCK,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_BLOCK, title: SRC_BLOCK }; },
+    async listChapters() {
+      return Array.from({ length: 5 }, (_, i) => ({ number: i + 1, title: `Chapter ${i + 1}`, id: `c${i + 1}` }));
+    },
+    async getPageUrls() { blockAsks++; return ['https://example.invalid/refused.png']; },
+    async latest() { return []; },
+  } as any);
+
+  await q(`INSERT INTO libraries (id, name, path) VALUES ($1,'Upd',$1) ON CONFLICT (id) DO NOTHING`, [LIB]);
+  const mk = async (key: string, sourceId: string | null) =>
+    q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, auto_update)
+       VALUES ($1,'T!upd',$1,$1,0,$2,$3,$4,true) ON CONFLICT (id) DO NOTHING`,
+      [S(key), LIB, sourceId, sourceId ? `${sourceId}-1` : null]);
+  await mk('throw', SRC_THROW);
+  await mk('hang', SRC_HANG);
+  await mk('empty', SRC_EMPTY);
+  await mk('unrouted', null);
+  await mk('block', SRC_BLOCK);
+
+  // A source with several chapters that actually download, one with one, and one whose pages are per chapter
+  // so a single chapter can be made to come up short.
+  const many = (id: string, n: number) => ({
+    id, name: id,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: sid }; },
+    // `sourceId` is what the downloader hands back to getPageUrls; the older fakes above never fetch pages, so
+    // their `id` field was never exercised.
+    async listChapters() { return Array.from({ length: n }, (_, i) => ({ number: i + 1, title: `Chapter ${i + 1}`, sourceId: `c${i + 1}` })); },
+    async getPageUrls() { return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  });
+  registerAdapter(many(SRC_MANY, 5) as any);
+  registerAdapter(many(SRC_LAND, 1) as any);
+  registerAdapter({
+    ...many(SRC_LEDGER, 2),
+    async getPageUrls(chId: string) { return Array.from({ length: 5 }, (_, i) => `https://example.invalid/${chId}/l${i}.png`); },
+  } as any);
+  await mk('ok', SRC_OK);
+  for (const k of ['many1', 'many2', 'many3', 'rotA', 'rotB']) await mk(k, SRC_MANY);
+  for (const k of ['block2', 'block3']) await mk(k, SRC_BLOCK);
+  await mk('land', SRC_LAND);
+  await mk('ledger', SRC_LEDGER);
+  registerAdapter({
+    id: SRC_EVID, name: SRC_EVID,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_EVID, title: sid }; },
+    async listChapters() {
+      if (evidMode === 'list') throw new Error('suwayomi: HTTP error 404');
+      return [{ number: 1, title: 'Chapter 1', sourceId: 'e1' }];
+    },
+    // Classifies as nothing (500 is not one of the 502/503/504 classify() reads): the cooldown never hears of it.
+    async getPageUrls() { throw new Error('suwayomi: HTTP error 500'); },
+    async latest() { return []; },
+  } as any);
+  await mk('evid', SRC_EVID);
+});
+
+after(async () => {
+  if (ROOT) rmSync(ROOT, { recursive: true, force: true });
+  if (!DSN) return;
+  // persistScan may have minted rows of its own for the scratch folders; sweep those too.
+  await q(`DELETE FROM lib_books WHERE file LIKE 's_upd_%'`).catch(() => {});
+  await q(`DELETE FROM lib_series WHERE folder LIKE 's_upd_%'`).catch(() => {});
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_MANY, SRC_LAND, SRC_LEDGER, SRC_OK, SRC_THROW]]).catch(() => {});
+  await q('DELETE FROM lib_series WHERE library_id = $1', [LIB]).catch(() => {});
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_BLOCK, SRC_EVID]]).catch(() => {});
+  await q('DELETE FROM libraries WHERE id = $1', [LIB]).catch(() => {});
+});
+
+test('a series says WHY it produced nothing', { skip }, async (t) => {
+  await t.test('a source that throws is not a quiet night', async () => {
+    const r = await updateSeries(S('throw'));
+    assert.equal(r.added, 0);
+    assert.equal(r.outcome, 'source_error', 'a refusing site must be distinguishable from having nothing new');
+  });
+
+  await t.test('a source that hangs is bounded, and reported', async () => {
+    const started = Date.now();
+    const r = await updateSeries(S('hang'));
+    assert.ok(Date.now() - started < 5000, 'listChapters must be bounded here as it is on the add path');
+    assert.equal(r.outcome, 'source_error');
+  });
+
+  await t.test('a source that genuinely has nothing is healthy', async () => {
+    const r = await updateSeries(S('empty'));
+    assert.equal(r.added, 0);
+    assert.equal(r.outcome, 'ok', 'nothing new is a perfectly good night');
+  });
+
+  await t.test('a row with no source is unrouted, not broken', async () => {
+    const r = await updateSeries(S('unrouted'));
+    assert.equal(r.outcome, 'unrouted');
+  });
+
+  await t.test('a series that no longer exists says so', async () => {
+    const r = await updateSeries('s_upd_does_not_exist');
+    assert.equal(r.outcome, 'gone');
+  });
+});
+
+test('a sweep where everything failed does not look like a sweep with nothing new', { skip }, async (t) => {
+  await t.test('all-broken reports unhealthy', async () => {
+    await q(`UPDATE lib_series SET auto_update = COALESCE(source_id = $1 OR source_id = $2, false) WHERE library_id = $3`,
+      [SRC_THROW, SRC_HANG, LIB]);
+    const r = await runUpdateAll({ maxNew: 1 });
+    assert.equal(r.added, 0);
+    assert.equal(r.healthy, false, 'a run where no source answered must not report healthy');
+    assert.ok(r.failed >= 2, `expected the failures to be counted, got ${r.failed}`);
+    assert.ok(r.outcomes.source_error >= 2, 'and attributed to the right cause');
+  });
+
+  await t.test('all-quiet reports healthy, with the same +0', async () => {
+    await q(`UPDATE lib_series SET auto_update = COALESCE(source_id = $1, false) WHERE library_id = $2`, [SRC_EMPTY, LIB]);
+    const r = await runUpdateAll({ maxNew: 1 });
+    assert.equal(r.added, 0, 'same visible number as the broken run above...');
+    assert.equal(r.healthy, true, '...and that is exactly why the two must differ somewhere else');
+    assert.equal(r.failed, 0);
+  });
+});
+
+
+/**
+ * A source that refuses must cost ONE chapter, not five.
+ *
+ * The updater was the only caller of downloadChapter that did not stop on `blockStatus` -- its catch was a
+ * bare `failed++`. So when mangakakalot rate-limited us, the sweep asked it for four more chapters it was
+ * never going to serve, and each refusal called reportFail again. The cooldown escalates with `consecutive`
+ * (15, 30, 45, 60, 75 minutes), so one burst produced five escalations in 74 seconds and locked the source
+ * for 75 minutes. The person's own manual retry was then refused too, which is what "I tried again and it
+ * still doesn't work" actually was.
+ *
+ * Reintroduce by restoring `} catch { failed++; }` in updater.ts: blockAsks becomes 5 and consecutive 5.
+ */
+test('a refusing source costs one chapter, not the whole run', { skip }, async () => {
+  globalThis.fetch = (async () => new Response('go away', { status: 403 })) as typeof fetch;
+  blockAsks = 0;
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_BLOCK]);
+
+  await updateSeries(S('block'), 5);
+
+  assert.equal(blockAsks, 1, 'the sweep stopped at the first refusal instead of asking five times');
+  const h = (await q(`SELECT consecutive FROM source_health WHERE source_id = $1`, [SRC_BLOCK]))[0];
+  assert.ok(h, 'the refusal is still recorded once');
+  assert.equal(Number(h.consecutive), 1,
+    'one refusal is one strike: five strikes turned a 15-minute cooldown into 75');
+});
+
+
+// ---- v0.14.0: the sweep has a budget, visits sources fairly, and writes its failures down --------------
+//
+// Measured on the night that prompted this: one aqua chapter came up 25 of 176 images short, aqua went into
+// a 30-minute cooldown, and because the sweep walked all 226 series in one flat line the remaining 164 aqua
+// series were skipped one after another -- with the 34 series on other sources stuck behind them. The only
+// record was "blocked=164" in one log line.
+
+/**
+ * Only these rows take part in the next sweep: everything else is switched off, whichever library or test file
+ * it came from. Scoping this to LIB let a fixture left behind by another file sharing the scratch database ride
+ * into the sweep and put every count off by one.
+ */
+/** A fixture series row; the `mk` inside before() is not reachable from later tests. */
+const mkSeries = (key: string, sourceId: string | null) =>
+  q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, auto_update)
+     VALUES ($1,'T!upd',$1,$1,0,$2,$3,$4,true) ON CONFLICT (id) DO NOTHING`,
+    [S(key), LIB, sourceId, sourceId ? `${sourceId}-1` : null]);
+
+const only = async (keys: string[]) => {
+  await q(`UPDATE lib_series SET auto_update = (id = ANY($1::text[]))`, [keys.map(S)]);
+  // A scan run by an earlier test can merge or soft-delete a hand-made fixture; the sweep's query would then
+  // silently select nothing. Restore visibility for the rows this test is about, and let the precondition
+  // assertions below say so if anything else is off.
+  await q(`UPDATE lib_series SET deleted_at = NULL, merged_into = NULL WHERE id = ANY($1::text[])`, [keys.map(S)]);
+};
+const onDisk = (key: string, n: number) => existsSync(join(ROOT, S(key), `Chapter ${n}.cbz`));
+const stamp = async (key: string) =>
+  (await q(`SELECT source_chapters AS c, source_missing AS m, source_checked_at AS t FROM lib_series WHERE id = $1`, [S(key)]))[0];
+
+test('the sweep records what the source said', { skip }, async () => {
+  await q(`UPDATE lib_series SET source_checked_at = NULL, source_chapters = NULL, source_missing = NULL WHERE library_id = $1`, [LIB]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_OK, SRC_THROW]]);
+
+  await updateSeries(S('ok'));
+  const ok = await stamp('ok');
+  assert.equal(ok.c, 1, 'the source listed one chapter');
+  assert.equal(ok.m, 1, 'and we hold none of it');
+  assert.ok(ok.t, 'asked, so stamped');
+
+  await updateSeries(S('throw'));
+  const th = await stamp('throw');
+  assert.ok(th.t, 'asked and got nothing is still asked: a dead source must rotate to the back, not sit first forever');
+  assert.equal(th.c, null, 'but it said nothing, so nothing is recorded as said');
+
+  await q(`INSERT INTO source_health (source_id, status, blocked_until) VALUES ($1, 'blocked', now() + interval '1 hour')
+           ON CONFLICT (source_id) DO UPDATE SET blocked_until = now() + interval '1 hour'`, [SRC_OK]);
+  await q('UPDATE lib_series SET source_checked_at = NULL WHERE id = $1', [S('ok')]);
+  assert.equal((await updateSeries(S('ok'))).outcome, 'blocked');
+  assert.equal((await stamp('ok')).t, null, 'skipped for a cooldown was never asked, so it keeps its place in the queue');
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_OK]);
+});
+
+/** Reintroduce by removing the `spent >= sweepMax` check: added becomes 15 and nothing is skipped. */
+test('a sweep stops at its budget and says so', { skip }, async () => {
+  await only(['many1', 'many2', 'many3']);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_MANY]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await runUpdateAll({ maxNew: 5, sweepMax: 7 });
+
+  assert.equal(r.added, 7, 'seven attempts and then stop, not fifteen');
+  assert.equal(r.stopped, 'budget');
+  assert.equal(r.visited, 2, 'the third series was never listed');
+  assert.equal(r.outcomes.skipped, 1, 'what the budget left behind is counted, not lost');
+});
+
+/**
+ * Reintroduce by flattening the queues back into one loop: blocked becomes 2 and skipped 0, and the healthy
+ * source behind them in the line is only reached because the fixture is small.
+ */
+test('a source in a cooldown parks its own queue, and nobody else\'s', { skip }, async () => {
+  await only(['block', 'block2', 'block3', 'land']);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_BLOCK, SRC_LAND]]);
+  blockAsks = 0;
+  globalThis.fetch = (async (u: any) => (String(u).includes('refused') ? new Response('go away', { status: 403 }) : png())) as typeof fetch;
+
+  const r = await runUpdateAll({ maxNew: 5 });
+
+  assert.equal(blockAsks, 1, 'the refusing source was asked exactly once');
+  assert.equal(r.outcomes.blocked, 1, 'its next series saw the cooldown...');
+  assert.equal(r.outcomes.skipped, 1, '...and the one after that was parked: not asked, and not miscounted as blocked');
+  assert.ok(onDisk('land', 1), 'while the healthy source that used to wait behind all of them landed its chapter');
+});
+
+/** Reintroduce by ordering on latest_mtime alone: rotA goes first both times and rotB is never visited. */
+test('what a sweep leaves unvisited goes first next time', { skip }, async () => {
+  await only(['rotA', 'rotB']);
+  await q(`UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 2000 ELSE 1000 END WHERE id = ANY($2::text[])`,
+    [S('rotA'), [S('rotA'), S('rotB')]]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_MANY]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const first = await runUpdateAll({ maxNew: 5, sweepMax: 5 });
+  assert.equal(first.visited, 1);
+  assert.ok((await stamp('rotA')).t, 'the fresher series went first, as it always did');
+  assert.equal((await stamp('rotB')).t, null);
+
+  const second = await runUpdateAll({ maxNew: 5, sweepMax: 5 });
+  assert.equal(second.visited, 1);
+  assert.ok((await stamp('rotB')).t, 'and the one it left behind goes first the next time, instead of never');
+});
+
+/**
+ * Reintroduce by removing the upsert in noteChapterFailure: no row. By removing the DELETE at the end of
+ * persistScan: the row outlives the chapter.
+ */
+test('a chapter that will not download is written down, and erased when it lands', { skip }, async () => {
+  await only(['ledger']);
+  const serve = (shortChapter: string | null) => {
+    globalThis.fetch = (async (u: any) =>
+      shortChapter && new RegExp(`/${shortChapter}/l[34]\\.png$`).test(String(u)) ? new Response('nope', { status: 503 }) : png()) as typeof fetch;
+  };
+  const clear = () => q('DELETE FROM source_health WHERE source_id = $1', [SRC_LEDGER]);
+
+  // Chapter 1 lands and is scanned, so the series row the scanner uses is the one the ledger will be keyed by.
+  await clear(); serve(null);
+  await updateSeries(S('ledger'), 1);
+  assert.ok(onDisk('ledger', 1));
+  const { persistScan } = await import('../src/lib/library');
+  await persistScan();
+  const book = (await q(`SELECT series_id FROM lib_books WHERE file LIKE $1`, [`%${S('ledger')}/Chapter 1.cbz`]))[0];
+  assert.ok(book, 'the scanner saw the chapter');
+  const sid: string = book.series_id;
+  await q(`UPDATE lib_series SET source_id = $1, source_series_id = $2, auto_update = true WHERE id = $3`, [SRC_LEDGER, `${SRC_LEDGER}-1`, sid]);
+  const row = async () => (await q(`SELECT status, attempts, source_id FROM chapter_failures WHERE series_id = $1 AND number = 2`, [sid]))[0];
+  await q('DELETE FROM chapter_failures WHERE series_id = $1', [sid]);
+
+  // Chapter 2 comes up two pages short, twice: below the partial floor, so this remains the ledger case.
+  await clear(); serve('c2');
+  await updateSeries(sid, 5);
+  let f = await row();
+  assert.ok(f, 'the failure is written down');
+  assert.equal(f.status, 'incomplete');
+  assert.equal(Number(f.attempts), 1);
+  assert.equal(f.source_id, SRC_LEDGER);
+
+  await clear(); // the shortfall earned a cooldown; lift it so the retry is attempted at all
+  await updateSeries(sid, 5);
+  f = await row();
+  assert.equal(Number(f.attempts), 2, 'one row per chapter, bumped per attempt');
+
+  const { runHealthChecks } = await import('../src/lib/health');
+  const report: any = await runHealthChecks();
+  const check = (report.checks ?? report).find((c: any) => c.id === 'chapter-failures');
+  assert.ok(check, 'the health page has a check for this');
+  assert.equal(check.status, 'warn');
+  assert.ok(check.items.some((i: any) => i.title === SRC_LEDGER), 'and it names the source');
+
+  // Then it lands, and the ledger forgets it.
+  await clear(); serve(null);
+  await updateSeries(sid, 5);
+  assert.ok(onDisk('ledger', 2));
+  await persistScan();
+  assert.equal(await row(), undefined, 'erased the moment the chapter exists');
+});
+
+
+/**
+ * A completed sweep leaves a persisted timestamp, and only a completed one.
+ *
+ * The scheduled updater's first run after boot used to wait a full interval, so every deploy pushed the
+ * next sweep out by six hours; three deploys in one day meant no scheduled sweep at all, measured live. The
+ * first tick now schedules the remainder of the interval since this stamp. Reintroduce by removing the
+ * UPDATE in runSweep: the stamp stays null and a restart starts the clock from zero again.
+ */
+test('a completed sweep records when it finished', { skip }, async () => {
+  const { runSweep } = await import('../src/lib/updater');
+  await only(['empty']);
+  await q('UPDATE server_settings SET updater_last_run = NULL WHERE id = 1');
+  const quiet = { info() {}, warn() {}, error() {} };
+  const run = runSweep({ maxNew: 1 }, quiet as any);
+  assert.ok(run, 'nothing else was running, so it started');
+  await run;
+  const t = (await q('SELECT updater_last_run AS t FROM server_settings WHERE id = 1'))[0].t;
+  assert.ok(t && Date.now() - new Date(t).getTime() < 60_000, 'stamped within the last minute');
+
+  // A sweep that threw is not a completed sweep: the stamp must not move.
+  await q('UPDATE server_settings SET updater_last_run = NULL WHERE id = 1');
+  const boom = runSweep({ maxNew: 1 }, quiet as any, async () => { throw new Error('sweep died'); });
+  assert.ok(boom); await boom;
+  assert.equal((await q('SELECT updater_last_run AS t FROM server_settings WHERE id = 1'))[0].t, null,
+    'a run that died does not count as the last completed one');
+});
+
+
+/**
+ * A stop request ends the sweep at a boundary, and says so.
+ *
+ * There was no signal handler at all: `docker compose up -d` in the middle of a sweep killed it wherever it
+ * was, the job card polled a run that no longer existed, and the result was indistinguishable from a sweep
+ * that finished. Now SIGTERM sets runtime.stopping; the sweep checks it between series and between
+ * chapters, never mid-write, and reports `stopped: 'shutdown'`.
+ *
+ * Reintroduce by removing either `runtime.stopping` check in updater.ts: the matching test fails.
+ */
+test('a stop request ends the sweep between series, and it is not a healthy night', { skip }, async () => {
+  const { runtime } = await import('../src/lib/runtime');
+  await only(['many1', 'many2']);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_MANY]);
+  // Precondition, asserted rather than assumed: the two rows must be what the sweep's own query selects.
+  const pre = await q(`SELECT id, auto_update, deleted_at, merged_into, library_id FROM lib_series WHERE id = ANY($1::text[]) ORDER BY id`, [[S('many1'), S('many2')]]);
+  assert.deepEqual(pre.map((r: any) => [r.id, r.auto_update, r.deleted_at, r.merged_into]),
+    [[S('many1'), true, null, null], [S('many2'), true, null, null]], `fixture rows are not sweepable: ${JSON.stringify(pre)}`);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  runtime.stopping = true;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.equal(r.visited, 0, 'nothing was started once a stop was requested');
+    assert.equal(r.stopped, 'shutdown');
+    assert.equal(r.outcomes.skipped, 2, 'what it did not reach is counted as skipped, not as done');
+    assert.equal(r.healthy, false, 'an interrupted sweep must not read as a quiet night');
+  } finally { runtime.stopping = false; }
+});
+
+test('a stop request mid-series finishes the current chapter and takes no more', { skip }, async () => {
+  const { runtime } = await import('../src/lib/runtime');
+  const { registerAdapter } = await import('../src/lib/sources');
+  const SRC_STOP = 'upd-stop';
+  registerAdapter({
+    id: SRC_STOP, name: SRC_STOP,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_STOP, title: sid }; },
+    async listChapters() { return Array.from({ length: 5 }, (_, i) => ({ number: i + 1, title: `Chapter ${i + 1}`, sourceId: `s${i + 1}` })); },
+    // The stop arrives while chapter 1 is being fetched: chapter 1 must still land whole, chapter 2 must not start.
+    async getPageUrls() { runtime.stopping = true; return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  } as any);
+  await q(`INSERT INTO lib_series (id, source, title, folder, books_count, library_id, source_id, source_series_id, auto_update)
+           VALUES ($1,'T!upd',$1,$1,0,$2,$3,$4,true) ON CONFLICT (id) DO NOTHING`, [S('stop'), LIB, SRC_STOP, `${SRC_STOP}-1`]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    const r = await updateSeries(S('stop'), 5);
+    assert.equal(r.added, 1, 'the chapter in flight completed');
+    assert.ok(onDisk('stop', 1), 'and is whole on disk');
+    assert.ok(!onDisk('stop', 2), 'the next one was never started');
+  } finally { runtime.stopping = false; }
+});
+
+test('the main sweep stops an unmonitored series before its next source operation', { skip }, async () => {
+  // The sweep selected this row while monitored. Its listing operation simulates the person pressing
+  // Unmonitor; no queued chapter may then reach getPageUrls. Reintroduce either by omitting `unattended`
+  // in runUpdateAll or by trusting the sweep's initial row snapshot: pages becomes 1 and a file lands.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const source = 'upd-unmonitor';
+  let pages = 0;
+  registerAdapter({
+    id: source, name: source,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source, title: sid }; },
+    async listChapters() {
+      await q('UPDATE lib_series SET auto_update = false WHERE id = $1', [S('unmonitor')]);
+      return [{ number: 1, title: 'Chapter 1', sourceId: 'u1' }];
+    },
+    async getPageUrls() { pages++; return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  } as any);
+  await mkSeries('unmonitor', source);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('unmonitor')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [source]);
+  await only(['unmonitor']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await runUpdateAll({ maxNew: 5 });
+  assert.equal(r.outcomes.paused, 1, 'the automatic run reports the deliberate pause');
+  assert.equal(r.added, 0);
+  assert.equal(pages, 0, 'no chapter source request began after Unmonitor');
+  assert.ok(!onDisk('unmonitor', 1));
+});
+
+test('the sweep downloads a clean series\' new chapters from the adult source it follows', { skip }, async () => {
+  // The sweep's adult rule (sourceHunt sweepAllowedFor) is for sources reached ON a series' behalf: alternates and
+  // the hunt. The chosen copy is on a source the series already follows, and a person followed it. v0.55.8 held the
+  // chosen copy to that rule too, at the download's preflight: every new chapter of a clean series on an extension
+  // marked NSFW was listed and never fetched, while a manual download (the admin's cap) still worked.
+  // Reintroduce by passing the sweep's `allowed` for the chosen copy: nothing lands and pages stays 0.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const source = 'upd-nsfw-main';
+  let pages = 0;
+  registerAdapter({
+    id: source, name: source, isNsfw: true,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source, title: sid }; },
+    async listChapters() { return [1, 2].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `n${n}` })); },
+    async getPageUrls() { pages++; return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  } as any);
+  await mkSeries('nsfwmain', source);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('nsfwmain')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [source]);
+  await only(['nsfwmain']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.equal(r.outcomes.ok, 1);
+    assert.equal(r.added, 2, 'both new chapters were downloaded');
+    assert.equal(pages, 2);
+    assert.ok(onDisk('nsfwmain', 1) && onDisk('nsfwmain', 2));
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = $1', [source]).catch(() => {});
+  }
+});
+
+
+/**
+ * A source behind the Cloudflare solver gets a listing budget that fits a challenge.
+ *
+ * aqua's challenge takes about a minute; the listing budget was 20 seconds for every source alike, so the
+ * first scheduled sweep on v0.14 lost 15 aqua series to `source_error` while the solver was busy. A
+ * 60-second challenge against a 20-second timeout is a structural loss, not a flaky site.
+ *
+ * Reintroduce by passing LIST_TIMEOUT instead of budgetFor(src, LIST_TIMEOUT): the first test fails.
+ */
+test('a solver-fronted source is given time for its challenge; a plain one is not', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const slow = (id: string, requiresCloudflare: boolean) => ({
+    id, name: id, requiresCloudflare,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: id }; },
+    async listChapters() { await new Promise((r) => setTimeout(r, 500)); return [{ number: 1, title: 'Chapter 1', sourceId: 'c1' }]; },
+    async getPageUrls() { return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  });
+  registerAdapter(slow('upd-cf-slow', true) as any);
+  registerAdapter(slow('upd-plain-slow', false) as any);
+  await mkSeries('cfslow', 'upd-cf-slow');
+  await mkSeries('plainslow', 'upd-plain-slow');
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const cf = await updateSeries(S('cfslow'), 1);
+  assert.equal(cf.outcome, 'ok', 'a 500 ms listing is inside the 800 ms solver budget');
+  assert.equal(cf.available, 1);
+  const plain = await updateSeries(S('plainslow'), 1);
+  assert.equal(plain.outcome, 'source_error', 'the same 500 ms is over the 300 ms budget for a source that needs no solver');
+});
+
+/**
+ * A chapter that has failed CHAPTER_RETRY_CAP times is left alone by the sweep, and counted.
+ *
+ * Reintroduce by iterating `missing` instead of `eligible`: the source is asked for the capped chapter and
+ * `capped` reads 0.
+ */
+test('a chapter past the retry cap is not attempted by the sweep, and is counted', { skip }, async () => {
+  const { CHAPTER_RETRY_CAP } = await import('../src/lib/updater');
+  const { registerAdapter } = await import('../src/lib/sources');
+  const asked: number[] = [];
+  registerAdapter({
+    id: 'upd-cap', name: 'upd-cap',
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: 'upd-cap', title: sid }; },
+    async listChapters() { return [1, 2, 3].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `c${n}` })); },
+    async getPageUrls(chId: string) { asked.push(Number(chId.slice(1))); return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  } as any);
+  await mkSeries('cap', 'upd-cap');
+  await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('cap')]);
+  await q(`INSERT INTO chapter_failures (series_id, number, source_id, status, reason, attempts) VALUES ($1, 1, 'upd-cap', 'incomplete', 'x', $2), ($1, 2, 'upd-cap', 'incomplete', 'x', $3)`,
+    [S('cap'), CHAPTER_RETRY_CAP, CHAPTER_RETRY_CAP - 1]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('cap'), 5);
+  assert.deepEqual(asked.sort(), [2, 3], `chapter 1 is capped and must not be asked for; asked: ${asked}`);
+  assert.equal(r.capped, 1, 'and the sweep says how many it left alone');
+  assert.equal(r.added, 2);
+});
+
+/**
+ * A series added as "latest N" is not backfilled by the sweep.
+ *
+ * The add path writes `chapter_floor` = the lowest chapter it took, because the loop above is oldest-missing-
+ * first: a series added as the latest 25 of 200 would otherwise have the sweep fetch 1..175 five per night
+ * with every new release queued behind them, which is the opposite of what "latest" asked for. Chapters
+ * below the floor are left to the fill scan, on purpose.
+ *
+ * Reintroduce by filtering `chapters` for `missing` instead of `wanted` (i.e. dropping the `>= floor`
+ * filter): added reads 4 -- chapters 1, 2, 3 and 6 -- and source_missing reads 4.
+ */
+test('a floored series fetches the chapter above what it holds, not the ones below the floor', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const SRC_FLOOR = 'upd-floor';
+  const asked: number[] = [];
+  registerAdapter({
+    id: SRC_FLOOR, name: SRC_FLOOR,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_FLOOR, title: sid }; },
+    async listChapters() { return [1, 2, 3, 4, 5, 6].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `c${n}` })); },
+    async getPageUrls(chId: string) { asked.push(Number(chId.slice(1))); return ['https://example.invalid/page.png']; },
+    async latest() { return [];  },
+  } as any);
+  await mkSeries('floor', SRC_FLOOR);
+  await q('UPDATE lib_series SET chapter_floor = 4 WHERE id = $1', [S('floor')]);
+  // Books 4 and 5 are what a "latest 2" add would have left behind, as rows rather than files: updateSeries
+  // reads lib_books, and the scan that would mint them from disk is not part of this test.
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('floor')]);
+  for (const n of [4, 5]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages) VALUES ($1, $2, 'T!upd', $3, $4, $5, 1)`,
+      [`${S('floor')}_b${n}`, S('floor'), `${S('floor')}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_FLOOR]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('floor'), 5);
+
+  assert.equal(r.added, 1, `chapter 6 alone is new; asked for: ${asked}`);
+  assert.deepEqual(asked, [6], 'the sweep did not so much as ask for anything below the floor');
+  assert.ok(onDisk('floor', 6));
+  assert.ok(!onDisk('floor', 1) && !onDisk('floor', 3), 'nothing below the floor was fetched');
+  const st = await stamp('floor');
+  assert.equal(st.m, 1, '"{n} behind" on the series page counts what the sweep would fetch, not the back catalogue');
+  assert.equal(st.c, 6, 'while source_chapters still says what the source said');
+});
+
+// ---- v0.37.0: "Fetch newest" -- the newest LISTED release, floor ignored for that one number ----------
+//
+// A "Nothing yet" add and a Mihon-backup import both write chapter_floor = the newest listed number + 0.001
+// (routes/sources.ts), so the sweep correctly fetches nothing for them -- and so would any button that
+// filtered by the floor: a chapterless series answering "already at latest" forever. PR #53's fix took the
+// newest MISSING number from the whole listing instead, which is chapter max for that series and the
+// highest chapter BELOW the floor for a caught-up Latest-N series: Latest-25 of 200 with 176-200 on disk
+// "fetched" 175, then 174 on the next click, reporting each as a new release. The rule is max(listed).
+
+/** A six-chapter source whose page asks are recorded, so a test can say exactly what was fetched. */
+function sixChapterSource(id: string, asked: number[]) {
+  return {
+    id, name: id,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: sid }; },
+    async listChapters() { return [1, 2, 3, 4, 5, 6].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `c${n}` })); },
+    async getPageUrls(chId: string) { asked.push(Number(chId.slice(1))); return ['https://example.invalid/page.png']; },
+    async latest() { return []; },
+  };
+}
+const floorOf = async (key: string) => Number((await q('SELECT chapter_floor FROM lib_series WHERE id = $1', [S(key)]))[0].chapter_floor);
+/** A book row the way a "latest N" add leaves one behind: a row, not a file (see the floor test above). */
+const book = (key: string, n: number) =>
+  q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages) VALUES ($1, $2, 'T!upd', $3, $4, $5, 1)`,
+    [`${S(key)}_b${n}`, S(key), `${S(key)}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+
+/**
+ * Reintroduce by filtering the newest out of `wanted` (the floor-honouring set) instead of `releases`:
+ * `newest.state` reads `unlisted`, added reads 0 and nothing is asked for.
+ */
+test('fetch newest reaches the latest release of a "nothing yet" series floored above its catalogue, and leaves the floor alone', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const asked: number[] = [];
+  registerAdapter(sixChapterSource('upd-newest-none', asked) as any);
+  await mkSeries('newestnone', 'upd-newest-none');
+  // Exactly as sources.ts writes it for chapterFrom:'none': a hair above the newest listed number, on a
+  // series with no books at all.
+  await q('UPDATE lib_series SET chapter_floor = 6.001 WHERE id = $1', [S('newestnone')]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestnone')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-newest-none']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const sweep = await updateSeries(S('newestnone'), 5);
+  assert.equal(sweep.added, 0, 'the sweep honours the floor: nothing is backfilled');
+
+  const r = await updateSeries(S('newestnone'), 1, { newestOnly: true });
+  assert.deepEqual(r.newest, { number: 6, state: 'queued' }, 'the newest listed number is the one queued');
+  assert.equal(r.added, 1, 'and it landed');
+  assert.deepEqual(asked, [6], 'only that one chapter was asked for');
+  assert.ok(onDisk('newestnone', 6));
+  assert.equal(await floorOf('newestnone'), 6.001, 'the floor is not moved: the next sweep still wants only what is above it');
+});
+
+/**
+ * THE TRAP. Reintroduce by selecting the newest MISSING number -- `releases.filter((c) => !have.has(c.number))`
+ * and taking its last element -- instead of max(listed): `newest.state` reads `queued` for chapter 3,
+ * added reads 1, and Chapter 3.cbz appears on disk below the floor.
+ */
+test('a caught-up Latest-N series answers up to date, and nothing below its floor is fetched', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const asked: number[] = [];
+  registerAdapter(sixChapterSource('upd-newest-caught', asked) as any);
+  await mkSeries('newestcaught', 'upd-newest-caught');
+  // Latest-3 of 6: floor 4, and 4..6 on the shelf. 1..3 are missing below the floor, on purpose.
+  await q('UPDATE lib_series SET chapter_floor = 4 WHERE id = $1', [S('newestcaught')]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestcaught')]);
+  for (const n of [4, 5, 6]) await book('newestcaught', n);
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-newest-caught']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('newestcaught'), 1, { newestOnly: true });
+  assert.deepEqual(r.newest, { number: 6, state: 'up_to_date' }, 'we hold the newest listed number, so the series is up to date');
+  assert.equal(r.added, 0);
+  assert.deepEqual(asked, [], 'nothing was asked for: not chapter 3, not anything under the floor');
+  assert.ok(!onDisk('newestcaught', 3) && !onDisk('newestcaught', 1), 'and nothing under the floor is on disk');
+  assert.equal(await floorOf('newestcaught'), 4);
+
+  // The have-set is the sweep's: a chapter the read-cleanup let go still counts as held (the person read it
+  // and chose to have it cleaned) -- not fetched, and told apart from a live row (the `deleted` test
+  // below) -- while one the verify task found MISSING does not: its file is gone without anyone deciding
+  // so, and "Fetch newest" is exactly how it comes back.
+  await q(`UPDATE lib_books SET pruned_at = now(), pruned_reason = NULL WHERE id = $1`, [`${S('newestcaught')}_b6`]);
+  const cleaned = await updateSeries(S('newestcaught'), 1, { newestOnly: true });
+  assert.equal(cleaned.newest?.state, 'deleted', 'a cleanup tombstone of the newest number is held, and says it was deleted');
+  assert.deepEqual(asked, [], 'and is not fetched back');
+  await q(`UPDATE lib_books SET pruned_at = now(), pruned_reason = 'missing' WHERE id = $1`, [`${S('newestcaught')}_b6`]);
+  const missing = await updateSeries(S('newestcaught'), 1, { newestOnly: true });
+  assert.equal(missing.newest?.state, 'queued', 'a "missing" tombstone of the newest number is fetched again');
+  assert.deepEqual(asked, [6]);
+});
+
+/**
+ * Reintroduce by queueing `eligible` (the sweep's oldest-first list) when newestOnly is set: `asked` reads
+ * [6] still -- but with maxNew 5 it reads [6] only because nothing else is above the floor; set the floor to
+ * 1 in the fixture and it reads [1, 2, 3, 6]. The assertion that pins the rule is `newest.number === 6`
+ * together with `asked` being exactly one number.
+ */
+test('a Latest-N series that is behind fetches the newest listed release and only that, with its floor unchanged', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { CHAPTER_RETRY_CAP } = await import('../src/lib/updater');
+  const asked: number[] = [];
+  registerAdapter(sixChapterSource('upd-newest-behind', asked) as any);
+  await mkSeries('newestbehind', 'upd-newest-behind');
+  // Latest-2 taken when the source listed five: floor 4, chapters 4 and 5 on the shelf, 6 released since.
+  await q('UPDATE lib_series SET chapter_floor = 4 WHERE id = $1', [S('newestbehind')]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestbehind')]);
+  for (const n of [4, 5]) await book('newestbehind', n);
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-newest-behind']);
+  // A stale cap on chapter 6 from an earlier failed sweep: a person asking for it on purpose resets it,
+  // exactly as the series page's Fetch does.
+  await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('newestbehind')]);
+  await q(`INSERT INTO chapter_failures (series_id, number, source_id, status, reason, attempts) VALUES ($1, 6, 'upd-newest-behind', 'incomplete', 'x', $2)`,
+    [S('newestbehind'), CHAPTER_RETRY_CAP]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('newestbehind'), 5, { newestOnly: true });
+  assert.deepEqual(r.newest, { number: 6, state: 'queued' });
+  assert.deepEqual(asked, [6], 'one number, the newest, whatever maxNew allows');
+  assert.equal(r.added, 1);
+  assert.ok(onDisk('newestbehind', 6));
+  assert.equal(await floorOf('newestbehind'), 4, 'the floor stays where Latest-N put it');
+  const ledger = await q('SELECT 1 FROM chapter_failures WHERE series_id = $1 AND number = 6', [S('newestbehind')]);
+  assert.equal(ledger.length, 0, 'the retry cap was reset for that number and the landed chapter left no ledger row');
+});
+
+/**
+ * The gates the fetch route applies, applied here so a bulk button cannot reach past them: a source the
+ * admin disabled fetches nothing, and an adult source on a capped account fetches nothing -- each says so,
+ * and neither asks the source for a page. Reintroduce by dropping BOTH `isDisabled` checks (the filter
+ * before the listing and the verdict branch: the first verdict reads `queued` and asked reads [6]) or the
+ * `sourceAllowed` branch (the second does).
+ */
+test('fetch newest honours a disabled source and the viewer\'s age gate, and says which stopped it', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  const asked: number[] = [];
+  registerAdapter(sixChapterSource('upd-newest-gate', asked) as any);
+  await mkSeries('newestgate', 'upd-newest-gate');
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestgate')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-newest-gate']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  await setDisabled('upd-newest-gate', true);
+  try {
+    const off = await updateSeries(S('newestgate'), 1, { newestOnly: true });
+    // No number: the disabled source was never asked what it lists (the test below pins that).
+    assert.deepEqual(off.newest, { number: null, state: 'disabled' });
+    assert.equal(off.added, 0);
+  } finally {
+    await setDisabled('upd-newest-gate', false);
+  }
+  const capped = await updateSeries(S('newestgate'), 1, { newestOnly: true, sourceAllowed: () => false });
+  assert.deepEqual(capped.newest, { number: 6, state: 'denied' });
+  assert.deepEqual(asked, [], 'neither gate let a page be asked for');
+  assert.ok(!onDisk('newestgate', 6));
+});
+
+/**
+ * After Delete files + Put back every row of the series is a tombstone with pruned_reason 'deleted', and
+ * the series page shows the chapter as deleted from the server. Select it and press Fetch newest: the
+ * have-set rightly holds the number (the sweep must not undo a deliberate deletion every night), but the
+ * old verdict was `up_to_date` and the person read "Chapter 6 is already here." over a row with no pages
+ * behind it -- for the very chapter they pressed the button to get back. A tombstone with no live row
+ * beside it is now `deleted`; a live row beside a tombstone of the same number is what it always was.
+ * Reintroduce by answering `up_to_date` for every held number (dropping the `live.has` test in the
+ * newestOnly verdict): the first assertion reads up_to_date.
+ */
+test('a newest chapter deleted on purpose is told apart from one we hold, and is not fetched back', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const asked: number[] = [];
+  registerAdapter(sixChapterSource('upd-newest-del', asked) as any);
+  await mkSeries('newestdel', 'upd-newest-del');
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestdel')]);
+  for (const n of [4, 5, 6]) await book('newestdel', n);
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-newest-del']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  // Exactly as deleteSeriesFiles (lib/libraryAdmin.ts) leaves the row.
+  await q(`UPDATE lib_books SET pruned_at = now(), pruned_reason = 'deleted' WHERE id = $1`, [`${S('newestdel')}_b6`]);
+  const del = await updateSeries(S('newestdel'), 1, { newestOnly: true });
+  assert.deepEqual(del.newest, { number: 6, state: 'deleted' }, 'a Delete-files tombstone of the newest number is "deleted", not "already here"');
+  assert.equal(del.added, 0);
+  assert.deepEqual(asked, [], 'and it is not fetched: the deletion was on purpose, and Fetch again is the way back');
+
+  // The cleanup's tombstone (reason NULL) is the same decision, made by a setting rather than a button.
+  await q(`UPDATE lib_books SET pruned_reason = NULL WHERE id = $1`, [`${S('newestdel')}_b6`]);
+  const cleaned = await updateSeries(S('newestdel'), 1, { newestOnly: true });
+  assert.equal(cleaned.newest?.state, 'deleted');
+
+  // A live row for the number beside the tombstone -- the chapter was fetched again into a fresh row
+  // while the old one kept its mark -- is a chapter we hold. Live wins.
+  await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages) VALUES ($1, $2, 'T!upd', $3, 6, 'Chapter 6', 1)`,
+    [`${S('newestdel')}_b6again`, S('newestdel'), `${S('newestdel')}/Chapter 6 - again.cbz`]);
+  const again = await updateSeries(S('newestdel'), 1, { newestOnly: true });
+  assert.deepEqual(again.newest, { number: 6, state: 'up_to_date' }, 'a live row beside the tombstone means we have it');
+  assert.deepEqual(asked, []);
+  assert.ok(!onDisk('newestdel', 6));
+});
+
+/**
+ * A bulk button over 500 series on one disabled source would ask that source for 500 listings, 1.5 s apiece,
+ * to say "disabled" 500 times. A disabled source is filtered out before the listing loop -- for every run since
+ * v0.54.0, the sweep's included (the tests at the end of this file) -- so a series whose every source is
+ * disabled is its verdict with no network call, and a series that also follows a live source is asked on that
+ * one only. The verdict's own `isDisabled` check after the listing stays, for a source switched off in between.
+ * Reintroduce by dropping the filter over `followed` before the listing loop: the first assertion below counts
+ * one listing call (the verdict still reads disabled, from the later check).
+ */
+test('a disabled source is never asked for its listing by fetch newest; a live follower still is', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  const listed: string[] = [];
+  const counting = (id: string) => ({
+    ...sixChapterSource(id, []),
+    async listChapters() { listed.push(id); return [1, 2, 3, 4, 5, 6].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `c${n}` })); },
+  });
+  registerAdapter(counting('upd-newest-off') as any);
+  registerAdapter(counting('upd-newest-off-ext') as any);
+  await mkSeries('newestoff', 'upd-newest-off');
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('newestoff')]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-newest-off', 'upd-newest-off-ext']]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  await setDisabled('upd-newest-off', true);
+  try {
+    const off = await updateSeries(S('newestoff'), 1, { newestOnly: true });
+    assert.equal(listed.filter((id) => id === 'upd-newest-off').length, 0, 'the disabled source was never asked for its listing');
+    assert.deepEqual(off.newest, { number: null, state: 'disabled' });
+    assert.equal(off.asked, false, 'and the run says no source was asked, so the bulk job does not pace for it');
+
+    // Followed on a second, live source as well: that one is asked, the disabled one still is not, and
+    // the newest release comes through it.
+    await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, 'upd-newest-off-ext', 'ext-off') ON CONFLICT DO NOTHING`, [S('newestoff')]);
+    const viaExt = await updateSeries(S('newestoff'), 1, { newestOnly: true });
+    assert.deepEqual(listed, ['upd-newest-off-ext'], 'only the live follower was asked');
+    assert.deepEqual(viaExt.newest, { number: 6, state: 'queued' });
+    assert.equal(viaExt.added, 1);
+    assert.equal(viaExt.asked, true);
+    assert.ok(onDisk('newestoff', 6));
+  } finally {
+    await setDisabled('upd-newest-off', false);
+    await q('DELETE FROM series_sources WHERE series_id = $1', [S('newestoff')]).catch(() => {});
+  }
+});
+
+
+// ---- v0.31.0: which copy of a chapter, from which group, from which source ----------------------------
+//
+// A source can list one number several times (MangaDex: one row per group), and a series can be followed
+// on more than one source. The updater now merges every listing it is given, hands the lot to
+// chooseReleases (lib/releases.ts) with the series' preferences, and fetches ONE copy per number; what it
+// fetched is stamped on the book (setBookMeta) and written into the file (ComicInfo <Translator>).
+
+/** One adapter whose listing each test below sets; `asked` records the chapter ids it was asked pages for. */
+const SRC_GRP = 'upd-grp';
+let grpList: any[] = [];
+const grpAsked: string[] = [];
+/** A primary and a follower for the multi-source tests; page urls carry the adapter so fetch can refuse one. */
+const SRC_PRI = 'upd-pri', SRC_EXT = 'upd-ext';
+const priAsked: string[] = [];
+const extAsked: string[] = [];
+const numbered = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => ({ number: i + 1, title: `Chapter ${i + 1}`, sourceId: `${prefix}${i + 1}` }));
+const bookRow = (key: string, n: number) =>
+  (q(`SELECT series_id, scanlator, source_id FROM lib_books WHERE file LIKE $1`, [`%${S(key)}/Chapter ${n}.cbz`]) as Promise<any[]>).then((r) => r[0]);
+const comicInfo = (key: string, n: number): string => {
+  const AdmZip = require('adm-zip');
+  return new AdmZip(join(ROOT, S(key), `Chapter ${n}.cbz`)).readAsText('ComicInfo.xml');
+};
+
+before(async () => {
+  if (!DSN) return;
+  const { registerAdapter } = await import('../src/lib/sources');
+  registerAdapter({
+    id: SRC_GRP, name: SRC_GRP,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_GRP, title: sid }; },
+    async listChapters() { return grpList; },
+    async getPageUrls(chId: string) { grpAsked.push(chId); return ['https://example.invalid/grp/page.png']; },
+    async latest() { return []; },
+  } as any);
+  registerAdapter({
+    id: SRC_PRI, name: SRC_PRI,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_PRI, title: sid }; },
+    async listChapters() { return numbered(5, 'p'); },
+    async getPageUrls(chId: string) { priAsked.push(chId); return [`https://example.invalid/pri/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+  registerAdapter({
+    id: SRC_EXT, name: SRC_EXT,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_EXT, title: sid }; },
+    async listChapters() { return numbered(6, 'e'); },
+    async getPageUrls(chId: string) { extAsked.push(chId); return [`https://example.invalid/ext/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+});
+
+after(async () => {
+  if (!DSN) return;
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_GRP, SRC_PRI, SRC_EXT]]).catch(() => {});
+});
+
+/**
+ * Reintroduce by replacing the chooseReleases call with `{ releases: tagged, waiting: [] }`: the loop takes
+ * the copies in listed order, A's id is asked for first, and "the preferred group's copy was fetched" fails.
+ * Reintroduce the stamp by dropping the setBookMeta call after persistScan in runUpdateAll: the file lands,
+ * the scan mints the row, and "stamped who released it" reads null.
+ */
+test('the preferred group\'s copy is the one fetched, and the file and the book both say so', { skip }, async () => {
+  grpList = [
+    { number: 6, title: 'Chapter 6', sourceId: 'g6a', scanlator: 'A' },
+    { number: 6, title: 'Chapter 6', sourceId: 'g6b', scanlator: 'B' },
+  ];
+  grpAsked.length = 0;
+  await mkSeries('grp', SRC_GRP);
+  await q(`UPDATE lib_series SET scanlator_prefs = '{"priority":["B"]}' WHERE id = $1`, [S('grp')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_GRP]);
+  await only(['grp']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await runUpdateAll({ maxNew: 5 });
+
+  assert.equal(r.added, 1, 'one number, one file');
+  assert.deepEqual(grpAsked, ['g6b'], `the preferred group's copy was fetched, not the first listed; asked: ${grpAsked}`);
+  assert.ok(onDisk('grp', 6));
+  assert.match(comicInfo('grp', 6), /<Translator>B<\/Translator>/, 'the file carries the group in ComicInfo');
+  const b = await bookRow('grp', 6);
+  assert.ok(b, 'the sweep scanned the file into a book');
+  assert.equal(b.scanlator, 'B', 'and stamped who released it');
+  assert.equal(b.source_id, SRC_GRP, 'and where it came from');
+});
+
+/**
+ * Reintroduce by passing `{ ...prefs, patienceMs: 0 }` to chooseReleases: the first run fetches A's copy
+ * and "held for the preferred group" fails on added.
+ */
+test('a number whose preferred group has not released yet is held, counted as behind, and not fetched', { skip }, async () => {
+  grpList = [{ number: 7, title: 'Chapter 7', sourceId: 'g7a', scanlator: 'A', publishedAt: new Date().toISOString() }];
+  grpAsked.length = 0;
+  await mkSeries('pat', SRC_GRP);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_GRP]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  // patienceDays null on the series: the global default (2 days) applies.
+  await q(`UPDATE lib_series SET scanlator_prefs = '{"priority":["B"]}' WHERE id = $1`, [S('pat')]);
+  const held = await updateSeries(S('pat'), 5);
+  assert.equal(held.added, 0, 'held for the preferred group');
+  assert.equal(held.waiting, 1, 'and the run says how many it is holding');
+  assert.equal(held.outcome, 'ok', 'holding is not a failure');
+  assert.deepEqual(grpAsked, [], 'nothing was asked for');
+  assert.equal((await stamp('pat')).m, 1, 'a held number is still a missing one: "1 behind" on the series page');
+  assert.equal((await stamp('pat')).c, 1);
+
+  // Patience off for this series: the same listing is taken now.
+  await q(`UPDATE lib_series SET scanlator_prefs = '{"priority":["B"],"patienceDays":0}' WHERE id = $1`, [S('pat')]);
+  const taken = await updateSeries(S('pat'), 5);
+  assert.equal(taken.added, 1, 'with no patience, the copy on offer is taken');
+  assert.equal(taken.waiting, 0);
+  assert.deepEqual(grpAsked, ['g7a']);
+});
+
+/**
+ * Reintroduce by dropping the `!have.has(c.number)` filter from `missing`: B is asked for chapter 5 and
+ * "a chapter on disk is not fetched again" fails.
+ */
+test('a chapter already on disk is never replaced by a better-ranked group\'s copy', { skip }, async () => {
+  grpList = [
+    { number: 5, title: 'Chapter 5', sourceId: 'g5a', scanlator: 'A' },
+    { number: 5, title: 'Chapter 5', sourceId: 'g5b', scanlator: 'B' },
+  ];
+  grpAsked.length = 0;
+  await mkSeries('keep', SRC_GRP);
+  await q(`UPDATE lib_series SET scanlator_prefs = '{"priority":["B"]}' WHERE id = $1`, [S('keep')]);
+  // Chapter 5 landed from A on an earlier run, as the row the scan would have minted for it.
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('keep')]);
+  await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages, scanlator, source_id) VALUES ($1, $2, 'T!upd', $3, 5, 'Chapter 5', 1, 'A', $4)`,
+    [`${S('keep')}_b5`, S('keep'), `${S('keep')}/Chapter 5.cbz`, SRC_GRP]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_GRP]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('keep'), 5);
+
+  assert.deepEqual(grpAsked, [], `a chapter on disk is not fetched again, whoever released it; asked: ${grpAsked}`);
+  assert.equal(r.added, 0);
+  assert.equal((await stamp('keep')).m, 0, 'and it is not "behind" either');
+  const b = await bookRow('keep', 5);
+  assert.equal(b.scanlator, 'A', 'the stamp still names the group whose file is on disk');
+});
+
+/**
+ * Reintroduce by passing `releases` instead of `landed` to setBookMeta in updateSeries: chapter 5's row is
+ * relabelled B while A's file is what is on disk, and "a book that did not land keeps its stamp" fails.
+ */
+test('only the chapters that landed are stamped; a book from an earlier run keeps its group', { skip }, async () => {
+  grpList = [
+    { number: 5, title: 'Chapter 5', sourceId: 'g5b', scanlator: 'B' },
+    { number: 6, title: 'Chapter 6', sourceId: 'g6b', scanlator: 'B' },
+  ];
+  grpAsked.length = 0;
+  await mkSeries('stamp', SRC_GRP);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('stamp')]);
+  await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages, scanlator, source_id) VALUES ($1, $2, 'T!upd', $3, 5, 'Chapter 5', 1, 'A', $4)`,
+    [`${S('stamp')}_b5`, S('stamp'), `${S('stamp')}/Chapter 5.cbz`, SRC_GRP]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_GRP]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await updateSeries(S('stamp'), 5);
+
+  assert.equal(r.added, 1);
+  // `title` rides along since the sweep started recording chapter names (setBookMeta keeps only a real one), and
+  // `chapterId` since v0.49.0: the post the file was written from, so a later renumber knows it exactly (#116).
+  // Reintroduce by dropping `chapterId: out.chapterUsed.sourceId` from the updater's landed.push: it is missing here.
+  assert.deepEqual(r.landed, [{ number: 6, scanlator: 'B', source: SRC_GRP, title: 'Chapter 6', chapterId: 'g6b' }], 'the run reports what landed, for the stamp after the scan');
+  assert.equal((await bookRow('stamp', 5)).scanlator, 'A', 'a book that did not land keeps its stamp');
+});
+
+/**
+ * Reintroduce by iterating `followed.slice(0, 1)` in the listing loop: the follower is never asked, chapter
+ * 6 is never seen, and "five from the primary and one from the follower" fails with added 5. Reintroduce
+ * the count by stamping `tagged.length` instead of `releases.length`: "source_chapters is the union of
+ * NUMBERS" fails, reading 11 copies where there are 6 numbers.
+ */
+test('a series followed on two sources takes what the primary has and the rest from the follower', { skip }, async () => {
+  priAsked.length = 0; extAsked.length = 0;
+  await mkSeries('two', SRC_PRI);
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, 'ext-two') ON CONFLICT DO NOTHING`, [S('two'), SRC_EXT]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('two')]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_PRI, SRC_EXT]]);
+  await only(['two']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  const r = await runUpdateAll({ maxNew: 6 });
+
+  assert.equal(r.added, 6, 'five from the primary and one from the follower');
+  assert.deepEqual(extAsked, ['e6'], `chapter 6 came from the follower, and only chapter 6; asked: ${extAsked}`);
+  assert.deepEqual(priAsked, ['p1', 'p2', 'p3', 'p4', 'p5'], 'the primary wins every number it has');
+  assert.ok(onDisk('two', 6));
+  assert.equal((await bookRow('two', 6)).source_id, SRC_EXT, 'the book says which adapter it came from');
+  assert.equal((await bookRow('two', 1)).source_id, SRC_PRI);
+  const st = await stamp('two');
+  assert.equal(st.c, 6, 'source_chapters is the union of NUMBERS the sources listed, not the number of copies');
+  const ext = (await q('SELECT checked_at, chapters FROM series_sources WHERE series_id = $1 AND source_id = $2', [S('two'), SRC_EXT]))[0];
+  assert.ok(ext.checked_at, 'the follower carries its own checked stamp');
+  assert.equal(ext.chapters, 6, 'and what it listed');
+});
+
+// ---- chapter parts that sources number or split differently (v0.50.0, lib/partAlias.ts) ------------------------
+// aqua went offline and series followed sites that number a chapter's parts their own way. `upd-pq` is that dead
+// primary (it throws), `upd-pa` writes parts as N / N.5 (mangapill), `upd-pb` as N.1 / N.6 (mangaread) or splits
+// a chapter in ten (natomanga). Each test sets what the followers list.
+const SRC_PQ = 'upd-pq', SRC_PA = 'upd-pa', SRC_PB = 'upd-pb';
+const partLists: Record<string, number[]> = { [SRC_PA]: [], [SRC_PB]: [] };
+const partAsked: string[] = [];
+before(async () => {
+  if (!DSN) return;
+  const { registerAdapter } = await import('../src/lib/sources');
+  registerAdapter({
+    id: SRC_PQ, name: SRC_PQ,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: SRC_PQ, title: sid }; },
+    async listChapters() { throw new Error('site offline'); },
+    async getPageUrls() { return []; },
+    async latest() { return []; },
+  } as any);
+  for (const id of [SRC_PA, SRC_PB]) {
+    registerAdapter({
+      id, name: id,
+      async search() { return []; },
+      async getSeries(sid: string) { return { sourceId: sid, source: id, title: sid }; },
+      async listChapters() { return partLists[id].map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `${id}:${n}` })); },
+      async getPageUrls(chId: string) { partAsked.push(chId); return [`https://example.invalid/${chId}.png`]; },
+      async latest() { return []; },
+    } as any);
+  }
+});
+after(async () => {
+  if (!DSN) return;
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_PQ, SRC_PA, SRC_PB]]).catch(() => {});
+});
+/** A series on the dead primary that follows `followers` in that order, holding `disk` (number, origin). */
+async function partsSeries(key: string, followers: string[], disk: Array<[number, string | null]>, primary = SRC_PQ) {
+  await mkSeries(key, primary);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+  await q('DELETE FROM series_sources WHERE series_id = $1', [S(key)]);
+  // One statement per row, so created_at -- the follow order -- is the order given.
+  for (const f of followers) await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, $3)`, [S(key), f, `${f}-${key}`]);
+  for (const [n, from] of disk) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages, source_id) VALUES ($1, $2, 'T!upd', $3, $4, $5, 1, $6)`,
+      [`${S(key)}_b${n}`, S(key), `${S(key)}/Chapter ${n}.cbz`, n, `Chapter ${n}`, from]);
+  }
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_PQ, SRC_PA, SRC_PB]]);
+  partAsked.length = 0;
+  globalThis.fetch = (async () => png()) as typeof fetch;
+}
+
+test('a follower\'s other numbering of the parts on disk, or its own split of a chapter on disk, is not downloaded', { skip }, async () => {
+  // .1 / .6 against .0 / .5 on disk, and ten parts of 78 against the whole 78 on disk -- both from the dead primary.
+  // Reintroduce by dropping the aliasParts block in updateSeries: 12.1, 12.6 and 78.1 ... 78.9 are all downloaded
+  // and counted missing. Reintroduce R2 alone (no `covered`): the nine parts of 78 are.
+  const tens = [78, 78.1, 78.2, 78.3, 78.4, 78.5, 78.6, 78.7, 78.8, 78.9];
+  partLists[SRC_PB] = [12.1, 12.6, ...tens];
+  await partsSeries('parts', [SRC_PB], [[12, SRC_PQ], [12.5, SRC_PQ], [78, SRC_PQ]]);
+
+  const r = await updateSeries(S('parts'), 20);
+  assert.equal(r.outcome, 'ok', JSON.stringify(r));
+  assert.deepEqual(partAsked, [], 'nothing was downloaded');
+  assert.equal(r.added, 0);
+  assert.equal((await stamp('parts')).m, 0, 'and nothing is missing');
+  const rows = await q('SELECT number, status, copies FROM series_listing WHERE series_id = $1 ORDER BY number', [S('parts')]);
+  const status = Object.fromEntries(rows.map((x: any) => [Number(x.number), x.status]));
+  assert.deepEqual([status[12], status[12.5], status[78]], ['available', 'available', 'available'], JSON.stringify(status));
+  assert.deepEqual(tens.slice(1).map((n) => status[n]), Array(9).fill('covered'), 'the other split is listed, as covered');
+  assert.equal(status[12.1] ?? status[12.6], undefined, 'the follower\'s own numbers for the parts on disk are gone');
+  const half = rows.find((x: any) => Number(x.number) === 12.5);
+  assert.deepEqual([half.copies[0].source, half.copies[0].sourceNumber], [SRC_PB, 12.6], 'the copy keeps the number its source gave it');
+  const { listingFor } = await import('../src/lib/seriesListing');
+  const ghosts = (await listingFor(S('parts'), { floor: null, admin: true })).content;
+  assert.deepEqual(ghosts.map((g: any) => [g.number, g.why]), tens.slice(1).map((n) => [n, 'covered']), 'the series page says why');
+  // "Fetch newest": the newest listed number is 78.9, another split of the 78 on disk -- the newest chapter is 78,
+  // and it is here.
+  const newest = await updateSeries(S('parts'), 1, { newestOnly: true });
+  assert.deepEqual([newest.newest?.number, newest.newest?.state, newest.added], [78, 'up_to_date', 0],
+    `Fetch newest takes the newest chapter, not another site's part of one: ${JSON.stringify(newest.newest)}`);
+});
+
+test('one split per new chapter: nothing of 540 here, the primary splits it in two and a follower in three', { skip }, async () => {
+  // R3 (lib/partAlias.ts). R1 matches equal counts only and R2 needs a file at 540, so the same sweep took both splits.
+  // Now the source that ranks first owns 540, and the parts only the follower lists are covered. Reintroduce by
+  // dropping R3 in aliasParts: "only the primary's split of 540 is downloaded" finds 540.1 and 540.2 among them.
+  partLists[SRC_PA] = [540, 540.5];
+  partLists[SRC_PB] = [540, 540.1, 540.2];
+  await partsSeries('r3', [SRC_PB], [], SRC_PA);
+
+  const r = await updateSeries(S('r3'), 10);
+  assert.equal(r.outcome, 'ok', JSON.stringify(r));
+  assert.deepEqual([...partAsked].sort(), [`${SRC_PA}:540`, `${SRC_PA}:540.5`], `only the primary's split of 540 is downloaded; asked: ${partAsked}`);
+  assert.ok(onDisk('r3', 540) && onDisk('r3', 540.5), 'the primary\'s two parts landed');
+  assert.ok(!onDisk('r3', 540.1) && !onDisk('r3', 540.2), 'and not the follower\'s');
+  assert.equal((await stamp('r3')).m, 2, 'missing counts the primary\'s two parts, not the follower\'s');
+  const rows = await q('SELECT number, status FROM series_listing WHERE series_id = $1 ORDER BY number', [S('r3')]);
+  assert.deepEqual(rows.map((x: any) => [Number(x.number), x.status]),
+    [[540, 'available'], [540.1, 'covered'], [540.2, 'covered'], [540.5, 'available']], 'the follower\'s split is stored as covered');
+});
+
+test('two followers disagreeing about chapter 531 with nothing on disk: one download per part, in the series\' convention', { skip }, async () => {
+  // Tales of Demons and Gods: mangapill (followed first) writes 531 / 531.5, mangaread 531.1 / 531.6, and most of
+  // the series' two-part chapters on disk are .1 / .6. Reintroduce by dropping the convention step in aliasParts
+  // (`ref = own`): the files are named 531 and 531.5. Drop R1 entirely: four downloads.
+  partLists[SRC_PA] = [531, 531.5];
+  partLists[SRC_PB] = [531.1, 531.6];
+  await partsSeries('tdg', [SRC_PA, SRC_PB], [[528, SRC_PQ], [528.5, SRC_PQ], [529.1, SRC_PQ], [529.6, SRC_PQ], [530.1, SRC_PQ], [530.6, SRC_PQ]]);
+
+  const r = await updateSeries(S('tdg'), 10);
+  assert.equal(r.outcome, 'ok', JSON.stringify(r));
+  assert.equal(partAsked.length, 2, `one download per part; asked: ${partAsked}`);
+  assert.deepEqual(partAsked, [`${SRC_PA}:531`, `${SRC_PA}:531.5`], 'from the follower ranked first');
+  assert.deepEqual(r.landed.map((l: any) => l.number), [531.1, 531.6], 'the parts land under the series\' own numbering');
+  assert.ok(onDisk('tdg', 531.1) && onDisk('tdg', 531.6), 'named in the convention most of the series\' chapters use');
+  assert.ok(!onDisk('tdg', 531) && !onDisk('tdg', 531.5), 'and not in the first follower\'s');
+});
+
+/**
+ * A series whose primary adapter is gone -- the extension was uninstalled, or its language hidden -- but
+ * which follows a source that is still here keeps updating from that source. That is what following is
+ * for, and it is what the Health page says when it lists such a series as reference rather than frozen.
+ *
+ * Reintroduce by returning 'unrouted' when the PRIMARY adapter is missing (the check that used to run
+ * before series_sources was read): the follower is never asked and "the follower is asked" fails with
+ * outcome 'unrouted'.
+ */
+test('a dead primary with a live follower still updates from the follower', { skip }, async () => {
+  extAsked.length = 0;
+  await mkSeries('deadpri', 'sw:0000000000000000000'); // an adapter that is not loaded
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, 'ext-two') ON CONFLICT DO NOTHING`, [S('deadpri'), SRC_EXT]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('deadpri')]);
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_EXT]);
+  await only(['deadpri']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+
+  // Through the sweep, which scans what landed; updateSeries alone leaves the rows for the next scan.
+  const r = await runUpdateAll({ maxNew: 10 });
+  assert.equal(r.outcomes.unrouted ?? 0, 0, `the follower is asked; outcomes ${JSON.stringify(r.outcomes)}`);
+  assert.ok(extAsked.length >= 1, 'the follower served the chapters');
+  assert.equal(r.added, 6);
+  assert.equal((await bookRow('deadpri', 6)).source_id, SRC_EXT);
+});
+
+/**
+ * Reintroduce by returning 'blocked' when `blocked > 0` instead of when every followed source is: the
+ * follower is never listed and "a cooldown on the primary does not stop the follower" fails.
+ */
+test('a cooldown on the primary does not stop the follower; a cooldown on both is a blocked series', { skip }, async () => {
+  priAsked.length = 0; extAsked.length = 0;
+  await mkSeries('blk', SRC_PRI);
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, 'ext-blk') ON CONFLICT DO NOTHING`, [S('blk'), SRC_EXT]);
+  // 1..5 are on disk; only the follower lists 6.
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('blk')]);
+  for (const n of [1, 2, 3, 4, 5]) {
+    await q(`INSERT INTO lib_books (id, series_id, source, file, number, title, pages) VALUES ($1, $2, 'T!upd', $3, $4, $5, 1)`,
+      [`${S('blk')}_b${n}`, S('blk'), `${S('blk')}/Chapter ${n}.cbz`, n, `Chapter ${n}`]);
+  }
+  const block = (id: string) => q(`INSERT INTO source_health (source_id, status, blocked_until) VALUES ($1, 'blocked', now() + interval '1 hour')
+    ON CONFLICT (source_id) DO UPDATE SET blocked_until = now() + interval '1 hour'`, [id]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_PRI, SRC_EXT]]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    await block(SRC_PRI);
+    const r = await updateSeries(S('blk'), 5);
+    assert.equal(r.outcome, 'ok', 'a cooldown on the primary does not stop the follower');
+    assert.equal(r.added, 1);
+    assert.deepEqual(extAsked, ['e6']);
+    assert.deepEqual(priAsked, [], 'the primary was left alone');
+    assert.ok(onDisk('blk', 6));
+
+    await block(SRC_EXT);
+    await q('UPDATE lib_series SET source_checked_at = NULL WHERE id = $1', [S('blk')]);
+    assert.equal((await updateSeries(S('blk'), 5)).outcome, 'blocked', 'with every source in a cooldown, the series is blocked');
+    assert.equal((await stamp('blk')).t, null, 'and, never asked, it is not stamped');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[SRC_PRI, SRC_EXT]]);
+  }
+});
+
+/**
+ * Reintroduce by ending the loop on the primary's refusal, or by skipping same-number copies: chapters 1
+ * and 2 never move to the follower and chapter 3 is never reached. One refusal is still only one strike.
+ */
+test('a refusing primary costs one strike and does not stop the follower\'s chapters', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  // The primary lists 1..2 and the follower 1..3. The refusal on primary chapter 1 moves chapters 1 and 2
+  // to their same-number follower copies; chapter 3 was already chosen from the follower.
+  registerAdapter({
+    id: 'upd-pri2', name: 'upd-pri2',
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: 'upd-pri2', title: sid }; },
+    async listChapters() { return numbered(2, 'q'); },
+    async getPageUrls(chId: string) { priAsked.push(chId); return [`https://example.invalid/refused/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+  registerAdapter({
+    id: 'upd-ext2', name: 'upd-ext2',
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: 'upd-ext2', title: sid }; },
+    async listChapters() { return numbered(3, 'f'); },
+    async getPageUrls(chId: string) { extAsked.push(chId); return [`https://example.invalid/ext/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+  priAsked.length = 0; extAsked.length = 0;
+  await mkSeries('ref', 'upd-pri2');
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, 'upd-ext2', 'ext-ref') ON CONFLICT DO NOTHING`, [S('ref')]);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('ref')]);
+  await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('ref')]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-pri2', 'upd-ext2']]);
+  globalThis.fetch = (async (u: any) => (String(u).includes('/refused/') ? new Response('go away', { status: 403 }) : png())) as typeof fetch;
+  try {
+    const r = await updateSeries(S('ref'), 5);
+    assert.equal(priAsked.length, 1, `the refusing primary was asked once, not for chapter 2 as well; asked: ${priAsked}`);
+    assert.deepEqual(extAsked, ['f1', 'f2', 'f3'], 'each number landed from the healthy follower');
+    for (const n of [1, 2, 3]) assert.ok(onDisk('ref', n), `chapter ${n} landed`);
+    assert.equal(r.added, 3);
+    assert.equal(r.failed, 0, 'a recovered refusal is not a chapter failure');
+    assert.equal(r.switched, 2, 'the two primary copies report their source switch');
+    assert.equal(Number((await q('SELECT count(*)::int AS n FROM chapter_failures WHERE series_id = $1', [S('ref')]))[0]?.n), 0,
+      'a chapter recovered from its alternate leaves no retry-ledger row');
+    const h = (await q('SELECT consecutive FROM source_health WHERE source_id = $1', ['upd-pri2']))[0];
+    assert.equal(Number(h?.consecutive), 1, 'one refusal is one strike');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-pri2', 'upd-ext2']]);
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('ref')]).catch(() => {});
+  }
+});
+
+/**
+ * A refusal never starts a source hunt -- a 429 tonight is a busy site -- unless the ledger already shows
+ * two refusals of this number from this very source: the same site saying no across two sweeps is a chapter
+ * it will not serve (live: 169 chapters parked for weeks on "page 1: 404; page 2: 429"), and a hunt is the
+ * only way it lands. The hunt's own once-a-day stamp and the caller's budget are what show it ran: nothing
+ * else in this fixture carries the title, so it finds nothing, which is not the point.
+ *
+ * Reintroduce by lowering `attempts >= 2` to `>= 1` in updater.ts's persistent rule: the one-refusal case
+ * hunts. Reintroduce the source test by dropping `source_id === via`: the other-source row hunts.
+ */
+test('a refusal is hunted only after two sweeps', { skip }, async () => {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const REF = 'upd-refuse';
+  registerAdapter({
+    id: REF, name: REF,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: REF, title: sid }; },
+    async listChapters() { return numbered(5, 'r'); },
+    async getPageUrls(chId: string) { return [`https://example.invalid/refuse/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+  await mkSeries('refuse', REF);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('refuse')]);
+  globalThis.fetch = (async (u: any) => (String(u).includes('/refuse/') ? new Response('go away', { status: 403 }) : png())) as typeof fetch;
+  const hunted = async () => (await q('SELECT source_hunt_at AS t FROM lib_series WHERE id = $1', [S('refuse')]))[0]?.t != null;
+  const sweepWith = async (ledger: { attempts: number; status: string; source: string } | null) => {
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('refuse')]);
+    if (ledger) {
+      await q(`INSERT INTO chapter_failures (series_id, number, source_id, status, reason, attempts) VALUES ($1, 1, $2, $3, 'x', $4)`,
+        [S('refuse'), ledger.source, ledger.status, ledger.attempts]);
+    }
+    await q('DELETE FROM source_health WHERE source_id = $1', [REF]); // the last refusal's cooldown, or the series is `blocked` unasked
+    await q('UPDATE lib_series SET source_hunt_at = NULL WHERE id = $1', [S('refuse')]);
+    const budget = { left: 5 };
+    const r = await updateSeries(S('refuse'), 5, { hunt: budget });
+    assert.equal(r.outcome, 'ok');
+    assert.equal(r.added, 0, 'nothing lands: the source refuses and nothing else carries the title');
+    return { charged: 5 - budget.left, stamped: await hunted() };
+  };
+  try {
+    assert.deepEqual(await sweepWith(null), { charged: 0, stamped: false }, 'a first refusal is answered by its cooldown, not a hunt');
+    assert.deepEqual(await sweepWith({ attempts: 1, status: 'rate_limited', source: REF }), { charged: 0, stamped: false },
+      'one refusal on the ledger is still one bad night');
+    assert.deepEqual(await sweepWith({ attempts: 2, status: 'rate_limited', source: REF }), { charged: 1, stamped: true },
+      'the third refusal of the same number by the same source is hunted');
+    assert.deepEqual(await sweepWith({ attempts: 2, status: 'blocked', source: REF }), { charged: 1, stamped: true },
+      'a 403 counts as a refusal too');
+    assert.deepEqual(await sweepWith({ attempts: 2, status: 'rate_limited', source: 'upd-someone-else' }), { charged: 0, stamped: false },
+      'two refusals from a source this copy is not on say nothing about this one');
+    assert.deepEqual(await sweepWith({ attempts: 2, status: 'incomplete', source: REF }), { charged: 0, stamped: false },
+      'two shortfalls are not two refusals: tonight\'s refusal is still just a refusal');
+    const row = (await q('SELECT attempts, status FROM chapter_failures WHERE series_id = $1 AND number = 1', [S('refuse')]))[0];
+    assert.equal(Number(row?.attempts), 3, 'the refusal still counts against the retry cap');
+    assert.equal(row?.status, 'blocked');
+  } finally {
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('refuse')]).catch(() => {});
+    await q('DELETE FROM source_health WHERE source_id = $1', [REF]).catch(() => {});
+    await q('DELETE FROM lib_series WHERE id = $1', [S('refuse')]).catch(() => {});
+  }
+});
+
+/**
+ * The repair and the sweep never overlap: both download into the same series folders and both write
+ * lib_books for what landed. Reintroduce by dropping `runtime.repairing` from runSweep's check: the first
+ * call gets a promise instead of false.
+ */
+test('the sweep stands down while a repair runs', { skip }, async () => {
+  const { runSweep } = await import('../src/lib/updater');
+  const { runtime } = await import('../src/lib/runtime');
+  await only(['empty']);
+  const quiet = { info() {}, warn() {}, error() {} };
+  runtime.repairing = true;
+  try {
+    assert.equal(runSweep({ maxNew: 1 }, quiet as any), false, 'refused, synchronously, while a repair holds the folders');
+    assert.equal(runtime.updating, false, 'and the sweep flag was never raised for it');
+  } finally {
+    runtime.repairing = false;
+  }
+  const run = runSweep({ maxNew: 1 }, quiet as any);
+  assert.ok(run, 'and starts again the moment the repair is done');
+  await run;
+});
+
+/**
+ * #115: the nightly sweep asks every followed source for its chapters and used to keep what it learned to itself,
+ * and the downloader recorded an extension's own exception nowhere at all (it classifies as nothing). Both now
+ * leave per-stage evidence for Health, and neither touches the cooldown.
+ *
+ * Reintroduce by removing the noteStage in updater.ts's listChapters catch: no chapters evidence. Or by replacing
+ * the downloader's noteStage with reportFail: consecutive is 1.
+ */
+test('the updater and the downloader leave evidence without a cooldown', { skip }, async () => {
+  await q('DELETE FROM source_health WHERE source_id = $1', [SRC_EVID]);
+  const health = async () => (await q('SELECT * FROM source_health WHERE source_id = $1', [SRC_EVID]))[0];
+  // The notes are fire-and-forget beside the paths readers wait on; give them a moment to land.
+  const settled = async (ok: (h: any) => boolean) => {
+    for (let i = 0; i < 50; i++) { const h = await health(); if (h && ok(h)) return h; await new Promise((r) => setTimeout(r, 20)); }
+    return health();
+  };
+
+  evidMode = 'list';
+  await updateSeries(S('evid'));
+  let h = await settled((x) => !!x.stages?.chapters);
+  assert.ok(h?.stages?.chapters?.failAt, 'the failed chapter list is evidence');
+  assert.equal(h.stages.chapters.streak, 1);
+  assert.equal(h.stages.chapters.failBy, 'traffic');
+  assert.equal(h.stages.chapters.error, 'suwayomi: HTTP error 404');
+  assert.equal(h.status, 'ok', 'and never a status');
+  assert.equal(h.blocked_until, null, 'or a cooldown');
+
+  evidMode = 'pages';
+  await updateSeries(S('evid'));
+  h = await settled((x) => !!x.stages?.pages && !!x.stages?.chapters?.okAt);
+  assert.ok(h.stages.chapters.okAt > h.stages.chapters.failAt, 'a chapter list that answers closes the chapters failure');
+  assert.ok(h.stages.pages?.failAt, 'the page list the downloader could not get is evidence');
+  assert.equal(h.stages.pages.error, 'suwayomi: HTTP error 500');
+  assert.equal(h.consecutive, 0, 'and no escalation');
+  assert.equal(h.status, 'ok');
+});
+
+// ---- v0.54.0: switched off means off --------------------------------------------------------------------------
+//
+// aqua, switched off since its site went offline, was still the main source of 195 series, and the sweep asked it for
+// every one of them on every visit -- the newestOnly-only filter -- and downloaded its chosen copies, while Health and
+// the Turn off confirmation said it was asked for nothing. Its 195 series also shared one queue keyed on it, so its own
+// cooldowns decided when they were visited, whatever they were actually asked through.
+
+/** A source that counts what it is asked: its listings and the chapters it is asked pages for. */
+function countingSource(id: string, nums: number[], o: { throws?: boolean } = {}) {
+  const seen = { listed: 0, pages: [] as string[] };
+  const adapter = {
+    id, name: id,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: sid }; },
+    async listChapters() {
+      seen.listed++;
+      if (o.throws) throw new Error(`${id} is temporarily offline`);
+      return nums.map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `${id}:${n}` }));
+    },
+    async getPageUrls(chId: string) { seen.pages.push(chId); return [`https://example.invalid/${chId}.png`]; },
+    async latest() { return []; },
+  };
+  return { adapter, seen };
+}
+
+test('the sweep never asks a switched-off main for anything when the series follows a working source', { skip }, async () => {
+  // Reintroduce the newestOnly-only filter in updateSeries: the main is listed once.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  const main = countingSource('upd-offmain', [1, 2, 3]);
+  const fol = countingSource('upd-offfol', [1, 2, 3]);
+  registerAdapter(main.adapter as any);
+  registerAdapter(fol.adapter as any);
+  await mkSeries('offmain', 'upd-offmain');
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S('offmain')]);
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, 'upd-offfol', 'fol-offmain') ON CONFLICT DO NOTHING`, [S('offmain')]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-offmain', 'upd-offfol']]);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  await setDisabled('upd-offmain', true);
+  try {
+    const r = await updateSeries(S('offmain'), 5);
+    assert.equal(main.seen.listed, 0, 'the sweep never asks a switched-off main for its listing');
+    assert.deepEqual(main.seen.pages, [], 'and downloads nothing from it');
+    assert.equal(r.outcome, 'ok');
+    assert.equal(r.added, 3, 'every chapter came from the follower');
+    assert.deepEqual(fol.seen.pages, ['upd-offfol:1', 'upd-offfol:2', 'upd-offfol:3']);
+    assert.deepEqual(r.landed.map((l: any) => l.source), ['upd-offfol', 'upd-offfol', 'upd-offfol']);
+  } finally {
+    await setDisabled('upd-offmain', false);
+  }
+});
+
+test('a series whose every source is off is not asked: outcome off, no stamp, its listing kept', { skip }, async () => {
+  // Reintroduce by keeping the sources of a series whose every source is off (no early return): the offline site is
+  // asked once and the series reads source_error -- the outcome that made every night unhealthy.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  const dead = countingSource('upd-alloff', [1, 2], { throws: true });
+  registerAdapter(dead.adapter as any);
+  await mkSeries('alloff', 'upd-alloff');
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-alloff']);
+  await q('UPDATE lib_series SET source_checked_at = NULL WHERE id = $1', [S('alloff')]);
+  await q('DELETE FROM series_listing WHERE series_id = $1', [S('alloff')]);
+  for (const n of [1, 2]) {
+    await q(`INSERT INTO series_listing (series_id, number, source_id, chosen) VALUES ($1, $2, 'upd-alloff', $3::jsonb)`,
+      [S('alloff'), n, JSON.stringify({ sourceId: `upd-alloff:${n}`, number: n, source: 'upd-alloff' })]);
+  }
+  await only(['alloff']);
+  await setDisabled('upd-alloff', true);
+  try {
+    const r = await updateSeries(S('alloff'), 5);
+    assert.equal(dead.seen.listed, 0, 'a series whose every source is off is not asked');
+    assert.equal(r.outcome, 'off');
+    assert.equal(r.asked, false);
+    assert.equal((await stamp('alloff')).t, null, 'never asked, so never stamped');
+    assert.equal((await q('SELECT count(*)::int AS n FROM series_listing WHERE series_id = $1', [S('alloff')]))[0].n, 2, 'its listing stands');
+
+    const sweep = await runUpdateAll({ maxNew: 5 });
+    assert.equal(sweep.outcomes.off, 1, 'the sweep counts it as off');
+    assert.equal(sweep.outcomes.source_error, 0);
+    assert.equal(sweep.healthy, true, 'a switched-off source is a choice, not a failure: the night is healthy');
+    assert.equal(dead.seen.listed, 0);
+  } finally {
+    await setDisabled('upd-alloff', false);
+  }
+});
+
+test('queues follow the source a series is asked through', { skip }, async () => {
+  // A main switched off and cooling down; s1 follows a source in a cooldown, s2 a fine one. Keyed on the main source,
+  // both share its queue: s1 comes back blocked (its only askable source is cooling), the main's queue is parked, and
+  // s2 -- which would have landed its chapter from the fine follower -- is skipped, the main's own cooldown keeping the
+  // queue parked for the rest of the sweep. Reintroduce by keying on `source_id`: s2 is skipped.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { setDisabled } = await import('../src/lib/sourceHealth');
+  const main = countingSource('upd-qmain', [1]);
+  const cool = countingSource('upd-qcool', [1]);
+  const fine = countingSource('upd-qfine', [1]);
+  for (const s of [main, cool, fine]) registerAdapter(s.adapter as any);
+  for (const [key, fol] of [['q1', 'upd-qcool'], ['q2', 'upd-qfine']] as const) {
+    await mkSeries(key, 'upd-qmain');
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+    await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [S(key), fol, `${fol}-${key}`]);
+  }
+  // s1 first in the sweep's order.
+  await q(`UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 2000 ELSE 1000 END WHERE id = ANY($2::text[])`,
+    [S('q1'), [S('q1'), S('q2')]]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-qmain', 'upd-qcool', 'upd-qfine']]);
+  await q(`INSERT INTO source_health (source_id, status, disabled, blocked_until) VALUES
+             ('upd-qmain', 'down', true, now() + interval '1 hour'), ('upd-qcool', 'rate_limited', false, now() + interval '1 hour')`);
+  await only(['q1', 'q2']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.equal(r.outcomes.blocked, 1, 's1 waits for its cooling follower');
+    assert.equal(r.outcomes.skipped, 0, 'the series on the fine follower was visited, not parked behind the dead main');
+    assert.equal(r.outcomes.ok, 1);
+    assert.ok(onDisk('q2', 1), 'and landed its chapter');
+    assert.equal(main.seen.listed + cool.seen.listed, 0, 'neither the switched-off main nor the cooling follower was asked');
+  } finally {
+    await setDisabled('upd-qmain', false);
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-qmain', 'upd-qcool', 'upd-qfine']]);
+  }
+});
+
+test('the sweep leaves a held series for later, and visits it once the hold is gone', { skip }, async () => {
+  // v0.55.7 (#150, a known gap): Rescan everything's Apply holds every series it changes in bulkNewest's busyFolders, the
+  // mark every other writer honours, and the sweep never asked -- it downloaded into a series mid-Apply. Reintroduce by
+  // dropping the folderBusy test in runUpdateAll: the held series is listed and its chapter fetched during the hold.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const { busyFolders } = await import('../src/lib/bulkNewest');
+  const asked: string[] = [];
+  /** Called by the source as it lists a series: a test lets a hold go here, while the sweep is mid-way. */
+  let onList: ((ref: string) => void) | null = null;
+  registerAdapter({
+    id: 'upd-hold', name: 'upd-hold',
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: 'upd-hold', title: sid }; },
+    async listChapters(ref: string) { asked.push(ref); onList?.(ref); return [{ number: 1, title: 'Chapter 1', sourceId: `${ref}:1` }]; },
+    async getPageUrls(chId: string) { return [`https://example.invalid/${chId}.png`]; },
+    async latest() { return []; },
+  } as any);
+  for (const k of ['hold1', 'hold2', 'free']) {
+    await mkSeries(k, 'upd-hold');
+    await q('UPDATE lib_series SET source_series_id = $2 WHERE id = $1', [S(k), `ref-${k}`]);
+  }
+  await q('DELETE FROM source_health WHERE source_id = $1', ['upd-hold']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  // The held series first in the sweep's order.
+  const first = async (k: string) => q(
+    `UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 2000 ELSE 1000 END WHERE id = ANY($2::text[])`,
+    [S(k), [S(k), S('free')]]);
+  try {
+    // Held for the whole sweep: put back once, still held at its second turn, skipped -- never asked, nothing fetched.
+    await only(['hold1', 'free']);
+    await first('hold1');
+    busyFolders.add(S('hold1'));
+    const r1 = await runUpdateAll({ maxNew: 5 });
+    assert.ok(!asked.includes('ref-hold1') && !onDisk('hold1', 1), 'the sweep went into a series another job holds');
+    assert.ok(onDisk('free', 1), 'the series behind it was not visited');
+    assert.equal((await stamp('hold1')).t, null, 'a series the sweep never asked was stamped checked');
+    assert.deepEqual([r1.visited, r1.outcomes.skipped], [1, 1], JSON.stringify(r1));
+    busyFolders.delete(S('hold1'));
+
+    // Let go while the sweep is on the series behind it: the held one is visited at its second turn.
+    asked.length = 0;
+    await only(['hold2', 'free']);
+    await first('hold2');
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S('free')]);
+    rmSync(join(ROOT, S('free')), { recursive: true, force: true });
+    busyFolders.add(S('hold2'));
+    onList = (ref) => { if (ref === 'ref-free') busyFolders.delete(S('hold2')); };
+    const r2 = await runUpdateAll({ maxNew: 5 });
+    assert.deepEqual(asked, ['ref-free', 'ref-hold2'], 'the series held at its first turn was not visited once the hold was gone');
+    assert.ok(onDisk('hold2', 1));
+    assert.deepEqual([r2.visited, r2.outcomes.skipped], [2, 0], JSON.stringify(r2));
+  } finally {
+    onList = null;
+    busyFolders.delete(S('hold1'));
+    busyFolders.delete(S('hold2'));
+    await q('DELETE FROM source_health WHERE source_id = $1', ['upd-hold']);
+  }
+});
+
+// ---- v0.79.0: a series is never parked behind a cooling source, nor forgotten while one cools ----
+
+/** A source whose chapter list can be made to throw, counting what it is asked. */
+function switchable(id: string, nums: number[]) {
+  const state = { throws: false, listed: 0, pages: [] as string[] };
+  const adapter = {
+    id, name: id,
+    async search() { return []; },
+    async getSeries(sid: string) { return { sourceId: sid, source: id, title: sid }; },
+    async listChapters() {
+      state.listed++;
+      if (state.throws) throw new Error(`${id}: listChapters exploded`);
+      return nums.map((n) => ({ number: n, title: `Chapter ${n}`, sourceId: `${id}:${n}` }));
+    },
+    async getPageUrls(chId: string) { state.pages.push(chId); return [`https://example.invalid/${chId}.png`]; },
+    async latest() { return []; },
+  };
+  return { adapter, state };
+}
+
+/** Main lists 1-10, the follower 1-5, 1-3 are on disk (rows): the shape of a Natomanga series with a short follower. */
+async function coolingFixture(key: string, mainId: string, folId: string) {
+  const { registerAdapter } = await import('../src/lib/sources');
+  const main = switchable(mainId, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const fol = switchable(folId, [1, 2, 3, 4, 5]);
+  registerAdapter(main.adapter as any);
+  registerAdapter(fol.adapter as any);
+  await mkSeries(key, mainId);
+  await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+  await q('DELETE FROM chapter_failures WHERE series_id = $1', [S(key)]);
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [S(key), folId, `${folId}-${key}`]);
+  for (const n of [1, 2, 3]) await book(key, n);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [[mainId, folId]]);
+  return { main, fol };
+}
+const listedNums = async (key: string): Promise<number[]> =>
+  (await q('SELECT number::float8 AS n FROM series_listing WHERE series_id = $1 ORDER BY number', [S(key)])).map((r: any) => Number(r.n));
+const coolFor = (id: string) =>
+  q(`INSERT INTO source_health (source_id, status, consecutive, blocked_until) VALUES ($1, 'rate_limited', 1, now() + interval '1 hour')
+     ON CONFLICT (source_id) DO UPDATE SET status = 'rate_limited', blocked_until = now() + interval '1 hour'`, [id]);
+
+test('a cooling main\'s numbers stay listed and behind while a follower answers', { skip }, async () => {
+  const { main } = await coolingFixture('cmk', 'upd-cmk-main', 'upd-cmk-fol');
+  try {
+    await updateSeries(S('cmk'), 0);
+    assert.deepEqual(await listedNums('cmk'), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'PREMISE: both answered');
+    await coolFor('upd-cmk-main');
+    main.state.listed = 0;
+    await updateSeries(S('cmk'), 0);
+    assert.equal(main.state.listed, 0, 'PREMISE: the cooling main was not asked');
+    // Reintroduce by dropping the merge (lib/updater.ts visitSeries): 6-10 are gone and the series reads two behind.
+    assert.deepEqual(await listedNums('cmk'), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'what only the main lists is kept while it cools');
+    const row = (await q('SELECT source_missing, finish_missing, finish_after FROM lib_series WHERE id = $1', [S('cmk')]))[0];
+    assert.equal(row.source_missing, 7, 'still behind by 4-10');
+    // Reintroduce by stamping `eligible.length`: 7, and the finishing sweep asks the follower again every pass.
+    assert.equal(row.finish_missing, 2, 'of which 4 and 5 can be fetched now, from the follower');
+    assert.ok(row.finish_after && new Date(row.finish_after).getTime() > Date.now(), 'and the rest once the main can answer');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-cmk-main', 'upd-cmk-fol']]);
+    await q('DELETE FROM lib_series WHERE id = $1', [S('cmk')]).catch(() => {});
+  }
+});
+
+test('a shared number comes from the follower, and a main that did not answer is never asked for pages', { skip }, async () => {
+  const { main, fol } = await coolingFixture('cms', 'upd-cms-main', 'upd-cms-fol');
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    await updateSeries(S('cms'), 0);
+    // The main stops answering its chapter list -- not a cooldown: it would answer a page request.
+    main.state.throws = true;
+    const r = await updateSeries(S('cms'), 10);
+    assert.deepEqual(fol.state.pages.sort(), ['upd-cms-fol:4', 'upd-cms-fol:5'], '4 and 5 from the follower');
+    // Reintroduce by starting `refusing` empty: the main is asked for 6-10's pages (and serves them).
+    assert.deepEqual(main.state.pages, [], 'the main, which did not answer this run, is not asked for pages');
+    assert.equal(r.added, 2);
+    assert.deepEqual(await listedNums('cms'), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'its numbers are kept for its next answer');
+    assert.deepEqual((await q('SELECT number FROM chapter_failures WHERE series_id = $1', [S('cms')])), [], 'and nothing is filed as failed');
+  } finally {
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S('cms')]).catch(() => {});
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S('cms')]).catch(() => {});
+    await q('DELETE FROM lib_series WHERE id = $1', [S('cms')]).catch(() => {});
+  }
+});
+
+test('a failing source stops keeping its rows', { skip }, async () => {
+  const { main } = await coolingFixture('cmf', 'upd-cmf-main', 'upd-cmf-fol');
+  try {
+    await updateSeries(S('cmf'), 0);
+    main.state.throws = true;
+    // Confirmed failing at its chapter list: not worth waiting for (lib/sourceStanding.ts standingOf).
+    await q(`INSERT INTO source_health (source_id, status, stages) VALUES ($1, 'ok', $2::jsonb)
+             ON CONFLICT (source_id) DO UPDATE SET stages = EXCLUDED.stages`,
+      ['upd-cmf-main', JSON.stringify({ chapters: { failAt: new Date().toISOString(), failBy: 'test', streak: 3, kind: 'error', error: 'gone' } })]);
+    await updateSeries(S('cmf'), 0);
+    // Reintroduce by keeping every stale source's rows: 6-10 stay, and the series waits for a dead site forever.
+    assert.deepEqual(await listedNums('cmf'), [1, 2, 3, 4, 5], 'a failing main\'s numbers are not kept');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-cmf-main', 'upd-cmf-fol']]);
+    await q('DELETE FROM lib_series WHERE id = $1', [S('cmf')]).catch(() => {});
+  }
+});
+
+test('a cooling-main series goes on its follower\'s queue', { skip }, async () => {
+  // Two series on one main. A: main + a follower that is cooling too. B: main + a working follower. The main is cooling.
+  // Keyed on the main, A came back blocked, parked the main's queue, and B -- which its follower would serve -- was
+  // skipped. Two changes each serve B now: B is queued on its follower from the start, and a parked queue hands its
+  // series on ("a parked queue hands its series on" below). Reintroduce by keying on the first loaded source AND dropping
+  // the move on parking (lib/updater.ts runUpdateAll): B is `skipped`. The first alone: "a series with nothing to ask at
+  // the start waits" below.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const main = switchable('upd-qk-main', [1]);
+  const cool = switchable('upd-qk-cool', [1]);
+  const fine = switchable('upd-qk-fine', [1]);
+  for (const s of [main, cool, fine]) registerAdapter(s.adapter as any);
+  for (const [key, fol] of [['qka', 'upd-qk-cool'], ['qkb', 'upd-qk-fine']] as const) {
+    await mkSeries(key, 'upd-qk-main');
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+    await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [S(key), fol, `${fol}-${key}`]);
+  }
+  await q(`UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 2000 ELSE 1000 END WHERE id = ANY($2::text[])`,
+    [S('qka'), [S('qka'), S('qkb')]]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-qk-main', 'upd-qk-cool', 'upd-qk-fine']]);
+  await coolFor('upd-qk-main');
+  await coolFor('upd-qk-cool');
+  await only(['qka', 'qkb']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.equal(r.outcomes.skipped, 0, 'the series on the working follower was visited, not parked behind its cooling main');
+    assert.ok(onDisk('qkb', 1), 'and landed its chapter from the follower');
+    assert.equal(r.outcomes.blocked, 1, 'the one with no source to ask waits, counted as blocked');
+    assert.equal(main.state.listed + cool.state.listed, 0, 'and no cooling source was asked anything');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-qk-main', 'upd-qk-cool', 'upd-qk-fine']]);
+    await q('DELETE FROM lib_books WHERE series_id = ANY($1::text[])', [[S('qka'), S('qkb')]]).catch(() => {});
+  }
+});
+
+test('a series with nothing to ask at the start waits, and goes once its source comes out of its cooldown', { skip }, async () => {
+  // v0.79.0 (lib/updater.ts runUpdateAll): a series whose every source is cooling when the sweep starts waits aside
+  // instead of taking a queue, and joins one as soon as a source on its route can be asked. Here its main's cooldown
+  // ends while another series is visited. Reintroduce by keying on the first loaded source: it is visited first, comes
+  // back blocked, and is not asked again that sweep, so its chapter does not land.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const main = switchable('upd-ws-main', [1]);
+  const other = switchable('upd-ws-other', [1]);
+  registerAdapter(main.adapter as any);
+  registerAdapter(other.adapter as any);
+  await mkSeries('wsa', 'upd-ws-main');
+  await mkSeries('wsb', 'upd-ws-other');
+  for (const key of ['wsa', 'wsb']) {
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S(key)]);
+  }
+  // The waiting one first in the sweep's order, as a series keyed on its cooling main would be visited first.
+  await q(`UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 2000 ELSE 1000 END WHERE id = ANY($2::text[])`,
+    [S('wsa'), [S('wsa'), S('wsb')]]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-ws-main', 'upd-ws-other']]);
+  // A cooldown that ends a moment into the sweep: the other series' visit, and the pause after it, outlast it.
+  await q(`INSERT INTO source_health (source_id, status, consecutive, blocked_until) VALUES ('upd-ws-main', 'rate_limited', 1, now() + interval '1 second')`);
+  await only(['wsa', 'wsb']);
+  globalThis.fetch = (async () => png()) as typeof fetch;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.ok(onDisk('wsb', 1), 'PREMISE: the other series landed its chapter');
+    assert.ok(onDisk('wsa', 1), 'the waiting series was visited once its main could be asked, and landed its chapter');
+    assert.equal(r.outcomes.blocked, 0, 'and it is not counted as blocked');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-ws-main', 'upd-ws-other']]);
+    await q('DELETE FROM lib_books WHERE series_id = ANY($1::text[])', [[S('wsa'), S('wsb')]]).catch(() => {});
+  }
+});
+
+test('a parked queue hands its series on', { skip }, async () => {
+  // Three series on one main, which is fine when the sweep starts. The first one's chapter makes the main refuse (a
+  // cooldown starts), the second then comes back blocked and parks the main's queue; the third has a working follower.
+  // Reintroduce by dropping the move on parking (lib/updater.ts runUpdateAll): the third is `skipped`.
+  const { registerAdapter } = await import('../src/lib/sources');
+  const main = switchable('upd-pq-main', [1]);
+  const fine = switchable('upd-pq-fine', [1]);
+  registerAdapter(main.adapter as any);
+  registerAdapter(fine.adapter as any);
+  for (const key of ['pqa', 'pqb', 'pqc']) {
+    await mkSeries(key, 'upd-pq-main');
+    await q('DELETE FROM lib_books WHERE series_id = $1', [S(key)]);
+    await q('DELETE FROM chapter_failures WHERE series_id = $1', [S(key)]);
+  }
+  await q(`INSERT INTO series_sources (series_id, source_id, source_series_id) VALUES ($1, 'upd-pq-fine', 'upd-pq-fine-pqc') ON CONFLICT DO NOTHING`, [S('pqc')]);
+  await q(`UPDATE lib_series SET source_checked_at = NULL, latest_mtime = CASE id WHEN $1 THEN 3000 WHEN $2 THEN 2000 ELSE 1000 END WHERE id = ANY($3::text[])`,
+    [S('pqa'), S('pqb'), [S('pqa'), S('pqb'), S('pqc')]]);
+  await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-pq-main', 'upd-pq-fine']]);
+  await only(['pqa', 'pqb', 'pqc']);
+  // The main's pages answer 403: its first chapter puts it in a cooldown.
+  globalThis.fetch = (async (u: any) => (String(u).includes('upd-pq-main') ? new Response('go away', { status: 403 }) : png())) as typeof fetch;
+  try {
+    const r = await runUpdateAll({ maxNew: 5 });
+    assert.equal(r.outcomes.blocked, 1, 'PREMISE: the second series found the main cooling');
+    assert.equal(r.outcomes.skipped, 0, 'the third was handed to its follower, not left in the parked queue');
+    assert.ok(onDisk('pqc', 1), 'and landed its chapter there');
+  } finally {
+    await q('DELETE FROM source_health WHERE source_id = ANY($1::text[])', [['upd-pq-main', 'upd-pq-fine']]);
+    await q('DELETE FROM chapter_failures WHERE series_id = ANY($1::text[])', [[S('pqa'), S('pqb'), S('pqc')]]).catch(() => {});
+    await q('DELETE FROM lib_books WHERE series_id = ANY($1::text[])', [[S('pqa'), S('pqb'), S('pqc')]]).catch(() => {});
+  }
+});

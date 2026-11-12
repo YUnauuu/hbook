@@ -1,0 +1,3920 @@
+{
+  "probedAt": "2026-11-09T09:20:53.704Z",
+  "query": "修仙",
+  "total": 283,
+  "working": 132,
+  "breakdown": {
+    "working": 132,
+    "failed": 151
+  },
+  "sources": [
+    {
+      "id": "www.cwj18.org",
+      "name": "翠微居",
+      "baseUrl": "http://www.cwj18.org",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 98
+    },
+    {
+      "id": "m.po18yun.com",
+      "name": "👔 脸红心跳",
+      "baseUrl": "https://m.po18yun.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5031
+    },
+    {
+      "id": "www.po18gw.com",
+      "name": "po18gw",
+      "baseUrl": "https://www.po18gw.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5031
+    },
+    {
+      "id": "wap.po18bl.com",
+      "name": "PO18文学",
+      "baseUrl": "https://wap.po18bl.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5033
+    },
+    {
+      "id": "www.yingsx.com/#",
+      "name": "🎉笔趣阁A18",
+      "baseUrl": "http://www.yingsx.com/#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5017
+    },
+    {
+      "id": "po18wen.vip",
+      "name": "🚬 po18⁷",
+      "baseUrl": "https://po18wen.vip",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5025
+    },
+    {
+      "id": "wap.18biquge.com",
+      "name": "18笔趣阁/笔趣小说",
+      "baseUrl": "https://wap.18biquge.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2769
+    },
+    {
+      "id": "www.po18yq.com",
+      "name": "💗 十八言情",
+      "baseUrl": "https://www.po18yq.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5012
+    },
+    {
+      "id": "www.po18.tw",
+      "name": "📖PO18✈️",
+      "baseUrl": "https://www.po18.tw",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2
+    },
+    {
+      "id": "m.po18.xyz",
+      "name": "🪐荏染柔木",
+      "baseUrl": "https://m.po18.xyz/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 10405
+    },
+    {
+      "id": "www.yeshuyuan.com",
+      "name": "👔 夜书文苑",
+      "baseUrl": "https://www.yeshuyuan.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5029
+    },
+    {
+      "id": "m.po18wx.com",
+      "name": "🪐天式从横",
+      "baseUrl": "https://m.po18wx.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5025
+    },
+    {
+      "id": "www.ttshu8.org#wy18-1001",
+      "name": "天天书吧",
+      "baseUrl": "http://www.ttshu8.org#wy18-1001",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3996
+    },
+    {
+      "id": "wap.qiliuxs.com",
+      "name": "7766小说网18",
+      "baseUrl": "http://wap.qiliuxs.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 6956
+    },
+    {
+      "id": "m.mpo18.com",
+      "name": "👔 脸红心跳",
+      "baseUrl": "https://m.mpo18.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5021
+    },
+    {
+      "id": "crxs.me",
+      "name": "成人小说网（上版发现页1链接写错，重传）",
+      "baseUrl": "https://crxs.me",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2399
+    },
+    {
+      "id": "m.po18yu.com",
+      "name": "👔 日居月诸",
+      "baseUrl": "https://m.po18yu.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5019
+    },
+    {
+      "id": "m.bqg119.com",
+      "name": "💠 笔趣阁¹¹⁹",
+      "baseUrl": "https://m.bqg119.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1230
+    },
+    {
+      "id": "syosetu.org/?r18",
+      "name": "⚠️ハーメルン(R18)",
+      "baseUrl": "https://syosetu.org/?r18",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1439
+    },
+    {
+      "id": "www.po18xs.com",
+      "name": "PO18_御宅屋",
+      "baseUrl": "https://www.po18xs.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5012
+    },
+    {
+      "id": "m.po18.xyz#♤yc",
+      "name": "㊕ ✾PO18 #一程",
+      "baseUrl": "https://m.po18.xyz#♤yc",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 10184
+    },
+    {
+      "id": "m.3322t.com",
+      "name": "PO18",
+      "baseUrl": "https://m.3322t.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 10333
+    },
+    {
+      "id": "m.po18.xyz#yc1101",
+      "name": "㊕ ✾PO18 #一程1101",
+      "baseUrl": "https://m.po18.xyz#yc1101",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 10461
+    },
+    {
+      "id": "www.77dushu.com#未月十八repair#wy18-1001",
+      "name": "七七读书1",
+      "baseUrl": "http://www.77dushu.com#未月十八repair#wy18-1001",
+      "ok": false,
+      "hits": 0,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5022
+    },
+    {
+      "id": "www.szyangxiao.com#wy18-1001",
+      "name": "南山书院2",
+      "baseUrl": "https://www.szyangxiao.com#wy18-1001",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1518
+    },
+    {
+      "id": "m.po18xs.com",
+      "name": "御书屋",
+      "baseUrl": "https://m.po18xs.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5025
+    },
+    {
+      "id": "m.bqg18.cc",
+      "name": "笔趣阁18",
+      "baseUrl": "https://m.bqg18.cc/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1340
+    },
+    {
+      "id": "www.pyzht.com",
+      "name": "🚬 鄱阳镇庭",
+      "baseUrl": "https://www.pyzht.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1554
+    },
+    {
+      "id": "www.yingsx.com",
+      "name": "笔趣阁A18",
+      "baseUrl": "http://www.yingsx.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5011
+    },
+    {
+      "id": "fu44.pw",
+      "name": "🔞 逆鳞",
+      "baseUrl": "https://fu44.pw",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1531
+    },
+    {
+      "id": "touchlife.cootekservice.com#🎃",
+      "name": "疯读小说",
+      "baseUrl": "https://touchlife.cootekservice.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙狂婿",
+        "修仙归来当奶爸",
+        "妈咪修仙：总裁爹地打不过"
+      ],
+      "ms": 469
+    },
+    {
+      "id": "m.po18.info",
+      "name": "🔞 PO18",
+      "baseUrl": "https://m.po18.info",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1037
+    },
+    {
+      "id": "m.suixkan.com#",
+      "name": "阅友小说",
+      "baseUrl": "http://m.suixkan.com#",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙皇朝",
+        "修仙归来",
+        "挂机修仙"
+      ],
+      "ms": 127
+    },
+    {
+      "id": "www.txt101.com#♤guaner",
+      "name": "✾♛+101言情 #关耳",
+      "baseUrl": "http://www.txt101.com#♤guaner",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 4559
+    },
+    {
+      "id": "m.shufahouse.com",
+      "name": "红叶书斋",
+      "baseUrl": "https://m.shufahouse.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2261
+    },
+    {
+      "id": "m.suixkan.com#♤yc",
+      "name": "阅友小说",
+      "baseUrl": "http://m.suixkan.com#♤yc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙皇朝",
+        "修仙归来",
+        "挂机修仙"
+      ],
+      "ms": 160
+    },
+    {
+      "id": "api.midureader.com#",
+      "name": "米读小说",
+      "baseUrl": "https://api.midureader.com#",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 148
+    },
+    {
+      "id": "www.rulianshi.org/#pb1101",
+      "name": "殓师灵异",
+      "baseUrl": "http://www.rulianshi.org/#pb1101",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙.",
+        "修仙",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 3265
+    },
+    {
+      "id": "luoxiadushu.com",
+      "name": "落霞读书",
+      "baseUrl": "https://luoxiadushu.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1679
+    },
+    {
+      "id": "www.wanwx.com",
+      "name": "玩文学",
+      "baseUrl": "https://www.wanwx.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2865
+    },
+    {
+      "id": "qmbook.taoyuewenhua.net/#@遇知",
+      "name": "全免小说",
+      "baseUrl": "http://qmbook.taoyuewenhua.net/#@遇知",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 135
+    },
+    {
+      "id": "minipapi.sfacg.com",
+      "name": "菠萝包轻小说",
+      "baseUrl": "https://minipapi.sfacg.com",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "为了修仙，被迫变成清纯女药师",
+        "代舔舔到病娇后，我插翅难逃",
+        "没有人比我更懂修仙"
+      ],
+      "ms": 226
+    },
+    {
+      "id": "www.xs52.info#🎃",
+      "name": "五二小说",
+      "baseUrl": "http://www.xs52.info#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2435
+    },
+    {
+      "id": "sma.yueyouxs.com",
+      "name": "阅友小说",
+      "baseUrl": "https://sma.yueyouxs.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙皇朝",
+        "修仙归来",
+        "挂机修仙"
+      ],
+      "ms": 218
+    },
+    {
+      "id": "www.jiqinw.com/🐤",
+      "name": "🍑 腐小说",
+      "baseUrl": "http://www.jiqinw.com/🐤",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2614
+    },
+    {
+      "id": "sma.yueyouxs.com#♤yc",
+      "name": "阅友小说",
+      "baseUrl": "https://sma.yueyouxs.com#♤yc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙皇朝",
+        "修仙归来",
+        "挂机修仙"
+      ],
+      "ms": 78
+    },
+    {
+      "id": "touchlife.cootekservice.com#温暖满怀",
+      "name": "疯读小说",
+      "baseUrl": "https://touchlife.cootekservice.com#温暖满怀",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙狂婿",
+        "修仙归来当奶爸",
+        "妈咪修仙：总裁爹地打不过"
+      ],
+      "ms": 423
+    },
+    {
+      "id": "www.rulianshi.org#",
+      "name": "关于小说",
+      "baseUrl": "http://www.rulianshi.org#",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙.",
+        "修仙",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 2605
+    },
+    {
+      "id": "txt520.com#🎃",
+      "name": "电子书五二零小说",
+      "baseUrl": "http://txt520.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1251
+    },
+    {
+      "id": "m.xqishuta.net",
+      "name": "奇书网",
+      "baseUrl": "http://m.xqishuta.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3844
+    },
+    {
+      "id": "www.po18v.com",
+      "name": "🪐珀斯白瓦",
+      "baseUrl": "https://www.po18v.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2
+    },
+    {
+      "id": "www.po18r.com",
+      "name": "🪐斋藤观日",
+      "baseUrl": "https://www.po18r.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1
+    },
+    {
+      "id": "www.wtzw.com#🎃",
+      "name": "梧桐中文",
+      "baseUrl": "https://www.wtzw.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "蜀绣",
+        "星际弦线",
+        "金玉锦绣"
+      ],
+      "ms": 334
+    },
+    {
+      "id": "www.iidcr.com",
+      "name": "稻草人书屋言璃版",
+      "baseUrl": "https://www.iidcr.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "萧玄的修仙大学",
+        "修仙女厨神",
+        "虐渣不如修仙[快穿]"
+      ],
+      "ms": 1490
+    },
+    {
+      "id": "www.linovel.net",
+      "name": "轻之文库",
+      "baseUrl": "https://www.linovel.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修个妹的仙",
+        "修仙魔王与打工勇者的日常",
+        "身为勇者的我的神器是铅笔"
+      ],
+      "ms": 2691
+    },
+    {
+      "id": "m.kk169.net",
+      "name": "穿越小说",
+      "baseUrl": "http://m.kk169.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 20
+    },
+    {
+      "id": "www.swsk.org#",
+      "name": "空白小说",
+      "baseUrl": "http://www.swsk.org#",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙"
+      ],
+      "ms": 3611
+    },
+    {
+      "id": "wap.qiqixs.info#🎃",
+      "name": "手机版平板电子书网",
+      "baseUrl": "http://wap.qiqixs.info#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2721
+    },
+    {
+      "id": "tiantangxiangzuoshenzhenwangyou.qwyd.net",
+      "name": "天堂深圳",
+      "baseUrl": "http://tiantangxiangzuoshenzhenwangyou.qwyd.net/",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "天堂向左 深圳往右",
+        "成都今夜请将我遗忘",
+        "遗忘在光阴之外"
+      ],
+      "ms": 1315
+    },
+    {
+      "id": "www.douyinxs.com",
+      "name": "抖音小说",
+      "baseUrl": "https://www.douyinxs.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1360
+    },
+    {
+      "id": "www.bimidu.com",
+      "name": "笔迷读吧",
+      "baseUrl": "https://www.bimidu.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1411
+    },
+    {
+      "id": "novel.html.qq.com",
+      "name": "腾讯浏览器",
+      "baseUrl": "https://novel.html.qq.com/",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "凡人修真传\n凡人之氪金之路\n我在凡人作妖的那些年\n凡人：十五境剑修\n凡人之做个俗人",
+        "凡人修仙之仙界篇"
+      ],
+      "ms": 642
+    },
+    {
+      "id": "www.wtzw.com",
+      "name": "梧桐中文网",
+      "baseUrl": "https://www.wtzw.com/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "蜀绣",
+        "星际弦线",
+        "金玉锦绣"
+      ],
+      "ms": 381
+    },
+    {
+      "id": "qmbook.taoyuewenhua.net#🎃",
+      "name": "全免小说",
+      "baseUrl": "http://qmbook.taoyuewenhua.net#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 92
+    },
+    {
+      "id": "fiction.fengduxiaoshuo.com#🎃",
+      "name": "疯读小说",
+      "baseUrl": "https://fiction.fengduxiaoshuo.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙路上打王者",
+        "修仙记",
+        "都无敌了，你让我模拟修仙？"
+      ],
+      "ms": 664
+    },
+    {
+      "id": "wap.zwkan.cc",
+      "name": "中文看",
+      "baseUrl": "http://wap.zwkan.cc/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1417
+    },
+    {
+      "id": "www.wcshuba.com",
+      "name": "无错",
+      "baseUrl": "https://www.wcshuba.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1418
+    },
+    {
+      "id": "fiction.fengduxiaoshuo.com#",
+      "name": "疯读小说",
+      "baseUrl": "https://fiction.fengduxiaoshuo.com#",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙狂婿",
+        "修仙归来当奶爸",
+        "妈咪修仙：总裁爹地打不过"
+      ],
+      "ms": 266
+    },
+    {
+      "id": "www.bimidu.com/##@遇知",
+      "name": "笔迷读",
+      "baseUrl": "https://www.bimidu.com/##@遇知",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 204
+    },
+    {
+      "id": "api.midureader.com/##@遇知",
+      "name": "米读",
+      "baseUrl": "https://api.midureader.com/##@遇知",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 141
+    },
+    {
+      "id": "www.ihuaben.com",
+      "name": "话本小说",
+      "baseUrl": "https://www.ihuaben.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "综穿凡人修仙传",
+        "穿书炮灰女配要修仙",
+        "穿成路人甲也要修仙"
+      ],
+      "ms": 290
+    },
+    {
+      "id": "www.4yt.net",
+      "name": "四月天",
+      "baseUrl": "https://www.4yt.net/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "嫡女修仙",
+        "萌妹修仙记",
+        "女配修仙，主角祭天"
+      ],
+      "ms": 320
+    },
+    {
+      "id": "cn.zhys.tw",
+      "name": "免费小说",
+      "baseUrl": "https://cn.zhys.tw",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1894
+    },
+    {
+      "id": "www.aixiashu.la",
+      "name": "爱下书吧",
+      "baseUrl": "http://www.aixiashu.la/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1665
+    },
+    {
+      "id": "www.wxscs.com#",
+      "name": "万象书城",
+      "baseUrl": "https://www.wxscs.com#",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "《我，修仙界第一，想谈恋爱》",
+        "《星际食人花修仙指南》",
+        "《修仙界今日头条推送》"
+      ],
+      "ms": 1501
+    },
+    {
+      "id": "m.bqgcn.com#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "http://m.bqgcn.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1483
+    },
+    {
+      "id": "m.qbiqus.com#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "https://m.qbiqus.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1625
+    },
+    {
+      "id": "m.woaisaicheshou.com/##@遇知",
+      "name": "笔趣阁",
+      "baseUrl": "http://m.woaisaicheshou.com/##@遇知",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3022
+    },
+    {
+      "id": "www.kxwx.org#🎃",
+      "name": "开心文学网",
+      "baseUrl": "https://www.kxwx.org#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙路之现代社会",
+        "修仙医神",
+        "异世之炼体修仙"
+      ],
+      "ms": 2793
+    },
+    {
+      "id": "m.bqgcn.net#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "http://m.bqgcn.net#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1593
+    },
+    {
+      "id": "m.18ys.net",
+      "name": "🌐 爱小说网",
+      "baseUrl": "http://m.18ys.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 20002
+    },
+    {
+      "id": "www.tzy2.com",
+      "name": "太子爷网",
+      "baseUrl": "http://www.tzy2.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3020
+    },
+    {
+      "id": "api.sfacg.com",
+      "name": "菠萝包轻小说",
+      "baseUrl": "https://api.sfacg.com",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "为了修仙，被迫变成清纯女药师",
+        "代舔舔到病娇后，我插翅难逃",
+        "没有人比我更懂修仙"
+      ],
+      "ms": 224
+    },
+    {
+      "id": "www.rulianshi.cc",
+      "name": "殓师灵异",
+      "baseUrl": "http://www.rulianshi.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙.",
+        "修仙",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 1198
+    },
+    {
+      "id": "b.faloo.com##男生标签",
+      "name": "飞卢小说",
+      "baseUrl": "https://b.faloo.com##男生标签",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "灵气复苏：亿万倍天赋",
+        "鬼气复苏：我的女友有点凶",
+        "娱乐：国家队来欺负人了"
+      ],
+      "ms": 196
+    },
+    {
+      "id": "www.miaobige.cc",
+      "name": "笔趣阁",
+      "baseUrl": "http://www.miaobige.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "地球召唤？我大秦修仙帝国被曝光",
+        "开局在修仙世界直播破案",
+        "我在凡人科学修仙"
+      ],
+      "ms": 1356
+    },
+    {
+      "id": "www.zzdushu.com#🎃",
+      "name": "滋滋读书",
+      "baseUrl": "http://www.zzdushu.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我靠修仙当团宠",
+        "我真只想安静修个仙",
+        "我来教你们修仙"
+      ],
+      "ms": 1295
+    },
+    {
+      "id": "www.jpxs123.cc/##@遇知",
+      "name": "精品小说网",
+      "baseUrl": "http://www.jpxs123.cc/##@遇知",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1567
+    },
+    {
+      "id": "www.qbtr.cc",
+      "name": "全本同人小说",
+      "baseUrl": "https://www.qbtr.cc",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 13
+    },
+    {
+      "id": "www.dcrbk.com#🎃",
+      "name": "稻草书屋",
+      "baseUrl": "https://www.dcrbk.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "萧玄的修仙大学",
+        "修仙女厨神",
+        "虐渣不如修仙[快穿]"
+      ],
+      "ms": 3645
+    },
+    {
+      "id": "www.qq787.com",
+      "name": "亲亲小说",
+      "baseUrl": "http://www.qq787.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "女配遥指修仙路",
+        "我靠修仙当团宠",
+        "修仙真搞笑"
+      ],
+      "ms": 1470
+    },
+    {
+      "id": "www.siluke.cc/#pb1101",
+      "name": "思路客",
+      "baseUrl": "http://www.siluke.cc/#pb1101",
+      "ok": true,
+      "hits": 3,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 4034
+    },
+    {
+      "id": "m.17kankan.org#🎃",
+      "name": "一起看看",
+      "baseUrl": "http://m.17kankan.org#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1308
+    },
+    {
+      "id": "www.deqitxt.com",
+      "name": "得奇小说网",
+      "baseUrl": "https://www.deqitxt.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "百岁修仙：从觉醒天灵根开始",
+        "修仙：旁门左道就是这样的",
+        "修仙：手握仙府也得从头开始"
+      ],
+      "ms": 2236
+    },
+    {
+      "id": "z.dlxk.com#🎃",
+      "name": "读乐星空",
+      "baseUrl": "https://z.dlxk.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5021
+    },
+    {
+      "id": "www.kushuge.com",
+      "name": "酷书阁",
+      "baseUrl": "https://www.kushuge.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "叶小开修仙传",
+        "女配遥指修仙路",
+        "开局得到修仙记忆：我直播算命"
+      ],
+      "ms": 1497
+    },
+    {
+      "id": "www.bqquge.org",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.bqquge.org",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "谁让他修仙的！",
+        "长生修仙，与龟同行"
+      ],
+      "ms": 1717
+    },
+    {
+      "id": "www.d9cn.cc",
+      "name": "第九中文",
+      "baseUrl": "http://www.d9cn.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "开局在修仙世界直播破案",
+        "修仙真搞笑",
+        "修仙之路从九叔世界开始"
+      ],
+      "ms": 1438
+    },
+    {
+      "id": "www.7kbook.com#🎃",
+      "name": "去看小说",
+      "baseUrl": "http://www.7kbook.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "都市之修仙狂人",
+        "从白犬开始修仙",
+        "我在神雕修仙"
+      ],
+      "ms": 1684
+    },
+    {
+      "id": "m.lrxs.org",
+      "name": "🔞 懒人小说 🪜",
+      "baseUrl": "https://m.lrxs.org",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 20001
+    },
+    {
+      "id": "www.sdxs.cc",
+      "name": "搜读小说",
+      "baseUrl": "http://www.sdxs.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙界第一干饭人",
+        "都市超强修真医仙",
+        "直播：我修仙者身份被曾孙女曝光了"
+      ],
+      "ms": 1485
+    },
+    {
+      "id": "www.pinshulou.com#🎃",
+      "name": "品书楼小说网",
+      "baseUrl": "http://www.pinshulou.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "你卷穿宗门，就只想长命百岁？",
+        "原来修仙也可以闷声发大财",
+        "修仙从返老还童开始"
+      ],
+      "ms": 1450
+    },
+    {
+      "id": "www.dkmi.com#",
+      "name": "多看阅读",
+      "baseUrl": "https://www.dkmi.com#",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "超品修仙",
+        "修仙囧事",
+        "御兽修仙"
+      ],
+      "ms": 349
+    },
+    {
+      "id": "m.cuoceng.org",
+      "name": "错层小说网",
+      "baseUrl": "https://m.cuoceng.org/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "人在修仙世界，和谁都能五五开",
+        "凡人修仙传",
+        "别人练级我修仙，苟到大乘再出山"
+      ],
+      "ms": 3745
+    },
+    {
+      "id": "www.powanjuan.cc",
+      "name": "破万卷吧",
+      "baseUrl": "http://www.powanjuan.cc/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1586
+    },
+    {
+      "id": "www.ygzww.com",
+      "name": "阳光中文网",
+      "baseUrl": "http://www.ygzww.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "女配遥指修仙路",
+        "凡人修仙之仙路风尘",
+        "我在凡人科学修仙"
+      ],
+      "ms": 1468
+    },
+    {
+      "id": "www.siluke.cc#🎃",
+      "name": "思路客",
+      "baseUrl": "http://www.siluke.cc#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 3195
+    },
+    {
+      "id": "www.pinshuzhai.com ",
+      "name": "品书斋",
+      "baseUrl": "https://www.pinshuzhai.com ",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2
+    },
+    {
+      "id": "uukanshu.cc",
+      "name": "看书",
+      "baseUrl": "https://uukanshu.cc",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1499
+    },
+    {
+      "id": "www.kuuai.com",
+      "name": "快读网",
+      "baseUrl": "http://www.kuuai.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我在凡人科学修仙",
+        "修仙真搞笑",
+        "不小心用仙君修炼了怎么办"
+      ],
+      "ms": 1502
+    },
+    {
+      "id": "8biquge.com##九梦",
+      "name": "笔趣阁",
+      "baseUrl": "http://8biquge.com##九梦",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3655
+    },
+    {
+      "id": "m.xyuzhaiwu10.com",
+      "name": "新御宅",
+      "baseUrl": "https://m.xyuzhaiwu10.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5031
+    },
+    {
+      "id": "www.kk169.net",
+      "name": "穿越小说",
+      "baseUrl": "http://www.kk169.net/",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 16
+    },
+    {
+      "id": "www.biduju.net",
+      "name": "必读居",
+      "baseUrl": "http://www.biduju.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1863
+    },
+    {
+      "id": "www.xyetianlian.com",
+      "name": "小说阅读",
+      "baseUrl": "http://www.xyetianlian.com",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 2129
+    },
+    {
+      "id": "www.dyxs.net",
+      "name": "第一小说",
+      "baseUrl": "http://www.dyxs.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙家族：我的洞府通地球",
+        "叶小开修仙传",
+        "修仙：我有一枚造化金符"
+      ],
+      "ms": 2185
+    },
+    {
+      "id": "www.linovel.net#mitm",
+      "name": "轻之文库",
+      "baseUrl": "https://www.linovel.net#mitm",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修个妹的仙",
+        "修仙魔王与打工勇者的日常",
+        "身为勇者的我的神器是铅笔"
+      ],
+      "ms": 2054
+    },
+    {
+      "id": "www.samsbook.com",
+      "name": "神马小说",
+      "baseUrl": "http://www.samsbook.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我的老爹也修仙",
+        "我来教你们修仙",
+        "我靠修仙当团宠"
+      ],
+      "ms": 1850
+    },
+    {
+      "id": "www.1616ys.com",
+      "name": "一流书院",
+      "baseUrl": "http://www.1616ys.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我在神雕修仙",
+        "遥仙",
+        "今天开始开挂修仙"
+      ],
+      "ms": 1456
+    },
+    {
+      "id": "www.aijjxs.com",
+      "name": "久久小说网",
+      "baseUrl": "https://www.aijjxs.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1525
+    },
+    {
+      "id": "www.silukezw.com",
+      "name": "思路客",
+      "baseUrl": "http://www.silukezw.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我来教你们修仙",
+        "不小心用仙君修炼了怎么办",
+        "修仙家族：我的洞府通地球"
+      ],
+      "ms": 1341
+    },
+    {
+      "id": "www.23zw.org",
+      "name": "傲世中文网",
+      "baseUrl": "http://www.23zw.org",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙：从炼器开始锤锻长生",
+        "这样的修仙真快活",
+        "家族修仙：开局成为镇族法器"
+      ],
+      "ms": 1329
+    },
+    {
+      "id": "www.ygzww.com#🎃",
+      "name": "阳光中文网",
+      "baseUrl": "http://www.ygzww.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "女配遥指修仙路",
+        "凡人修仙之仙路风尘",
+        "我在凡人科学修仙"
+      ],
+      "ms": 1329
+    },
+    {
+      "id": "www.eyxsw.com",
+      "name": "眼小说网",
+      "baseUrl": "http://www.eyxsw.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "从白犬开始修仙",
+        "遥仙",
+        "替身修的是无情道"
+      ],
+      "ms": 1396
+    },
+    {
+      "id": "funs.me",
+      "name": "放肆文学",
+      "baseUrl": "https://funs.me",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3746
+    },
+    {
+      "id": "m.shumanwu.net",
+      "name": "书满屋网",
+      "baseUrl": "https://m.shumanwu.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 4627
+    },
+    {
+      "id": "23.224.242.55",
+      "name": "森林",
+      "baseUrl": "http://23.224.242.55/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "靠着修仙小说学修仙",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 1613
+    },
+    {
+      "id": "wap.80zw.la",
+      "name": "八零电子",
+      "baseUrl": "http://wap.80zw.la/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2331
+    },
+    {
+      "id": "www.duokan.com#",
+      "name": "多看阅读",
+      "baseUrl": "https://www.duokan.com#",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "超品修仙",
+        "修仙囧事",
+        "御兽修仙"
+      ],
+      "ms": 181
+    },
+    {
+      "id": "novel.html5.qq.com",
+      "name": "腾讯阅读",
+      "baseUrl": "https://novel.html5.qq.com/",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "凡人修真传\n凡人之氪金之路\n我在凡人作妖的那些年\n凡人：十五境剑修\n凡人之做个俗人",
+        "凡人修仙之仙界篇"
+      ],
+      "ms": 660
+    },
+    {
+      "id": "m.iinbqg.com",
+      "name": "新百强小说",
+      "baseUrl": "http://m.iinbqg.com/",
+      "ok": true,
+      "hits": 3,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "曲线修仙"
+      ],
+      "ms": 1857
+    },
+    {
+      "id": "www.qbtr.cc##喜静",
+      "name": "全本同人",
+      "baseUrl": "https://www.qbtr.cc##喜静",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 6
+    },
+    {
+      "id": "www.99sy.net",
+      "name": "久久书院",
+      "baseUrl": "http://www.99sy.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "林家有女修仙记",
+        "修仙归来，多个傲娇老婆什么鬼？",
+        "人在斗罗，兼职修仙"
+      ],
+      "ms": 1406
+    },
+    {
+      "id": "www.po5.net",
+      "name": "五二书库",
+      "baseUrl": "https://www.po5.net/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "在修仙论坛装x后穿越了",
+        "你修仙，我修功德值",
+        "仙二代的逆袭"
+      ],
+      "ms": 2954
+    },
+    {
+      "id": "www.dcrbk.com",
+      "name": "稻草人书屋",
+      "baseUrl": "https://www.dcrbk.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "萧玄的修仙大学",
+        "修仙女厨神",
+        "虐渣不如修仙[快穿]"
+      ],
+      "ms": 2971
+    },
+    {
+      "id": "www.aixiashu.info",
+      "name": "爱下书网",
+      "baseUrl": "http://www.aixiashu.info",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2796
+    },
+    {
+      "id": "m.5859ycdh.com",
+      "name": "五八书阁",
+      "baseUrl": "http://m.5859ycdh.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙，从凡人修仙开始",
+        "修仙的人"
+      ],
+      "ms": 3196
+    },
+    {
+      "id": "www.dongtanxs.com##",
+      "name": "东滩小说",
+      "baseUrl": "http://www.dongtanxs.com##",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙，从凡人修仙开始",
+        "不要修仙！"
+      ],
+      "ms": 1380
+    },
+    {
+      "id": "wap.jhssd.com",
+      "name": "精华书阁",
+      "baseUrl": "https://wap.jhssd.com/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "家族旁系分支修仙指南",
+        "诡异修仙，我有一座五脏庙",
+        "凡人作弊修仙"
+      ],
+      "ms": 3513
+    },
+    {
+      "id": "txt520.com",
+      "name": "电子书五二零",
+      "baseUrl": "http://txt520.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1301
+    },
+    {
+      "id": "www.dkmi.com/#wenmoux",
+      "name": "多看阅读",
+      "baseUrl": "https://www.dkmi.com/#wenmoux",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "超品修仙",
+        "修仙囧事",
+        "御兽修仙"
+      ],
+      "ms": 172
+    },
+    {
+      "id": "www.kxwx.org",
+      "name": "开心文学网",
+      "baseUrl": "https://www.kxwx.org",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙路之现代社会",
+        "修仙医神",
+        "异世之炼体修仙"
+      ],
+      "ms": 2734
+    },
+    {
+      "id": "www.ik258.net",
+      "name": "艾克小说网",
+      "baseUrl": "http://www.ik258.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙之仙路风尘",
+        "开局在修仙世界直播破案",
+        "修仙未成，半道被抓"
+      ],
+      "ms": 1369
+    },
+    {
+      "id": "www.zhuishu.com",
+      "name": "追书网",
+      "baseUrl": "https://www.zhuishu.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1581
+    },
+    {
+      "id": "www.35ge.info",
+      "name": "三五小说",
+      "baseUrl": "http://www.35ge.info",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙"
+      ],
+      "ms": 1223
+    },
+    {
+      "id": "api.sfacg.com已校验",
+      "name": "菠萝包轻小说",
+      "baseUrl": "https://api.sfacg.com已校验",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "为了修仙，被迫变成清纯女药师",
+        "代舔舔到病娇后，我插翅难逃",
+        "没有人比我更懂修仙"
+      ],
+      "ms": 205
+    },
+    {
+      "id": "www.zzdushu.com",
+      "name": "滋滋读书",
+      "baseUrl": "http://www.zzdushu.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我靠修仙当团宠",
+        "我真只想安静修个仙",
+        "我来教你们修仙"
+      ],
+      "ms": 1433
+    },
+    {
+      "id": "cxb-pro.cread.com##@遇知",
+      "name": "免费追书",
+      "baseUrl": "https://cxb-pro.cread.com##@遇知",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙门派不修仙",
+        "修仙奇才",
+        "奉命修仙"
+      ],
+      "ms": 276
+    },
+    {
+      "id": "sjks8.cc",
+      "name": "手机看书",
+      "baseUrl": "https://sjks8.cc",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1500
+    },
+    {
+      "id": "www.duokan.com#🎃",
+      "name": "多看阅读",
+      "baseUrl": "https://www.duokan.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "超品修仙",
+        "修仙囧事",
+        "御兽修仙"
+      ],
+      "ms": 67
+    },
+    {
+      "id": "www.kk169.la",
+      "name": "穿越小说",
+      "baseUrl": "http://www.kk169.la/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1790
+    },
+    {
+      "id": "www.cuoceng.org",
+      "name": "错层小说",
+      "baseUrl": "https://www.cuoceng.org/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "人在修仙世界，和谁都能五五开",
+        "凡人修仙传",
+        "别人练级我修仙，苟到大乘再出山"
+      ],
+      "ms": 1639
+    },
+    {
+      "id": "www.yybsw.com#🎃",
+      "name": "夜伴书屋",
+      "baseUrl": "https://www.yybsw.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我，修仙界第一，想谈恋爱",
+        "萧玄的修仙大学",
+        "修仙女厨神"
+      ],
+      "ms": 1738
+    },
+    {
+      "id": "m.kk169.com/##@遇知",
+      "name": "穿越小说",
+      "baseUrl": "http://m.kk169.com/##@遇知",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 3689
+    },
+    {
+      "id": "www.mxjtedu.com",
+      "name": "梦想家文学",
+      "baseUrl": "http://www.mxjtedu.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1216
+    },
+    {
+      "id": "www.52shuku123.org",
+      "name": "五二书库",
+      "baseUrl": "https://www.52shuku123.org",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "暗渡+番外",
+        "关山月+番外",
+        "漂亮小怂包穿成渣攻后被读心了+番外"
+      ],
+      "ms": 1427
+    },
+    {
+      "id": "www.wxscs.com",
+      "name": "万象书城吧",
+      "baseUrl": "https://www.wxscs.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "《我，修仙界第一，想谈恋爱》",
+        "《星际食人花修仙指南》",
+        "《修仙界今日头条推送》"
+      ],
+      "ms": 1982
+    },
+    {
+      "id": "www.ihuaben.com#🎃",
+      "name": "话本小说",
+      "baseUrl": "https://www.ihuaben.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "综穿凡人修仙传",
+        "穿书炮灰女配要修仙",
+        "穿成路人甲也要修仙"
+      ],
+      "ms": 219
+    },
+    {
+      "id": "m.ijjxsxzw.com",
+      "name": "爱久久小说网",
+      "baseUrl": "https://m.ijjxsxzw.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1343
+    },
+    {
+      "id": "m.jhssd.com",
+      "name": "精华书阁",
+      "baseUrl": "https://m.jhssd.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "家族旁系分支修仙指南",
+        "诡异修仙，我有一座五脏庙",
+        "凡人作弊修仙"
+      ],
+      "ms": 3429
+    },
+    {
+      "id": "www.52shuku.net",
+      "name": "五二",
+      "baseUrl": "https://www.52shuku.net/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "在修仙论坛装x后穿越了_睡椒【完结】",
+        "你修仙，我修功德值_玲珑秀【完结】",
+        "仙二代的逆袭_青衫香冷【完结】"
+      ],
+      "ms": 1465
+    },
+    {
+      "id": "www.8kbook.com",
+      "name": "八块小说网",
+      "baseUrl": "http://www.8kbook.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 4194
+    },
+    {
+      "id": "www.haogushi8.cc",
+      "name": "格格党",
+      "baseUrl": "https://www.haogushi8.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "学不乖",
+        "夜无疆",
+        "失忆后死对头成了我男朋友？"
+      ],
+      "ms": 1752
+    },
+    {
+      "id": "po.net",
+      "name": "五二书库",
+      "baseUrl": "https://po.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "在修仙论坛装x后穿越了",
+        "你修仙，我修功德值",
+        "仙二代的逆袭"
+      ],
+      "ms": 259
+    },
+    {
+      "id": "wap.wangshugu.info",
+      "name": "望书阁网",
+      "baseUrl": "http://wap.wangshugu.info",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "第16章，唾弃冷血人心。",
+        "第一千一百三十三章 大结局",
+        "完本感言"
+      ],
+      "ms": 1918
+    },
+    {
+      "id": "www.luoxia123.com",
+      "name": "落霞小说",
+      "baseUrl": "https://www.luoxia123.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1423
+    },
+    {
+      "id": "wenxuebank.com#🎃",
+      "name": "文学资料网",
+      "baseUrl": "http://wenxuebank.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "《凡人修仙传》全集|忘语",
+        "我是仙凡",
+        "魔天记"
+      ],
+      "ms": 132
+    },
+    {
+      "id": "b.faloo.com#🎃",
+      "name": "飞卢小说",
+      "baseUrl": "https://b.faloo.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "灵气复苏：亿万倍天赋",
+        "鬼气复苏：我的女友有点凶",
+        "娱乐：国家队来欺负人了"
+      ],
+      "ms": 157
+    },
+    {
+      "id": "wap.biqige.info",
+      "name": "笔趣阁",
+      "baseUrl": "http://wap.biqige.info/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1433
+    },
+    {
+      "id": "www.aishu8.org",
+      "name": "爱书小说网",
+      "baseUrl": "http://www.aishu8.org",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "被迫修仙的我只想嫁人",
+        "别说了我真不是修仙大佬",
+        "高武到修仙"
+      ],
+      "ms": 1324
+    },
+    {
+      "id": "www.ybswa.com",
+      "name": "夜伴书屋",
+      "baseUrl": "https://www.ybswa.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我，修仙界第一，想谈恋爱",
+        "萧玄的修仙大学",
+        "修仙女厨神"
+      ],
+      "ms": 3075
+    },
+    {
+      "id": "www.po.net",
+      "name": "五二书库",
+      "baseUrl": "https://www.po.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "在修仙论坛装x后穿越了",
+        "你修仙，我修功德值",
+        "仙二代的逆袭"
+      ],
+      "ms": 228
+    },
+    {
+      "id": "www.aixiawx.com/#嘚嘚21.0201",
+      "name": "爱下书嘚",
+      "baseUrl": "http://www.aixiawx.com/#嘚嘚21.0201",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2636
+    },
+    {
+      "id": "m.cuoceng.com",
+      "name": "错层小说",
+      "baseUrl": "https://m.cuoceng.com/",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "人在修仙世界，和谁都能五五开",
+        "凡人修仙传",
+        "别人练级我修仙，苟到大乘再出山"
+      ],
+      "ms": 3864
+    },
+    {
+      "id": "www.biquge7.xyz#",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.biquge7.xyz#",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "玄鉴仙族",
+        "择日飞升"
+      ],
+      "ms": 1863
+    },
+    {
+      "id": "cxb-pro.cread.com/##@遇知",
+      "name": "免费追书",
+      "baseUrl": "https://cxb-pro.cread.com/##@遇知",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙门派不修仙",
+        "修仙奇才",
+        "奉命修仙"
+      ],
+      "ms": 275
+    },
+    {
+      "id": "www.yunxuange.cc",
+      "name": "云轩阁小说网",
+      "baseUrl": "http://www.yunxuange.cc/",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 13
+    },
+    {
+      "id": "www.52shuku123.org#🎃",
+      "name": "无奈书库",
+      "baseUrl": "https://www.52shuku123.org#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "暗渡+番外",
+        "关山月+番外",
+        "漂亮小怂包穿成渣攻后被读心了+番外"
+      ],
+      "ms": 1426
+    },
+    {
+      "id": "m.shumw.com",
+      "name": "书满屋小说网",
+      "baseUrl": "https://m.shumw.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3007
+    },
+    {
+      "id": "www.seying.cc",
+      "name": "无影小说网",
+      "baseUrl": "https://www.seying.cc/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1491
+    },
+    {
+      "id": "appi.kuwo.cn",
+      "name": "酷我小说",
+      "baseUrl": "http://appi.kuwo.cn",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙传",
+        "修仙签到百倍奖励",
+        "修仙从钻木取火开始"
+      ],
+      "ms": 180
+    },
+    {
+      "id": "www.conglianhao.com#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.conglianhao.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 34
+    },
+    {
+      "id": "www.bsxiaoshuo.com#🎃",
+      "name": "笔尚小说",
+      "baseUrl": "https://www.bsxiaoshuo.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "疯狂修仙",
+        "伏魔修仙"
+      ],
+      "ms": 318
+    },
+    {
+      "id": "www.aixiawx.com/#pb1101",
+      "name": "爱下书吧",
+      "baseUrl": "https://www.aixiawx.com/#pb1101",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2745
+    },
+    {
+      "id": "www.tshu8.com",
+      "name": "天书小说网",
+      "baseUrl": "http://www.tshu8.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "[武侠]我在凡人科学修仙",
+        "[玄幻]我来教你们修仙",
+        "[言情]我真只想安静修个仙"
+      ],
+      "ms": 1364
+    },
+    {
+      "id": "www.xsabc.com#🎃",
+      "name": "小说",
+      "baseUrl": "http://www.xsabc.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "女配遥指修仙路",
+        "我靠修仙当团宠",
+        "仙魔同修师"
+      ],
+      "ms": 1401
+    },
+    {
+      "id": "www.bixiange.top#",
+      "name": "笔仙阁子",
+      "baseUrl": "https://www.bixiange.top#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1413
+    },
+    {
+      "id": "www.layuzhaiwu.xyz#🎃",
+      "name": "新御宅屋",
+      "baseUrl": "https://www.layuzhaiwu.xyz#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1450
+    },
+    {
+      "id": "www.xiashukan.com",
+      "name": "爱下书看",
+      "baseUrl": "http://www.xiashukan.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "词条修仙模拟器，修为全继承",
+        "凡人修仙从一个破碗开始",
+        "修仙，从抽取机缘开始"
+      ],
+      "ms": 4350
+    },
+    {
+      "id": "www.bsxiaoshuo.com#yc1101",
+      "name": "笔尚小说",
+      "baseUrl": "https://www.bsxiaoshuo.com#yc1101",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "疯狂修仙",
+        "伏魔修仙"
+      ],
+      "ms": 175
+    },
+    {
+      "id": "m.qbiqus.com",
+      "name": "笔趣阁",
+      "baseUrl": "https://m.qbiqus.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1463
+    },
+    {
+      "id": "m.ixsw.cc",
+      "name": "爱看小说",
+      "baseUrl": "http://m.ixsw.cc",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3378
+    },
+    {
+      "id": "www.chamabooks.net",
+      "name": "茶马小说",
+      "baseUrl": "https://www.chamabooks.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙回来我捡到网游系统",
+        "从零开始的修仙家族模拟器",
+        "修仙，写狗血文成神"
+      ],
+      "ms": 1602
+    },
+    {
+      "id": "www.byqg.cc",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.byqg.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "人在修仙世界，和谁都能五五开",
+        "凡人修仙传",
+        "别人练级我修仙，苟到大乘再出山"
+      ],
+      "ms": 2056
+    },
+    {
+      "id": "m.xinbqg.la#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "http://m.xinbqg.la#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "曲线修仙"
+      ],
+      "ms": 3046
+    },
+    {
+      "id": "www.sjks88.com#",
+      "name": "手机看书",
+      "baseUrl": "https://www.sjks88.com#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1366
+    },
+    {
+      "id": "www.dingdianxiaoshuo.com",
+      "name": "顶点小说网",
+      "baseUrl": "http://www.dingdianxiaoshuo.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙狂胥在都市",
+        "修仙：我有一枚造化金符",
+        "修仙家族：我的洞府通地球"
+      ],
+      "ms": 1281
+    },
+    {
+      "id": "www.dushu.com",
+      "name": "读书网",
+      "baseUrl": "https://www.dushu.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 150
+    },
+    {
+      "id": "wap.qiqixs.info",
+      "name": "手机版平板电子书网",
+      "baseUrl": "http://wap.qiqixs.info",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2771
+    },
+    {
+      "id": "www.biquge5200.cc",
+      "name": "新笔趣阁",
+      "baseUrl": "https://www.biquge5200.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙云开发日志",
+        "家族修仙传",
+        "诡道修仙游戏"
+      ],
+      "ms": 4397
+    },
+    {
+      "id": "m.jhsssd.com",
+      "name": "精华书阁",
+      "baseUrl": "https://m.jhsssd.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "家族旁系分支修仙指南",
+        "诡异修仙，我有一座五脏庙",
+        "凡人作弊修仙"
+      ],
+      "ms": 1764
+    },
+    {
+      "id": "www.aixiashu.org",
+      "name": "爱下书网",
+      "baseUrl": "http://www.aixiashu.org",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3145
+    },
+    {
+      "id": "www.oneceng.com",
+      "name": "万层中文",
+      "baseUrl": "http://www.oneceng.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 118
+    },
+    {
+      "id": "m.ixsw.info",
+      "name": "爱看小说",
+      "baseUrl": "http://m.ixsw.info",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2748
+    },
+    {
+      "id": "www.8biquge.com",
+      "name": "笔趣阁",
+      "baseUrl": "http://www.8biquge.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1368
+    },
+    {
+      "id": "www.1616ys.com#🎃",
+      "name": "一流书院",
+      "baseUrl": "http://www.1616ys.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我在神雕修仙",
+        "遥仙",
+        "今天开始开挂修仙"
+      ],
+      "ms": 1334
+    },
+    {
+      "id": "www.sjks88.com",
+      "name": "手机看书",
+      "baseUrl": "https://www.sjks88.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 255
+    },
+    {
+      "id": "wap.qiqixs.la/ ",
+      "name": "平板电子网",
+      "baseUrl": "http://wap.qiqixs.la/ ",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3
+    },
+    {
+      "id": "m.bqgcn.com",
+      "name": "笔趣阁江",
+      "baseUrl": "http://m.bqgcn.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1893
+    },
+    {
+      "id": "www.yetianlian.net#🎃",
+      "name": "何以笙箫默",
+      "baseUrl": "http://www.yetianlian.net#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 2769
+    },
+    {
+      "id": "www.xbotaodz.com#",
+      "name": "快眼看书",
+      "baseUrl": "http://www.xbotaodz.com#",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 11
+    },
+    {
+      "id": "m.2kk.la#🎃",
+      "name": "爱看小说",
+      "baseUrl": "http://m.2kk.la#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1261
+    },
+    {
+      "id": "www.deanmachine.net",
+      "name": "青藤文学网",
+      "baseUrl": "https://www.deanmachine.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 404,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1536
+    },
+    {
+      "id": "www.luoxia123.com#",
+      "name": "落霞小说",
+      "baseUrl": "https://www.luoxia123.com#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1345
+    },
+    {
+      "id": "www.fbook.net#",
+      "name": "天下书盟",
+      "baseUrl": "http://www.fbook.net#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 183
+    },
+    {
+      "id": "www.yjxsw.com",
+      "name": "永久小说",
+      "baseUrl": "http://www.yjxsw.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "[武侠]你卷穿宗门，就只想长命百岁？",
+        "[武侠]宗门崛起：我是修仙界最持久的崽",
+        "[武侠]修仙从返老还童开始"
+      ],
+      "ms": 1331
+    },
+    {
+      "id": "wap.qiuyelou.com##旅途",
+      "name": "平板小说网",
+      "baseUrl": "http://wap.qiuyelou.com##旅途",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2818
+    },
+    {
+      "id": "m.wjzxchina.com",
+      "name": "无极书院",
+      "baseUrl": "http://m.wjzxchina.com",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "暗巷1",
+        "画妖1",
+        "辉光1矿山"
+      ],
+      "ms": 1710
+    },
+    {
+      "id": "b.faloo.com男生标签",
+      "name": "飞卢男生标签",
+      "baseUrl": "https://b.faloo.com男生标签",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "灵气复苏：亿万倍天赋",
+        "鬼气复苏：我的女友有点凶",
+        "娱乐：国家队来欺负人了"
+      ],
+      "ms": 217
+    },
+    {
+      "id": "www.dbxsn.com#🎃",
+      "name": "独步小说",
+      "baseUrl": "https://www.dbxsn.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1395
+    },
+    {
+      "id": "www.biquluo.com",
+      "name": "笔趣阁",
+      "baseUrl": "http://www.biquluo.com/",
+      "ok": false,
+      "hits": 0,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5114
+    },
+    {
+      "id": "www.yetianlian.net",
+      "name": "何以笙箫默小说电脑",
+      "baseUrl": "http://www.yetianlian.net",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 2801
+    },
+    {
+      "id": "www.biquges123.com",
+      "name": "新笔趣阁",
+      "baseUrl": "https://www.biquges123.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "玄鉴仙族",
+        "择日飞升"
+      ],
+      "ms": 1899
+    },
+    {
+      "id": "www.bixiange.top#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.bixiange.top#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1381
+    },
+    {
+      "id": "www.shuzhaige.com",
+      "name": "书斋阁",
+      "baseUrl": "https://www.shuzhaige.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 13
+    },
+    {
+      "id": "www.xbotaodz.com#🎃",
+      "name": "快眼看书",
+      "baseUrl": "http://www.xbotaodz.com#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 6
+    },
+    {
+      "id": "www.52shuku123.cc",
+      "name": "无奈书库",
+      "baseUrl": "https://www.52shuku123.cc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "暗渡+番外",
+        "关山月+番外",
+        "漂亮小怂包穿成渣攻后被读心了+番外"
+      ],
+      "ms": 2675
+    },
+    {
+      "id": "www.dtxsw.com",
+      "name": "大唐小说",
+      "baseUrl": "https://www.dtxsw.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1471
+    },
+    {
+      "id": "www.sswsk.com",
+      "name": "圣武书屋",
+      "baseUrl": "https://www.sswsk.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1343
+    },
+    {
+      "id": "m.xncwxw.net",
+      "name": "新暖才文学网",
+      "baseUrl": "https://m.xncwxw.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1480
+    },
+    {
+      "id": "www.dbxsd.com",
+      "name": "独步小说",
+      "baseUrl": "https://www.dbxsd.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1320
+    },
+    {
+      "id": "www.ffxs8.com",
+      "name": "饭饭小说",
+      "baseUrl": "https://www.ffxs8.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "blocked",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1486
+    },
+    {
+      "id": "m.yetianlian.org",
+      "name": "夜天连看",
+      "baseUrl": "http://m.yetianlian.org/",
+      "ok": true,
+      "hits": 3,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 2899
+    },
+    {
+      "id": "www.sto66.com",
+      "name": "思兔阅读",
+      "baseUrl": "https://www.sto66.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "人在修仙世界，和谁都能五五开",
+        "凡人修仙传",
+        "别人练级我修仙，苟到大乘再出山"
+      ],
+      "ms": 1508
+    },
+    {
+      "id": "www.kushuge.com#🎃",
+      "name": "酷书阁小说网",
+      "baseUrl": "https://www.kushuge.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "叶小开修仙传",
+        "女配遥指修仙路",
+        "开局得到修仙记忆：我直播算命"
+      ],
+      "ms": 1436
+    },
+    {
+      "id": "z.dlxk.com",
+      "name": "读乐星空",
+      "baseUrl": "https://z.dlxk.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5009
+    },
+    {
+      "id": "twshux.cc",
+      "name": "台湾小说网",
+      "baseUrl": "https://twshux.cc",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1393
+    },
+    {
+      "id": "www.yjxsw.com#🎃",
+      "name": "永久小说网",
+      "baseUrl": "http://www.yjxsw.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "[武侠]你卷穿宗门，就只想长命百岁？",
+        "[武侠]宗门崛起：我是修仙界最持久的崽",
+        "[武侠]修仙从返老还童开始"
+      ],
+      "ms": 1299
+    },
+    {
+      "id": "www.conglianhao.com",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.conglianhao.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 6
+    },
+    {
+      "id": "www.dingdian888.com",
+      "name": "顶点小说",
+      "baseUrl": "https://www.dingdian888.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1558
+    },
+    {
+      "id": "www.pinshulou.com",
+      "name": "品书楼小说网",
+      "baseUrl": "http://www.pinshulou.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "你卷穿宗门，就只想长命百岁？",
+        "原来修仙也可以闷声发大财",
+        "修仙从返老还童开始"
+      ],
+      "ms": 1257
+    },
+    {
+      "id": "m.kk169.com",
+      "name": "穿越小说",
+      "baseUrl": "http://m.kk169.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "修仙，从凡人修仙开始"
+      ],
+      "ms": 3114
+    },
+    {
+      "id": "www.haogushi88.cc#🎃",
+      "name": "格格党",
+      "baseUrl": "https://www.haogushi88.cc#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "学不乖",
+        "夜无疆",
+        "失忆后死对头成了我男朋友？"
+      ],
+      "ms": 1372
+    },
+    {
+      "id": "blnovelhub.com",
+      "name": "御宅屋",
+      "baseUrl": "https://blnovelhub.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 4341
+    },
+    {
+      "id": "www.86dushu.com",
+      "name": "八六读书",
+      "baseUrl": "http://www.86dushu.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 12190
+    },
+    {
+      "id": "wap.qiqixs.net#🎃",
+      "name": "平板电子书网",
+      "baseUrl": "http://wap.qiqixs.net#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3727
+    },
+    {
+      "id": "kuxsw.com",
+      "name": "酷小说网",
+      "baseUrl": "http://kuxsw.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1171
+    },
+    {
+      "id": "www.silukezw.com#🎃",
+      "name": "思路客",
+      "baseUrl": "http://www.silukezw.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "我来教你们修仙",
+        "不小心用仙君修炼了怎么办",
+        "修仙家族：我的洞府通地球"
+      ],
+      "ms": 1330
+    },
+    {
+      "id": "www.frtxt.com",
+      "name": "芙蓉小说",
+      "baseUrl": "http://www.frtxt.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 16507
+    },
+    {
+      "id": "www.baowx.com",
+      "name": "玩文学",
+      "baseUrl": "http://www.baowx.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "万相之王",
+        "斗破苍穹",
+        "斗破之我叫纳兰叶"
+      ],
+      "ms": 1554
+    },
+    {
+      "id": "m.shumanwu.net#🎃",
+      "name": "书满屋网",
+      "baseUrl": "https://m.shumanwu.net#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2860
+    },
+    {
+      "id": "www.aixiaxsw.com",
+      "name": "爱下书小说网",
+      "baseUrl": "https://www.aixiaxsw.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3798
+    },
+    {
+      "id": "m.tiandizw.com",
+      "name": "天地中文",
+      "baseUrl": "http://m.tiandizw.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "满门修仙狂魔，唯有大师兄忙着谈恋爱",
+        "震惊！我家娘子竟是修仙大佬",
+        "修仙界第一大祸害"
+      ],
+      "ms": 639
+    },
+    {
+      "id": "www.qirenxing.com",
+      "name": "奇人小说",
+      "baseUrl": "http://www.qirenxing.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "氪金不努力，你修什么仙？",
+        "被迫修仙的我只想嫁人",
+        "修仙不如谈恋爱"
+      ],
+      "ms": 1440
+    },
+    {
+      "id": "www.399xs.com",
+      "name": "三九九小说-夜明空",
+      "baseUrl": "http://www.399xs.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2248
+    },
+    {
+      "id": "www.aixiashu.net",
+      "name": "爱下书小说网",
+      "baseUrl": "http://www.aixiashu.net",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1309
+    },
+    {
+      "id": "m.oue8.com",
+      "name": "偶遇小说",
+      "baseUrl": "https://m.oue8.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙：从心动大律师开始",
+        "我有特别的修仙天赋",
+        "全民修仙时代，我却选择当宅男"
+      ],
+      "ms": 1644
+    },
+    {
+      "id": "m.qingrenyouxi.com",
+      "name": "情人游戏",
+      "baseUrl": "https://m.qingrenyouxi.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1392
+    },
+    {
+      "id": "www.bqquge.com",
+      "name": "笔趣阁腾讯",
+      "baseUrl": "https://www.bqquge.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "凡人修仙传",
+        "谁让他修仙的！",
+        "长生修仙，与龟同行"
+      ],
+      "ms": 3258
+    },
+    {
+      "id": "www.qirenxing.com#🎃",
+      "name": "奇人小说网",
+      "baseUrl": "http://www.qirenxing.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "氪金不努力，你修什么仙？",
+        "被迫修仙的我只想嫁人",
+        "修仙不如谈恋爱"
+      ],
+      "ms": 1329
+    },
+    {
+      "id": "www.yuanzunge.com",
+      "name": "元尊阁小说网",
+      "baseUrl": "http://www.yuanzunge.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙攻略：开局我有六个风华绝代的师兄",
+        "首富千金修仙回来了！",
+        "逍遥小医仙"
+      ],
+      "ms": 1365
+    },
+    {
+      "id": "www.biquge99.cc#🎃",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.biquge99.cc#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2403
+    },
+    {
+      "id": "www.biquge99.cc/#pb1101",
+      "name": "笔趣阁",
+      "baseUrl": "https://www.biquge99.cc/#pb1101",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2271
+    },
+    {
+      "id": "www.7kbook.com",
+      "name": "去看小说网",
+      "baseUrl": "http://www.7kbook.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "都市之修仙狂人",
+        "从白犬开始修仙",
+        "我在神雕修仙"
+      ],
+      "ms": 1301
+    },
+    {
+      "id": "m.elkoparts.info",
+      "name": "饿狼小说",
+      "baseUrl": "http://m.elkoparts.info",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "靠着修仙小说学修仙",
+        "仙界修仙"
+      ],
+      "ms": 1214
+    },
+    {
+      "id": "wap.qiqixs.net/ ",
+      "name": "平板电子网",
+      "baseUrl": "http://wap.qiqixs.net/ ",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2
+    },
+    {
+      "id": "m.xinbqg.com",
+      "name": "新百强小说",
+      "baseUrl": "http://m.xinbqg.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙",
+        "修仙.",
+        "曲线修仙"
+      ],
+      "ms": 2544
+    },
+    {
+      "id": "www.kxdu.net",
+      "name": "开心文学网",
+      "baseUrl": "https://www.kxdu.net",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙路之现代社会",
+        "修仙医神",
+        "异世之炼体修仙"
+      ],
+      "ms": 1296
+    },
+    {
+      "id": "www.xiaoshuo5.com",
+      "name": "小说屋",
+      "baseUrl": "https://www.xiaoshuo5.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 1502
+    },
+    {
+      "id": "www.kk169.net#🎃",
+      "name": "穿越小说",
+      "baseUrl": "http://www.kk169.net#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 8
+    },
+    {
+      "id": "m.rourouwu2.com",
+      "name": "肉肉屋",
+      "baseUrl": "https://m.rourouwu2.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 15
+    },
+    {
+      "id": "www.kptxt.com",
+      "name": "靠谱小说",
+      "baseUrl": "http://www.kptxt.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "dead",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2131
+    },
+    {
+      "id": "ubook.reader.qq.com",
+      "name": "腾讯阅读",
+      "baseUrl": "https://ubook.reader.qq.com/",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "重生影后",
+        "二婚女总裁",
+        "修仙：从阴兵法坛开始"
+      ],
+      "ms": 268
+    },
+    {
+      "id": "m.suixkan.com",
+      "name": "阅友小说",
+      "baseUrl": "http://m.suixkan.com",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "修仙皇朝",
+        "修仙归来",
+        "挂机修仙"
+      ],
+      "ms": 138
+    },
+    {
+      "id": "minipapi.sfacg.com#🎃",
+      "name": "菠萝包轻小说",
+      "baseUrl": "https://minipapi.sfacg.com#🎃",
+      "ok": true,
+      "hits": 3,
+      "status": 200,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "为了修仙，被迫变成清纯女药师",
+        "代舔舔到病娇后，我插翅难逃",
+        "没有人比我更懂修仙"
+      ],
+      "ms": 210
+    },
+    {
+      "id": "wap.powenwu3.com",
+      "name": "脸红心跳",
+      "baseUrl": "https://wap.powenwu3.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5024
+    },
+    {
+      "id": "wap.80zw.la#🎃",
+      "name": "八零电子",
+      "baseUrl": "http://wap.80zw.la#🎃",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3453
+    },
+    {
+      "id": "m.haitangwx.com",
+      "name": "海棠文学",
+      "baseUrl": "https://m.haitangwx.com/",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 5023
+    },
+    {
+      "id": "www.wtzw.com#♤yc",
+      "name": "梧桐中文",
+      "baseUrl": "https://www.wtzw.com#♤yc",
+      "ok": true,
+      "hits": 3,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "sample": [
+        "蜀绣",
+        "星际弦线",
+        "金玉锦绣"
+      ],
+      "ms": 357
+    },
+    {
+      "id": "www.cunshu.la",
+      "name": "存书啦",
+      "baseUrl": "https://www.cunshu.la",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": true,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 3846
+    },
+    {
+      "id": "www.shibashuwu.net#",
+      "name": "十八书屋",
+      "baseUrl": "https://www.shibashuwu.net#",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 2312
+    },
+    {
+      "id": "www.rstxt.com/#🍖",
+      "name": "肉电子书",
+      "baseUrl": "http://www.rstxt.com/#🍖",
+      "ok": false,
+      "hits": 0,
+      "reason": "rules",
+      "status": 200,
+      "keywordInPage": false,
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 11118
+    },
+    {
+      "id": "www.rstxt.com",
+      "name": "肉电子书-δ",
+      "baseUrl": "http://www.rstxt.com",
+      "ok": false,
+      "hits": 0,
+      "reason": "network",
+      "checkedAt": "2026-11-09T02:21:50.893Z",
+      "ms": 12469
+    }
+  ]
+}

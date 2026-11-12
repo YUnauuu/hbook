@@ -1,0 +1,894 @@
+// Chapter downloader: source adapter -> fetch page images -> package as CBZ + ComicInfo.xml into the
+// owned library, mirroring Suwayomi's layout so the scanner picks it up. Cloudflare sites reuse FlareSolverr
+// session cookies for the binary image fetches (FlareSolverr itself can't return binaries).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AdmZip = require('adm-zip');
+import { mkdir, readdir, stat, statfs } from 'fs/promises';
+import { join, dirname, posix } from 'path';
+import sharp from 'sharp';
+import { getSource, SourceAdapter, SourceChapter, SourceSeries } from './sources';
+import { cfSession } from './sources/flaresolverr';
+import { DL_ROOT, XML_FORBIDDEN } from './library';
+import { beginDownload, startedDownload, endDownload, holdPartial, pagesProgress } from './downloadActivity';
+import { classify, noteStage, reportOk, reportFail, SourceStatus } from './sourceHealth';
+import { withGate } from './gate';
+import { imageExt } from './imageExt';
+import { writeAtomic } from './fsAtomic';
+import { pagePace, paceLevel, noteDownloaded, notePageHosts, noteRateLimited, rateKeyOf, restLeft, resumePace } from './pace';
+import { drawGap } from './archivePace';
+import { pageName, placeholderPng, PARTIAL_MANIFEST, type PartialManifest } from './partial';
+import { realContainedPath } from './fsGuard';
+import { adultContentRating } from './ageRating';
+import { MAX_PAGE_BYTES } from './archiveCaps';
+import { fetchFollowingPublic, readCapped } from './safeFetch';
+import { isSwAdapterId } from './sources/suwayomi/sources';
+import { numKey } from './postingOrder';
+import { onEngineOrigin } from './sources/suwayomi/client';
+
+/**
+ * A title as a folder name.
+ *
+ * ⚠️ No leading dot. The scanner skips every folder that starts with one (`SKIP_DIR` in library.ts: `.git`,
+ * `.Trash-1000`, `.thumbnails`), so `.hack//Link` downloaded into `.hack_Link` and never reached the library,
+ * with nothing to say why; a title of `..` would have named the parent folder itself. Reintroduce by dropping
+ * the `^[.\s]+` strip: relPath.test.ts "a title that starts with a dot" finds the dot.
+ */
+export function sanitize(s: string, platform: NodeJS.Platform = process.platform): string {
+  const name = (s || '').replace(/[\/\\:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().replace(/^[.\s]+/, '').slice(0, 150) || 'untitled';
+  return platform === 'win32' ? winSafe(name) : name;
+}
+
+/**
+ * The names Windows cannot hold, made holdable. Windows only: on Linux every one of these is a legal name
+ * and the server's folders must keep the exact spelling they already have on disk.
+ *
+ * ⚠️ Node reaches these through the `\\?\` long-path prefix, which CREATES them literally -- and then
+ * Explorer can neither open nor delete a folder called `CON`, `Title.` or `Title ` (it strips the trailing
+ * dot or space and finds nothing). Control characters are illegal in a Windows name outright. Tabs and
+ * newlines have already become spaces above, so what is left to strip is the rest of 0x00-0x1F.
+ * Reintroduce by returning `name` unchanged: relPath.test.ts "sanitize on win32" finds `CON` and `Title.`.
+ */
+function winSafe(name: string): string {
+  const out = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f]+/g, '')
+    .replace(/[. ]+$/, '')
+    // CON, PRN, AUX, NUL, COM0-9, LPT0-9 (and the superscript digits Windows also reserves), with or
+    // without an extension: `nul.txt` is the device too.
+    .replace(/^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?=$|[. ])/i, '$1_');
+  return out || 'untitled';
+}
+
+function comicInfo(d: { series: string; number: number; title?: string; summary?: string; author?: string; genres?: string[]; web?: string; status?: string; scanlator?: string; contentRating?: string }): string {
+  // XML_FORBIDDEN out first: a source's text is copied in verbatim, and a NUL in a description made a file
+  // no XML reader should accept and one the scan could not index (#109, lib/library.ts).
+  const esc = (x: any = '') => String(x ?? '').replace(XML_FORBIDDEN, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<ComicInfo>',
+    `  <Title>${esc(d.title || `Chapter ${d.number}`)}</Title>`,
+    `  <Series>${esc(d.series)}</Series>`,
+    `  <Number>${d.number}</Number>`,
+    `  <Summary>${esc(d.summary)}</Summary>`,
+    `  <Writer>${esc(d.author)}</Writer>`,
+    // The group that released this copy, in the ComicInfo v2.1 tag Mihon and Suwayomi write and Komga and
+    // Kavita read -- so the file carries its provenance into any reader, not only into lib_books. Omitted
+    // rather than written empty when the source named nobody, since an empty tag reads as "no translator".
+    ...(d.scanlator ? [`  <Translator>${esc(d.scanlator)}</Translator>`] : []),
+    `  <Genre>${esc((d.genres || []).join(', '))}</Genre>`,
+    // A title its source rates adults-only, in the tag parseComicInfoAgeRating reads back as 18: the scan then keeps
+    // the series' age_rating from the files alone, and so does Komga or Kavita reading this folder.
+    ...(adultContentRating(d.contentRating) ? ['  <AgeRating>Adults Only 18+</AgeRating>'] : []),
+    `  <Web>${esc(d.web)}</Web>`,
+    `  <ty:PublishingStatusTachiyomi xmlns:ty="http://www.w3.org/2001/XMLSchema">${esc(d.status)}</ty:PublishingStatusTachiyomi>`,
+    '</ComicInfo>',
+  ].join('\n');
+}
+
+export interface DownloadInput {
+  sourceId: string; // adapter id
+  seriesFolder: string; // relative "<source>/<title>" (existing lib_series.folder, or new)
+  chapter: SourceChapter;
+  meta?: Partial<SourceSeries> & { series?: string };
+}
+
+/** One page that did not arrive: what the site answered, so the ledger can say more than "N-1 of N". */
+export interface PageFailure {
+  index: number; // 0-based
+  status: number; // the HTTP status, or 0 when the request threw
+  type?: string; // content-type when the body was the problem (an error page, a body too small to be an image)
+  bytes?: number; // body length when it was read and rejected
+  error?: string; // why the request threw
+}
+
+/**
+ * A chapter that arrived nearly whole, held in memory until the caller decides whether to keep it.
+ *
+ * `downloadChapter` alone never writes a truncated file (partialChapter.test.ts pins that). Writing one is
+ * a second, explicit act: the fallback chain calls `write()` once every other source has also failed, and
+ * the buffers live on the error until that catch ends. `write()` runs once; a second call returns the
+ * first result.
+ */
+export interface PartialHold {
+  missing: number[]; // 0-based indices that will be placeholders
+  expected: number; // pages the file will contain, placeholders included
+  pages: number; // real pages held
+  write(preflight?: DownloadPreflight): Promise<{ file: string; pages: number; missing: number[] }>;
+  /**
+   * The caller will not write it: its entry in the downloads view ends now, as not kept (lib/downloadActivity.ts
+   * holdPartial sets this). A no-op once written.
+   */
+  drop?(): void;
+}
+
+/**
+ * Why a queued automatic download was no longer allowed when its source slot finally opened. `hidden`: an admin hid
+ * the chapter's number from its series meanwhile (#240, lib/hiddenChapters.ts), and nothing fetches a hidden number.
+ */
+export type DownloadPreflightReason = 'paused' | 'policy' | 'source' | 'disabled' | 'cooldown' | 'hidden';
+/**
+ * Last-responsible-moment admission.  Returning a reason refuses the operation without blaming the source.
+ * It is deliberately asynchronous: current follows, preferences and unattended state all live in the database.
+ */
+export type DownloadPreflight = () => Promise<DownloadPreflightReason | null>;
+
+export class DownloadPreflightError extends Error {
+  readonly reason: DownloadPreflightReason;
+  constructor(reason: DownloadPreflightReason) {
+    super(`download no longer allowed (${reason})`);
+    this.name = 'DownloadPreflightError';
+    this.reason = reason;
+  }
+}
+
+/** Shared by downloadChapter and the completion pass's direct page/partial-write paths. */
+export async function assertDownloadPreflight(preflight?: DownloadPreflight): Promise<void> {
+  const reason = await preflight?.().catch(() => 'source' as const);
+  if (reason) throw new DownloadPreflightError(reason);
+}
+
+/** What `downloadChapter` throws when pages are missing. `blockStatus` only when the SOURCE is at fault. */
+export interface ChapterShortfall extends Error {
+  pages: number;
+  expected: number;
+  status: SourceStatus;
+  worst: number;
+  blockStatus?: SourceStatus;
+  failedPages: PageFailure[];
+  partial?: PartialHold;
+}
+
+// Politeness limits, applied per source. Adding a series and importing hundreds both fan out through here,
+// so this is the one place that decides how hard we ever hit a site.
+const DL_CONCURRENCY = Number(process.env.DOWNLOAD_CONCURRENCY || 2);
+const DL_MIN_GAP_MS = Number(process.env.DOWNLOAD_MIN_GAP_MS || 1200);
+/**
+ * Pause between one page request and the next inside one chapter, for sources that do not declare their own.
+ *
+ * The gate above spaces CHAPTERS, and for a long time nothing spaced the images inside one. A chapter here
+ * is 110-130 images fetched back to back, two chapters at a time: a burst of several requests a second
+ * sustained for minutes. That burst is what earned the 429s on mangakakalot and natomanga, not anything the
+ * sites changed -- measured at ~1.9 pages/second right up to the refusal. A quarter-second between pages
+ * costs about 30s on a 120-page chapter, against a 75-minute cooldown for going too fast.
+ *
+ * That quarter second is the right answer for a site we scrape ourselves and the wrong one for a source
+ * that only proxies through the extension engine, which has its own client and its own limits towards the
+ * site (issue #37: extension downloads ran at the scraped-site pace for no reason). So pacing is now the
+ * adapter's to declare -- `pageGapMs` overrides this value and `pageConcurrency` widens the pool past one
+ * -- and this stays the default for every adapter that says nothing, which is every engine and pack site.
+ */
+const DL_PAGE_GAP_MS = Number(process.env.DOWNLOAD_PAGE_GAP_MS || 250);
+/** How many times a chapter may wait out a 429 and resume before we accept the source is refusing. */
+const MAX_RESUMES = 3;
+/**
+ * How long a resume waits after a 429, per round, on top of whatever Retry-After the site sent.
+ *
+ * Retry-After is honoured as a floor and was the only wait there was, and a site that sends none was waited
+ * out for the 5-second default, three times, then given up on. A site that has just refused a burst is not
+ * ready 5 seconds later; growing waits give the limit time to lift. Tests set `0,0,0`.
+ */
+const RESUME_WAIT_MS = (process.env.DOWNLOAD_RESUME_WAIT_MS || '5000,10000,20000')
+  .split(',').map((s) => Math.max(0, Number(s) || 0));
+/**
+ * How complete a chapter has to be for the shortfall to be the chapter's fault rather than the source's.
+ *
+ * 0.95 sits between the two things that must stay distinguishable: 17 of 20 pages (0.85) is a source that
+ * has stopped serving and must still be caught, while 109 of 110 (0.99) and 98 of 101 (0.97) are the flaky
+ * CDN reads that were putting whole sources into a day-long cooldown.
+ */
+const NEAR_COMPLETE = 0.95;
+/**
+ * How complete a chapter has to be to be offered as a PARTIAL: written with placeholders at the missing
+ * indices and filled in by later sweeps (lib/partial.ts). 0 disables the hold entirely.
+ *
+ * Four pages in five is the owner's line: "149 of 155" is a chapter a person wants to read tonight with a
+ * note about the one page, and 80 of 155 is not a chapter at all. The hold is never offered on a refusal
+ * (403/429): the site said no, and the cooldown is the answer to that, not a file with holes in it.
+ */
+const PARTIAL_CHAPTER_FLOOR = process.env.PARTIAL_CHAPTER_FLOOR === undefined ? 0.8 : Math.max(0, Math.min(1, Number(process.env.PARTIAL_CHAPTER_FLOOR) || 0));
+/**
+ * Sentinels for `worst` below the HTTP range. `worst` is "the worst thing that happened to any page": a real
+ * HTTP status when one was received, else one of these. NET_ERROR outranks EMPTY_BODY because a request that
+ * never completed says more about the connection than one that completed with nothing in it.
+ */
+const EMPTY_BODY = 1; // HTTP 200 with no image behind it (under 256 bytes and not decodable)
+const NET_ERROR = 2;  // fetch threw: timeout, reset, DNS
+/**
+ * A softer completeness bar when the only failures were empty bodies.
+ *
+ * NEAR_COMPLETE is right for HTTP errors and network failures. It was wrong for a CDN that answers 200 with
+ * nothing in it. Live, 151 of 176 pages arrived that way: 0.858 fell under the bar, and because an empty body
+ * set no `worst` at all the status fell through classify() to the harshest 'blocked' tier. One chapter put
+ * aqua -- 192 of 226 series -- into a 30-minute cooldown, the sweep skipped the other 164 for the night, and
+ * nothing logged it. Half the chapter arriving as real images proves the CDN is up and the holes are
+ * per-image; under half is an outage, and is treated as one.
+ */
+const EMPTY_TOLERANCE = 0.5;
+
+/** Whose fault a shortfall is. Values below 400 are sentinels, not statuses, and none of them is a refusal. */
+function blameFor(worst: number): SourceStatus {
+  if (worst < 400) return 'down';
+  return classify(null, worst) || 'blocked';
+}
+/**
+ * The status a shortfall's stored error names. When the source refused, the refusal it was blamed for (v0.55.1): a
+ * 500 beside a 429 is still the 429 that put it in a cooldown, and the stored words are what Health, the diagnosis and
+ * the per-stage evidence read -- a 429 as a rate limit, which is a cooldown and never a failure (lib/sourceEvidence.ts
+ * isRateLimit; noteStage records the kind from these words). Named by the numerically worst page, a 403 refusal beside
+ * a 429 read as a rate limit, and a 429 beside a 500 as a broken source. Reintroduce `worstLabel(worst)`: "a refused
+ * chapter names the refusal it was blamed for" in downloadBlame.int.test.ts reads HTTP 500.
+ */
+const worstLabel = (worst: number, refusal?: Extract<SourceStatus, 'blocked' | 'rate_limited'>) =>
+  (refusal === 'blocked' ? '403' : refusal === 'rate_limited' ? '429'
+    : worst >= 400 ? String(worst) : worst === EMPTY_BODY ? 'empty body' : 'error');
+
+/**
+ * Is this small body an image at all?
+ *
+ * The 256-byte floor below was the leading cause of the "N-1 of N pages" ledger rows: long-strip sources
+ * slice a webtoon into fixed-height WebPs and the last remainder slice is often blank -- an all-white WebP
+ * is 88-130 bytes, under the floor, so the chapter's last page was refused every night as an empty body.
+ * A body that sharp can decode to a width and a height IS a page, however small; the floor now only
+ * catches what it was for, the error pages and empty bodies a CDN hands out with a 200.
+ */
+async function isImage(buf: Buffer): Promise<boolean> {
+  try {
+    const m = await sharp(buf).metadata();
+    return (m.width ?? 0) >= 1 && (m.height ?? 0) >= 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Refuse to start a download when the library disk is nearly full.
+ *
+ * Nothing consulted free space before. The first sign would have been ENOSPC part-way through a chapter, on
+ * a filesystem that was already at 87% and holds the library, every download and the only backup. Fails
+ * OPEN when statfs is unavailable: a guard that cannot measure must not stop everything.
+ */
+// Exported for Health's "Disk space and folders" card (lib/healthDisk.ts), which turns red at this very floor: never green
+// while a download is being refused for space.
+export const MIN_FREE_GB = process.env.MIN_FREE_GB === undefined ? 10 : Number(process.env.MIN_FREE_GB) || 0;
+async function assertFreeSpace(): Promise<void> {
+  if (!(MIN_FREE_GB > 0)) return;
+  const free = await freeBytes();
+  if (free === null || free >= MIN_FREE_GB * 2 ** 30) return;
+  throw Object.assign(
+    new Error(`${(free / 2 ** 30).toFixed(1)} GiB free under ${DL_ROOT}, floor is ${MIN_FREE_GB} GiB`),
+    { diskFull: true },
+  );
+}
+
+/**
+ * Bytes free for downloads under DL_ROOT, or null when statfs cannot say.
+ *
+ * The guard above and the slow archive's own, higher floor (lib/archive.ts) measure the same disk the same
+ * way, and both fail open on null: a guard that cannot measure must not stop everything.
+ */
+export function freeBytes(): Promise<number | null> {
+  return statfs(DL_ROOT).then((f) => Number(f.bavail) * Number(f.bsize)).catch(() => null);
+}
+
+/**
+ * Where a downloaded chapter lands, relative to DL_ROOT: named from the NUMBER alone, never the title or
+ * the group. That is what makes a re-download of the same number land on the same lib_books row (the
+ * scanner conflicts on (root, file)), which is what keeps reading progress attached across a refetch --
+ * and it is why the refetch route in routes/admin.ts only ever offers a file at exactly this path.
+ *
+ * ⚠️ `posix.join`, never `join`: this string is compared with what the database stores (`/`, see
+ * lib/relPath.ts) by the nightly repair, the Health "Fix" chip and "Fetch again", and on Windows `join`
+ * answers with `\` so none of the three ever matched. Identical on Linux, which is why only a static check
+ * can catch a regression (desktopSwitchHygiene.test.ts).
+ */
+export const chapterFileRel = (seriesFolder: string, number: number): string => posix.join(seriesFolder, `Chapter ${number}.cbz`);
+
+/** The downloader's own file name, and the number it spells: `Chapter 84.3.cbz`, `Chapter -1.cbz`. */
+const OWN_NAME = /^Chapter (-?\d+(?:\.\d+)?)\.cbz$/;
+
+/**
+ * Is chapter `number` already in the folder of `abs` under another spelling of its number: `Chapter
+ * 84.29999999999998.cbz` for 84.3. A source and the database spell some numbers differently (lib/chapterRanges.ts
+ * heldBy), so a task holding one spelling looked for a file named by it and missed the one another task had just
+ * written under the other: Standard of Reincarnation got chapter 84.3 twice, 49 s apart, before a scan had indexed the
+ * first. The file NAME is left alone (lib/repair.ts and the refetch routes recognise a file of ours by exactly it).
+ * Reintroduce by checking the one path alone: "a chapter saved under another spelling of its number is not fetched
+ * again" in chapterSpellings.test.ts finds 84.3 going on to be fetched.
+ */
+async function spelledOtherwise(abs: string, number: number): Promise<boolean> {
+  const key = numKey(number);
+  const names = await readdir(dirname(abs)).catch(() => [] as string[]);
+  return names.some((f) => {
+    const m = OWN_NAME.exec(f);
+    return !!m && numKey(parseFloat(m[1])) === key;
+  });
+}
+
+/**
+ * The per-source chapter gate every download path runs under: at most DL_CONCURRENCY chapters at once and
+ * a gap between their starts that doubles per pace level (1200 → 2400 → 4800 ms), so a source that has
+ * answered 429 sees fewer chapters as well as slower pages until it has been quiet for a while.
+ *
+ * One gate per RATE KEY (lib/pace.ts rateKeyOf): MangaDex in three languages is one site downloading three chapters
+ * (v0.52.0), and Natomanga and Mangakakalot are one image server (v0.55.3), so each gets one gate, not several.
+ *
+ * One chapter at a time while the key's pace is raised (v0.55.3): two at once were two page streams to a server that
+ * had asked for fewer requests, at a doubled gap each. Both values are asked again whenever a slot frees (lib/gate.ts),
+ * so a lane already running two when the 429 came narrows as they finish. Reintroduce `concurrency: DL_CONCURRENCY`:
+ * "a raised pace downloads one chapter at a time" in pacePersists.test.ts sees two at once.
+ */
+export const underGate = <T>(sourceId: string, fn: () => Promise<T>): Promise<T> =>
+  withGate(rateKeyOf(sourceId), fn, {
+    concurrency: () => (paceLevel(sourceId) ? 1 : DL_CONCURRENCY),
+    minGapMs: () => DL_MIN_GAP_MS * 2 ** paceLevel(sourceId),
+  });
+
+/**
+ * Download one chapter into <DL_ROOT>/<seriesFolder>/Chapter <n>.cbz.
+ *
+ * Resolves null when the file is already there (a download somebody else did), unless `replace` is set,
+ * which the completion pass and the admin refetch use to write over a file they know to be partial or
+ * stale. Throws a ChapterShortfall when pages are missing, `{ diskFull }` when the library disk is at its
+ * floor, and whatever getPageUrls threw.
+ */
+export async function downloadChapter(
+  input: DownloadInput,
+  opts: { replace?: boolean; preflight?: DownloadPreflight } = {},
+): Promise<{ file: string; pages: number } | null> {
+  const src = getSource(input.sourceId);
+  if (!src) throw new Error(`unknown source ${input.sourceId}`);
+
+  const rel = chapterFileRel(input.seriesFolder, input.chapter.number);
+  // A fresh install may not have downloaded anything yet. Create only the configured root before resolving it;
+  // the untrusted series path is still untouched until realContainedPath has checked every existing component.
+  await mkdir(DL_ROOT, { recursive: true });
+  const abs = await realContainedPath(DL_ROOT, rel);
+  if (!abs) throw new Error('unsafe download path outside the library root');
+  // A PATH check under DL_ROOT, and nothing more: is the file this very call would write already there, under
+  // this spelling of its number or another (spelledOtherwise). It is cheap, so it runs before queueing for a
+  // slot, and it catches the same chapter twice in one run.
+  //
+  // ⚠️ It is not, and cannot be, the library's have-set. It sees one root and one filename convention, so
+  // a chapter the scanner indexed under the READ-ONLY library root, or under any other name, is invisible
+  // to it -- which is how a re-add used to re-download a series the library already held in full and then
+  // file every chapter twice (#65). Deciding what a download RUN should fetch is the add path's job, from
+  // `lib_books` across both roots: see the have-set in routes/sources.ts (addSeriesFromSource). Leaving
+  // this here is deliberate; `replace` is what the admin refetch and the completion pass (lib/partial.ts)
+  // use to write over a file they know to be stale or partial, and those paths never consult the have-set.
+  if (!opts.replace && (await stat(abs).then(() => true).catch(() => false) || await spelledOtherwise(abs, input.chapter.number))) return null;
+  await assertFreeSpace();
+
+  // Recorded HERE, the one function every download path ends in, so the downloads view sees all of them --
+  // an add, a Fetch, a followed source's check, the nightly sweep, the repair (lib/downloadActivity.ts).
+  const act = beginDownload({
+    folder: input.seriesFolder, title: input.meta?.series || input.seriesFolder.split('/').pop() || input.seriesFolder,
+    number: input.chapter.number, source: input.sourceId,
+  });
+  try {
+    const r = await underGate(input.sourceId, async () => {
+      // The queue can be minutes deep. Re-read every mutable admission decision only after its slot opens,
+      // directly beside the first source operation, so an unfollow/disable/cooldown/pause that lands while
+      // waiting wins the race and the source is never contacted.
+      await assertDownloadPreflight(opts.preflight);
+      startedDownload(act);
+      return fetchChapter(src, input, rel, act);
+    });
+    endDownload(act, { status: 'done', pages: r.pages });
+    return r;
+  } catch (e) {
+    if (e instanceof DownloadPreflightError) {
+      endDownload(act, 'skipped');
+      throw e;
+    }
+    const hold = (e as Partial<ChapterShortfall>)?.partial;
+    if (hold) holdPartial(act, hold);
+    else endDownload(act, { status: 'failed', reason: String((e as Error)?.message || e).slice(0, 160) });
+    throw e;
+  }
+}
+
+export interface PageCtx {
+  /** The chapter's id on the source: what the referer is derived from when the adapter declares none. */
+  chapterSourceId: string;
+  /** Starting gap and pool width. Default: `pagePace(src)`, which is the adapter's declaration at pace level 0. */
+  gap?: number;
+  workers?: number;
+  /**
+   * Draw each page's gap from this range instead of using `gap` for every page (the slow archive, via
+   * withSlowPace in lib/pace.ts). Default: whatever pagePace says, which is none outside withSlowPace.
+   */
+  jitter?: [number, number];
+  /** Tests only: where the jitter draws come from. Default Math.random. */
+  rand?: () => number;
+  /**
+   * false = ask each index once and report; no resume pass. The completion pass uses it: a partial
+   * chapter's missing page is asked for once a night, so the source sees exactly as many requests as there
+   * are holes, and a 429 is still noted for the pace. Default true: the resume loop below.
+   */
+  retry?: boolean;
+  /** Called when another page is in hand, for live download progress. */
+  onPage?: (got: number) => void;
+}
+
+export interface PagesResult {
+  /** By index over `urls`; only the indices asked for are ever filled. */
+  page: (Buffer | null)[];
+  ext: string[];
+  /** The worst thing that happened to any page: an HTTP status, or a sentinel below 400. 0 = nothing failed. */
+  worst: number;
+  /** One entry per index still missing, with what the site answered. A later success removes the entry. */
+  failed: Map<number, PageFailure>;
+  /** Non-zero when the last round still ended in a 429: the source is refusing as this returns. */
+  retryAfterMs: number;
+  /** Any explicit refusal seen on any page, kept independently from the numerically largest HTTP status. */
+  refusal?: Extract<SourceStatus, 'blocked' | 'rate_limited'>;
+}
+
+/**
+ * Fetch the pages at `indices` from `urls`: the paced worker pool, then the bounded resume loop.
+ *
+ * Lifted out of fetchChapter so the completion pass (lib/partial.ts) can ask a source for exactly the
+ * pages a partial chapter lacks; fetchChapter calls it with every index. Everything about politeness lives
+ * here: the gap and pool width start from the source's pace level, a 429 stops every worker, and each
+ * resume raises that level for the chapters that follow (lib/pace.ts).
+ */
+export async function fetchPages(src: SourceAdapter, urls: string[], indices: number[], ctx: PageCtx): Promise<PagesResult> {
+  // Which image servers these pages are on, before the first is asked for (v0.55.3): a source whose pages share a
+  // server with another's shares its rate key from now on, and this chapter's pace already reads the shared one.
+  notePageHosts(src, urls);
+  // Cloudflare-hosted images need FlareSolverr session cookies — the source declares this via requiresCloudflare.
+  const cf = src.requiresCloudflare ? await cfSession(urls[0]).catch(() => null) : null;
+  // Referer: the source's declared imageReferer (static or per-chapter), else the chapter url's own origin.
+  const referer = typeof src.imageReferer === 'function'
+    ? src.imageReferer(ctx.chapterSourceId)
+    : src.imageReferer
+      ?? (/^https?:/.test(ctx.chapterSourceId) ? `${new URL(ctx.chapterSourceId).origin}/` : '');
+  let got = 0; // Pages in hand; retries of a page do not count it twice.
+  let worst = 0; // worst HTTP status seen on a failed page, or a sentinel below 400 (EMPTY_BODY, NET_ERROR)
+
+  // Held by position rather than appended as they arrive, so a page fetched on the RETRY below still lands
+  // in reading order. The buffers were already all resident before (AdmZip holds what you add), so this
+  // costs no memory that was not already spent.
+  const page: (Buffer | null)[] = new Array(urls.length).fill(null);
+  const ext: string[] = new Array(urls.length).fill('jpg');
+  // What happened to each page that is still missing. Before this only the scalar `worst` survived, so a
+  // ledger row read "109 of 110 pages" and nothing anywhere said which page, or whether it was a 404, an
+  // 88-byte body or a timeout -- the three have three different fixes.
+  const failed = new Map<number, PageFailure>();
+  let retryAfterMs = 0; // set when the source answers 429; how long it asked us to wait
+  // `worst` is useful evidence, but numeric ordering is not policy: a 500 beside a 429 must not hide that
+  // the source explicitly asked us to stop. Keep refusal as its own fact for the chapter decision below.
+  let refusal: Extract<SourceStatus, 'blocked' | 'rate_limited'> | undefined;
+
+  const fetchPage = async (u: string, i: number): Promise<void> => {
+    const headers: Record<string, string> = {
+      referer,
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'accept-language': 'en-US,en;q=0.9',
+      'user-agent': cf?.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    };
+    if (cf?.cookie) headers.cookie = cf.cookie;
+    // Source-declared extra headers (e.g. auth for a source that proxies its own images). Declared as a
+    // capability rather than keyed off the adapter id, so the core never special-cases a particular source.
+    Object.assign(headers, typeof src.imageHeaders === 'function' ? src.imageHeaders(u) : src.imageHeaders ?? {});
+    try {
+      // Every hop on the public internet, the page read within MAX_PAGE_BYTES (lib/safeFetch.ts). A page URL is
+      // whatever the site's HTML or API named, and this followed redirects with no check: the audit had a site's
+      // loopback URL fetched and the internal service's answer stored as a member-readable page. The engine's own page
+      // proxy URLs are private by design and are exempt on their first hop, for an engine source only.
+      const r = await fetchFollowingPublic(u, { headers, signal: AbortSignal.timeout(45000) }, {
+        exemptFirst: (t) => !!src.localImages || (isSwAdapterId(src.id) && onEngineOrigin(t)),
+      });
+      if (!r.ok) {
+        if (r.status >= 400) worst = Math.max(worst, r.status);
+        failed.set(i, { index: i, status: r.status });
+        if (r.status === 403) refusal = 'blocked';
+        else if (r.status === 429 && refusal !== 'blocked') refusal = 'rate_limited';
+        // A 429 is the site asking for room, and the rest of this chapter is another hundred requests it did
+        // not ask for. Note it (and any Retry-After it sent) so the burst can stop instead of finishing the
+        // loop and collecting a hundred more of them, which is how 12 of 108 pages arrived.
+        if (r.status === 429) {
+          const ra = Number(r.headers.get('retry-after'));
+          retryAfterMs = Math.max(retryAfterMs, Number.isFinite(ra) && ra > 0 ? Math.min(ra, 120) * 1000 : 5000);
+        }
+        return;
+      }
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      const type = ct.split(';')[0].trim();
+      if (/^text\/|html|json/.test(ct)) { worst = Math.max(worst, 415); failed.set(i, { index: i, status: r.status, type }); return; } // hotlink/error page, not an image
+      const buf = await readCapped(r, MAX_PAGE_BYTES);
+      // 200 with nothing behind it -- unless the little that is there decodes as an image (see isImage).
+      if (buf.length < 256 && !(await isImage(buf))) { worst = Math.max(worst, EMPTY_BODY); failed.set(i, { index: i, status: r.status, type, bytes: buf.length }); return; }
+      // Content-Type first: some sources (and any source proxied through an extension server) serve pages
+      // from extension-less URLs, and a wrong extension makes the chapter read as zero pages.
+      if (!page[i]) ctx.onPage?.(++got);
+      page[i] = buf;
+      ext[i] = imageExt(u, ct);
+      failed.delete(i);
+    } catch (e) {
+      worst = Math.max(worst, NET_ERROR); // network/timeout; never outranks a real HTTP status
+      const err = e as { name?: string; message?: string } | null;
+      failed.set(i, { index: i, status: 0, error: err?.name === 'TimeoutError' ? 'timeout' : String(err?.message || 'fetch failed').slice(0, 40) });
+    }
+  };
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // The gap and the pool width start from the source's pace level (lib/pace.ts): the adapter's own
+  // declaration at level 0, and one worker at a doubled gap for a source that answered 429 recently. The
+  // clamping of a declared width lives in paceFor: a compiled plugin that declares nonsense gets one worker,
+  // not zero -- `Math.max(1, NaN)` is NaN, and an Array.from of NaN workers fetches nothing and reports a
+  // 0-page chapter as the site's fault. Under withSlowPace (the slow archive) pagePace also hands back a
+  // range, one worker, and a gap that is never below the one it replaces.
+  const pace = pagePace(src, { gapMs: DL_PAGE_GAP_MS });
+  let gap = ctx.gap ?? pace.gap;
+  let workers = ctx.workers ?? pace.workers;
+  let jitter = ctx.jitter ?? pace.jitter;
+  const rand = ctx.rand ?? pace.rand ?? Math.random;
+  let lastStart = -Infinity;
+  let lastDone = -Infinity;
+  /**
+   * The key's own state, read again before every page (v0.55.3). Another chapter on the key may have been refused since
+   * this one began -- two run at once at level 0, and a source joined to it by its image server is the same server --
+   * and this one then rests as long as that one does and goes on one page at a time at the slower gap, instead of
+   * asking the same server at the old pace until it is refused itself. Reintroduce by dropping the two calls in run():
+   * "a 429 to one chapter slows the chapter beside it" in pacePersists.test.ts sees the neighbour keep its pace.
+   *
+   * `level` starts at 0, not at `pace.level`: a caller's own gap and width (fetchChapter's) were read before this
+   * chapter's pages joined its source to another's server, so the first page squares them with the key's level -- never
+   * making them faster.
+   */
+  let level = 0;
+  const follow = () => {
+    const now = pagePace(src, { gapMs: DL_PAGE_GAP_MS });
+    if (now.level <= level) return;
+    level = now.level;
+    gap = Math.max(gap, now.gap);
+    workers = Math.min(workers, now.workers);
+  };
+  const restOut = async () => {
+    const ms = restLeft(src.id);
+    if (ms > 0) await sleep(ms);
+  };
+
+  /**
+   * Fetch `indices` through up to `workers` loops that each pull the next index off a shared cursor.
+   *
+   * The gap is a floor between page requests across the whole pool, not per worker: each loop reserves its
+   * start slot synchronously (no await between reading the clocks and advancing `lastStart`) and only then
+   * sleeps until that slot comes round, so the request rate towards the source is the same however wide
+   * the pool. The slot is measured from the later of the previous START and the previous COMPLETION. The
+   * completion matters: the sequential loop this replaces slept `gap` AFTER each page, so a slow site got
+   * `rtt + gap` between requests -- measuring from starts alone would have handed a 500ms site the exact
+   * 1.9 pages/second that earned the 429s, with every pacing test still green. Results land by position
+   * (`page[i]`), so reading order does not depend on arrival order.
+   *
+   * The loop condition, not a break, checks `retryAfterMs`: the first 429 stops EVERY worker from starting
+   * another page while the ones in flight finish. Carrying on collects ninety more refusals, turns a pause
+   * into a "12 of 108 pages" failure, and earns a cooldown for behaviour that was ours. Re-checked after the
+   * sleep too, since a slot reserved before the 429 landed is exactly the request the site asked us not to
+   * make.
+   *
+   * With a jitter range each page draws its OWN gap, fresh, never below `gap`: one draw per chapter would
+   * still be a metronome inside it, and a metronome is what the slow archive is not meant to sound like.
+   */
+  const run = async (idx: number[]): Promise<void> => {
+    let next = 0;
+    const worker = async (w: number) => {
+      while (!retryAfterMs && next < idx.length) {
+        // Resting: wait, then ask the loop again -- the cursor may have run out, or a 429 come, while this one slept.
+        // No await at all when there is no rest, so a slot is still reserved in the same tick the clocks are read.
+        if (restLeft(src.id) > 0) { await restOut(); continue; }
+        follow();
+        if (w >= workers) return; // narrowed by a refusal on the key: one page at a time from here
+        const i = idx[next++];
+        const g = jitter ? drawGap(jitter, gap, rand) : gap;
+        const at = Math.max(Date.now(), lastStart + g, lastDone + g);
+        lastStart = at;
+        const wait = at - Date.now();
+        if (wait > 0) {
+          await sleep(wait);
+          if (retryAfterMs) return;
+          // A rest that began while this page waited its turn is a neighbour's 429 to the same server.
+          if (restLeft(src.id) > 0) {
+            await restOut();
+            if (retryAfterMs) return;
+          }
+        }
+        await fetchPage(urls[i], i);
+        lastDone = Date.now();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(workers, idx.length) }, (_, w) => worker(w)));
+  };
+
+  await run(indices);
+
+  /**
+   * Wait out a rate limit and pick up where we stopped, a bounded number of times.
+   *
+   * Almost every shortfall seen on this install is one or two pages out of a hundred, on a CDN that answers
+   * again immediately, so the first pass here is the plain retry it has always been.
+   *
+   * What it did NOT do is survive a 429 on the FIRST page. `gaps.length < urls.length` is false when
+   * nothing has arrived, so the whole block was skipped -- INCLUDING the sleep. The site had said "wait
+   * five seconds"; instead the chapter was reported as "0/115 pages downloaded (HTTP 429)" 1.28 seconds
+   * after a single request, which put the source in a cooldown and abandoned the other 58 chapters of the
+   * run. Every "I tried a different source and it still failed" on this install is that line.
+   *
+   * Nothing arriving IS a refusal and hammering it earns a real block -- but a 429 is the one refusal that
+   * comes with the remedy attached, and discarding that instruction is not politeness, it is deafness.
+   */
+  for (let round = 0; ctx.retry !== false && round < MAX_RESUMES; round++) {
+    const gaps = indices.filter((i) => !page[i]);
+    if (!gaps.length) break;
+    if (gaps.length === indices.length && !retryAfterMs) break; // a silent refusal: do not ask twice
+    if (retryAfterMs) {
+      // Retry-After is a floor, not the whole wait: a site that has just refused a burst is not ready one
+      // second later, whatever the header said, and each further round waits longer.
+      const wait = Math.max(retryAfterMs, RESUME_WAIT_MS[round] ?? 0);
+      // The slow-down has to outlive this chapter: the next one on this source starts from a higher pace
+      // level (one worker, a doubled gap, a longer chapter gate) instead of at full speed against a site
+      // that just said no. Noted BEFORE the wait, so a chapter queued behind this one on the gate already
+      // sees it -- and with the wait, which every chapter on the key sits out with this one (v0.55.3).
+      // ⚠️ Delete this and pacePersists.test.ts fails: chapter 2 runs four wide again.
+      noteRateLimited(src.id, wait);
+      await sleep(wait);
+      retryAfterMs = 0;
+      // Resume slower than the burst that caused this, or the wait only buys one more page. The burst is
+      // what was refused, so a widened pool narrows to one here too: an engine that said 429 to four
+      // overlapping requests is not going to like four more. The gap doubles up to the ceiling and never
+      // drops; a slow pace's range backs off at both ends and keeps a spread (pace.ts resumePace says how).
+      ({ gap, jitter } = resumePace({ gap, jitter }));
+      workers = 1;
+    } else if (round) {
+      break; // a stable shortfall with no 429: the pages are not there, and one retry was enough to know
+    }
+    await run(gaps);
+  }
+  // A 429 in the final round was never noted by the loop above; it counts the same, and the key rests what it asked.
+  if (retryAfterMs) noteRateLimited(src.id, retryAfterMs);
+
+  return { page, ext, worst, failed, retryAfterMs, refusal };
+}
+
+/** The evidence a thrown shortfall carries: the first ten missing pages, in reading order. */
+const evidenceOf = (failed: Map<number, PageFailure>): PageFailure[] =>
+  [...failed.values()].sort((a, b) => a.index - b.index).slice(0, 10);
+
+async function fetchChapter(
+  src: SourceAdapter,
+  input: DownloadInput,
+  rel: string,
+  act?: number,
+): Promise<{ file: string; pages: number }> {
+  const abs = join(DL_ROOT, rel);
+  let urls: string[];
+  try {
+    urls = await src.getPageUrls(input.chapter.sourceId);
+  } catch (e) {
+    const s = classify(e);
+    if (s) await reportFail(input.sourceId, s, (e as Error)?.message || 'getPageUrls failed');
+    // #115: evidence whatever classify() makes of it. An extension's own exception classifies as nothing, so
+    // the cooldown never saw it and neither did Health; the stage note sees everything and escalates nothing.
+    void noteStage(input.sourceId, 'pages', 'fail', { error: (e as Error)?.message || 'getPageUrls failed' });
+    // v0.79.0: a site saying "slow down" (429) or "no" (403) to a chapter's page list is the same refusal as saying it to
+    // the page images. The run stops asking that source, the ledger files it as a refusal (Finish downloads on their own
+    // gives one twelve tries, lib/finishDownloads.ts) and the pace slows. Rethrown bare, it read as a broken chapter:
+    // `error`, three tries, and the same source asked again for the next chapter of the run. Reintroduce by rethrowing
+    // `e` as it was: "a page list refused with 429 is a refusal" in downloadBlame.int.test.ts reads `error`.
+    if (s === 'rate_limited' || s === 'blocked') {
+      if (s === 'rate_limited') noteRateLimited(src.id);
+      throw Object.assign(e instanceof Error ? e : new Error(String(e)), { blockStatus: s, status: s });
+    }
+    throw e;
+  }
+  if (!urls.length) throw new Error('no page urls');
+  void noteStage(input.sourceId, 'pages', 'ok');
+
+  // pagePace, not paceFor: under withSlowPace this is where Suwayomi's gap 0 and its pool give way to the
+  // archive's one worker and random gaps. Everywhere else the two are the same thing.
+  const pace = pagePace(src, { gapMs: DL_PAGE_GAP_MS });
+  if (act != null) pagesProgress(act, 0, urls.length);
+  const { page, ext, worst, failed, refusal } = await fetchPages(src, urls, urls.map((_, i) => i), {
+    chapterSourceId: input.chapter.sourceId, gap: pace.gap, workers: pace.workers, jitter: pace.jitter, rand: pace.rand,
+    ...(act != null ? { onPage: (got: number) => pagesProgress(act, got, urls.length) } : {}),
+  });
+
+  const zip = new AdmZip();
+  let n = 0;
+  for (let i = 0; i < urls.length; i++) {
+    // Named by INDEX (lib/partial.ts pageName): identical to the running count for a complete chapter, and
+    // the slot a placeholder keeps for a page that is fetched later.
+    if (page[i]) { zip.addFile(pageName(i, ext[i]), page[i]!); n++; }
+  }
+  const failedPages = evidenceOf(failed);
+  if (!n) {
+    const status = refusal ?? blameFor(worst);
+    const said = `0/${urls.length} pages downloaded (HTTP ${worstLabel(worst, refusal)})`;
+    await reportFail(input.sourceId, status, said);
+    void noteStage(input.sourceId, 'images', 'fail', { error: said });
+    throw Object.assign(new Error('no images downloaded (blocked?)'), { blockStatus: status, status, pages: 0, expected: urls.length, worst, failedPages });
+  }
+  // A PARTIAL chapter must not be written as a complete one.
+  //
+  // `worst` was only consulted when every single page failed, so seventeen of twenty pages was packed,
+  // returned as success, and -- because an existing file is skipped on sight (see the stat check above) --
+  // never fetched again. The reader would simply stop three pages early, for good, with nothing anywhere
+  // recording that it had happened.
+  //
+  // Both values are the source's own account. A declared count larger than the URL list catches a short
+  // listing; a URL list larger than a stale declared count still means every returned URL is a real slot.
+  // Taking the maximum prevents one failed extra URL from being silently packed as a complete chapter.
+  const declared = Number(input.chapter.pages);
+  const expected = Math.max(urls.length, Number.isFinite(declared) && declared > 0 ? declared : 0);
+  if (n < expected) {
+    /**
+     * The chapter is still refused. What changed is who gets BLAMED for it.
+     *
+     * The first version of this called reportFail unconditionally, which put the whole source into an
+     * escalating cooldown. That is right for a source that is refusing us and badly wrong for a CDN that
+     * dropped one image: on this install it blocked mangakakalot over 98 of 101 pages and natomanga over
+     * 109 of 110, and a 92-chapter fill stopped after three because every caller breaks on `blockStatus`.
+     * The comment below already said an incomplete chapter is "not necessarily a reason to declare the
+     * whole source blocked", and the line above it did exactly that anyway.
+     *
+     * So: near-complete after a retry is a bad chapter, recorded against the chapter. A large shortfall, or
+     * an outright refusal status, is a bad SOURCE and still earns the cooldown.
+     */
+    const ratio = n / expected;
+    const refusing = refusal !== undefined; // the source saying no, whatever other page statuses occurred
+    // Only empty bodies, or a source that listed more pages than it served: nothing was refused and nothing
+    // timed out, so the softer bar applies. See EMPTY_TOLERANCE for the night this cost.
+    const soft = worst < 400 && worst !== NET_ERROR;
+    const blip = !refusing && ratio >= (soft ? EMPTY_TOLERANCE : NEAR_COMPLETE);
+    const status = refusal ?? blameFor(worst);
+    if (!blip) {
+      const said = `${n}/${expected} pages downloaded (HTTP ${worstLabel(worst, refusal)})`;
+      await reportFail(input.sourceId, status, said);
+      void noteStage(input.sourceId, 'images', 'fail', { error: said });
+    }
+    // The hold: enough of the chapter to be worth keeping with placeholders, and the site did not say no.
+    // Offered, not written -- see PartialHold. ⚠️ `!refusing` is the whole point of the second clause:
+    // a 429 at 109 of 110 is still a refusal, and a file written on a refusal is a chapter the site will
+    // never be asked to finish.
+    const total = Math.max(urls.length, expected);
+    const partial = !refusing && PARTIAL_CHAPTER_FLOOR > 0 && ratio >= PARTIAL_CHAPTER_FLOOR
+      ? holdFor(src, input, rel, page, ext, total, n)
+      : undefined;
+    throw Object.assign(
+      new Error(`incomplete chapter: ${n} of ${expected} pages`),
+      // Carried so the caller can say which chapter, how short, and who was blamed -- see chapterFailures.ts.
+      { pages: n, expected, status, worst, failedPages },
+      // `blockStatus` ends the CALLER'S whole run, so it is reserved for the source actually refusing, or for
+      // the connection being gone (or the CDN serving nothing) underneath a LARGE shortfall. One flaky page
+      // must cost one chapter.
+      refusing || (worst < 400 && !blip) ? { blockStatus: status } : {},
+      partial ? { partial } : {},
+    );
+  }
+  // A whole chapter that met no 429, nor a 403, at this pace (v0.55.3): one more in the run that takes a raised pace back
+  // down a step (lib/pace.ts noteDownloaded). Reintroduce by dropping it: "a raised pace comes down a step after a steady
+  // run" in pacePersists.test.ts stays slowed.
+  if (!refusal) noteDownloaded(src.id);
+  await reportOk(input.sourceId); // a successful download clears any prior block
+  // Evidence for the two stages a whole chapter proves, and ONLY those: a download says nothing about search
+  // or the chapter list, and must not close their failures (lib/sourceEvidence.ts). reportOk above resets the
+  // cooldown as it always has, and never touches this.
+  void noteStage(input.sourceId, 'images', 'ok');
+
+  zip.addFile('ComicInfo.xml', Buffer.from(comicInfo({
+    series: input.meta?.series || input.meta?.title || '',
+    number: input.chapter.number,
+    title: input.chapter.title,
+    summary: input.meta?.summary,
+    author: input.meta?.author,
+    genres: input.meta?.genres,
+    web: input.meta?.url || input.chapter.sourceId,
+    status: input.meta?.status,
+    scanlator: input.chapter.scanlator,
+    contentRating: input.meta?.contentRating,
+  })));
+
+  // Recheck after the network work and after creating a missing parent: an existing series folder may have
+  // become an intermediate symlink while pages were fetched. Never hand writeAtomic an escaping path.
+  if (await realContainedPath(DL_ROOT, rel) !== abs) throw new Error('unsafe download path outside the library root');
+  await mkdir(dirname(abs), { recursive: true });
+  if (await realContainedPath(DL_ROOT, rel) !== abs) throw new Error('unsafe download path outside the library root');
+  // Atomic, because the skip check at the top of downloadChapter is a bare stat(): a chapter half-written
+  // when the container went down would otherwise be honoured as complete on every later sweep, forever.
+  await writeAtomic(abs, zip.toBuffer());
+  return { file: rel, pages: n };
+}
+
+/**
+ * The partial hold for a chapter that arrived at or above PARTIAL_CHAPTER_FLOOR: the fetched pages by
+ * index, a flat placeholder at every missing index, the manifest naming those indices, and the ComicInfo.
+ *
+ * Each placeholder takes the size of the NEAREST real page, so a long strip keeps its width and the
+ * vertical reader's layout does not jump; 800×1200 when no page could be measured. Written atomically,
+ * once, only when the caller asks.
+ */
+function holdFor(
+  src: SourceAdapter, input: DownloadInput, rel: string,
+  page: (Buffer | null)[], ext: string[], total: number, held: number,
+): PartialHold {
+  const missing: number[] = [];
+  for (let i = 0; i < total; i++) if (!page[i]) missing.push(i);
+  let written: Promise<{ file: string; pages: number; missing: number[] }> | null = null;
+  const abs = join(DL_ROOT, rel);
+  const dimsCache = new Map<number, { width: number; height: number }>();
+  const dimsOf = async (i: number): Promise<{ width: number; height: number }> => {
+    const hit = dimsCache.get(i);
+    if (hit) return hit;
+    const m = await sharp(page[i]!).metadata().catch(() => null);
+    const d = { width: m?.width || 800, height: m?.height || 1200 };
+    dimsCache.set(i, d);
+    return d;
+  };
+  const nearestPresent = (i: number): number => {
+    for (let d = 1; d < total; d++) {
+      if (page[i - d]) return i - d;
+      if (page[i + d]) return i + d;
+    }
+    return -1;
+  };
+  return {
+    missing, expected: total, pages: held,
+    write: (preflight) => written ??= (async () => {
+      const zip = new AdmZip();
+      let first: { width: number; height: number } | null = null;
+      for (let i = 0; i < total; i++) {
+        if (page[i]) { zip.addFile(pageName(i, ext[i]), page[i]!); continue; }
+        const near = nearestPresent(i);
+        const dims = near >= 0 ? await dimsOf(near) : { width: 800, height: 1200 };
+        first ??= dims;
+        zip.addFile(pageName(i, 'png'), await placeholderPng(dims.width, dims.height));
+      }
+      const manifest: PartialManifest = {
+        version: 1, source: src.id, chapterSourceId: input.chapter.sourceId, expected: total, missing,
+        placeholder: first ?? { width: 800, height: 1200 }, writtenAt: new Date().toISOString(),
+      };
+      zip.addFile(PARTIAL_MANIFEST, Buffer.from(JSON.stringify(manifest, null, 2)));
+      zip.addFile('ComicInfo.xml', Buffer.from(comicInfo({
+        series: input.meta?.series || input.meta?.title || '',
+        number: input.chapter.number,
+        title: input.chapter.title,
+        summary: input.meta?.summary,
+        author: input.meta?.author,
+        genres: input.meta?.genres,
+        web: input.meta?.url || input.chapter.sourceId,
+        status: input.meta?.status,
+        scanlator: input.chapter.scanlator,
+        contentRating: input.meta?.contentRating,
+      })));
+      if (await realContainedPath(DL_ROOT, rel) !== abs) throw new Error('unsafe download path outside the library root');
+      await mkdir(dirname(abs), { recursive: true });
+      if (await realContainedPath(DL_ROOT, rel) !== abs) throw new Error('unsafe download path outside the library root');
+      // Placeholder generation and ZIP assembly are asynchronous. Policy can change during either, so the
+      // delayed write gets its own final guard at the actual atomic replacement boundary.
+      await assertDownloadPreflight(preflight);
+      await writeAtomic(abs, zip.toBuffer());
+      return { file: rel, pages: total, missing };
+    })(),
+  };
+}

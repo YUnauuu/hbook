@@ -1,0 +1,9256 @@
+# Changelog
+
+## v0.104.0 — 2026-11-05
+
+**Upload new series or missing chapters, keep artwork beside your files, and improve the reader, lists and source controls.**
+
+### Chapter uploads and local artwork
+
+- **Upload a series**, or use **More → Upload chapters** on an existing series ([#375](https://github.com/YUnauuu/hbook/issues/375),
+  building on **Calvin-Davidson**'s [#384](https://github.com/YUnauuu/hbook/pull/384)). Admins can upload; members need the
+  new **Can upload series** permission, off by default, and may only add files to series they can open. Files stream to
+  the download folder, are checked as readable archives, and never overwrite existing files. Later files are bound to
+  the series the first upload created. Interrupted uploads leave no partial chapter; pending indexing is reported.
+- **Local covers and banners** ([#389](https://github.com/YUnauuu/hbook/issues/389), **OnePieceSunny**): put `cover.jpg`,
+  `banner.jpg` or supported WebP/PNG/JPEG/AVIF equivalents beside the chapters, or in their `artwork/` folder. A library
+  scan validates and caches them, including from read-only libraries, and notices replacements or removals. An explicit
+  artwork choice keeps priority; local files take priority over automatic artwork. Original files are left intact.
+
+### Reader and list controls
+
+- **Paged → Page fit → Fit width** fills the slide and scrolls vertically within the page, including cropped, split,
+  rotated and paired pages. Vertical reading keys finish tall pages before turning, including a focused page of a
+  spread. Zoom keeps the reading position after panning, including when zooming out. **Whole page** remains the default
+  and the webtoon Fit setting keeps its own choice ([#398](https://github.com/YUnauuu/hbook/issues/398),
+  with keyboard/zoom improvements building on [#401](https://github.com/YUnauuu/hbook/pull/401), **Forgitusername**).
+- **List** on a series now ticks the lists it belongs to. Tick to add, untick to remove, then press **Done**; the sheet
+  stays open for several changes. Only your hand-picked lists appear. Failed writes keep the previous membership
+  ([#399](https://github.com/YUnauuu/hbook/issues/399), **Forgitusername**).
+- Typed confirmations show titles in their real casing ([#381](https://github.com/YUnauuu/hbook/pull/381)), and opening
+  a menu stops smooth-scroll momentum so it stays open ([#388](https://github.com/YUnauuu/hbook/pull/388)), both from
+  **Calvin-Davidson**. A real scroll still dismisses the menu.
+- Mobile sheet actions and pinned footers clear the navigation through the full mobile/tablet breakpoint, including
+  safe-area insets ([#391](https://github.com/YUnauuu/hbook/pull/391), **nVitius**).
+
+### Health and download controls
+
+- Titled Q&As, giveaways, author notes and other short specials are left out of **Suspiciously short chapters** and
+  unattended short-chapter repair ([#386](https://github.com/YUnauuu/hbook/issues/386),
+  [#387](https://github.com/YUnauuu/hbook/pull/387), **Calvin-Davidson**). Story titles that merely mention a special's
+  word remain checked. Detection uses title wording, so a real episode named only “Announcement” without a creator
+  number can still be treated as a special; **Fix** on an individual chapter remains available.
+- A deleted chapter whose every known source copy is blocked leaves the chapter shelf
+  ([#396](https://github.com/YUnauuu/hbook/issues/396), **TIGamingTV**). Reading history and progress stay intact,
+  a saved offline copy remains readable, and unblocking a copy makes the row available again.
+- **Dismiss** and **Cancel** work for source jobs with long encoded folder names
+  ([#397](https://github.com/YUnauuu/hbook/pull/397), **Baine**).
+- Dependency patches from Dependabot [#392](https://github.com/YUnauuu/hbook/pull/392),
+  [#393](https://github.com/YUnauuu/hbook/pull/393) and [#394](https://github.com/YUnauuu/hbook/pull/394):
+  Fastify compression/cookies/JWT/static, motion, IndexedDB test support and Electron 45.1.0.
+- Patch the static server's `glob` dependency to 14.0.2, fixing cancellation that could continue filesystem traversal
+  after a timeout ([GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)).
+
+### Upgrading
+
+- Existing members keep upload permission off. Uploads respect `MIN_FREE_GB`; ZIP/CBZ/EPUB use `UPLOAD_MAX_MB`
+  (2 GB by default), while PDF and RAR/CBR are capped at 128 MiB. Uploads go to the writable download folder.
+- Split-container installs stream chapter uploads through nginx without its ordinary 1 MiB API limit; application
+  size, disk-space and permission checks still apply.
+- New artwork-cache metadata and upload permission storage are additive. Existing manual artwork and reader choices
+  retain priority. The optional title extractor keeps Python 3.12 and its existing models.
+- The Umbrel package pins the already published v0.103.1 image until this release's verified digest is available.
+
+## v0.103.1 — 2026-10-31
+
+**A special no longer shifts the chapter numbers after it, and a series is no longer linked to an AniList entry that
+only lists its name among its synonyms.**
+
+### Specials stay out of the chapter numbers
+
+- **A special no longer takes a chapter's number** ([#379](https://github.com/YUnauuu/hbook/issues/379), reported
+  by **Calvin-Davidson**). Some sources count every post as a chapter, specials included: on Tapas, *24. The Other
+  Side* comes after three specials, so it was numbered 27. Such a series is now numbered by its chapter titles: each
+  chapter at the number in its title, and each special just after the chapter before it (*Caption Contest!* is 24.01).
+- **A series you add is numbered this way at once**, and the add dialog says so (*Numbered by the chapter titles*).
+  **Keep the source's numbers** adds it the old way.
+- **One already in your library is never renamed on its own.** Its page says *Chapter numbers need a review*, and
+  nothing new downloads for it until an admin opens **Review renumbering**, checks the plan and confirms it (Health's
+  *Chapter numbering* lists it too). Files are renamed in place, and reading progress stays with each chapter. **Keep
+  the source's numbers** leaves it as it is, and **Use the source's numbers** undoes it later.
+- **Other sources keep working with such a series**, and one that counts its specials the same way is read by its
+  titles too, so its new chapters line up.
+
+### The right AniList entry
+
+- **A synonym gives way to an entry's own title.** AniList's synonyms are anyone's to add, and an anthology lists every
+  story in it: *Pick Me Up* was linked to an 18+ anthology with a story of that name, so it showed the anthology's cover
+  and banner and read right to left. When the search's first answer matches only by a synonym, the lookup now looks at
+  the next few answers (one more request, only then) and takes the first one that has the name as its own title. The
+  synonym's entry is kept only when none does.
+- **Links made before are corrected after the upgrade.** The background check holds every automatic link to the new
+  rule once and moves the ones it applies to. The cover and banner the old entry gave the series become the new
+  entry's, a reading direction and type that AniList had set are learned again from the new entry, and the progress
+  recorded for the old entry no longer counts for the new one. A link a person made is never touched. Admin → Tasks
+  says how many moved. On the project's own server that was *Pick Me Up* and *Overgeared* (linked to an earlier,
+  finished adaptation).
+
+### Upgrading
+
+- Nothing to do. Chapter numbering needs no database change. The AniList check runs a couple of minutes after the
+  server starts; a link that matches only by a synonym costs one AniList search, paced in the background (about 130
+  on a 215-link library, a few minutes).
+
+## v0.103.0 — 2026-10-31
+
+**Title logos from the hbook logo library: picked and cut out by hand, one per manga, for every server.**
+
+### The hbook logo library
+
+- **Automatic title logos come first from the [hbook logo library](https://github.com/AngeloSha/hbook-title-logos)**:
+  title logos picked and cut out by hand from official covers, one per AniList manga. A server with one of those manga
+  shows its logo on computers without any cover processing. Wikidata and Wikimedia Commons are still asked for manga
+  the library does not have.
+- **Every file is checked before it is used.** The library's index names each logo's SHA-256; a file that does not match
+  is never shown.
+- **Logos keep up with the library.** A manga that gains a library logo gets it on the next background check, even
+  after an earlier search found nothing or found a Wikimedia logo, and a logo reworked in the library replaces the old
+  copy. An admin's own logo, or a choice of text, is never replaced.
+- **Same switch as before:** Admin → Settings → Series & chapters → Automatic title logos (off by default), and a
+  library's online-lookup opt-out still applies. The series editor names the library as the logo's source, with a link.
+
+### Upgrading
+
+- Nothing to do. `TITLE_LOGO_LIBRARY_URL` reads the library from a mirror, or, set empty, turns it off
+  ([CONFIGURATION.md](docs/CONFIGURATION.md#what-leaves-your-server)).
+
+## v0.102.2 — 2026-10-31
+
+**Title logos are a computer's: on a phone the cover is the hero, so it shows the title instead.**
+
+### Title logos on computers only
+
+- **A phone's hero shows the readable title over the cover, never the title logo.** On a phone the cover is the hero and
+  already carries its own lettering, so a logo on top of it said the title twice. Home and series heroes on a computer
+  keep their logos as before. This applies to any screen under 1024 pixels wide, where the cover replaces the banner.
+- **A phone no longer downloads title logos** or keeps checking for one that is still being looked up.
+
+### Also
+
+- **Discover hides *Newest* and *Popular* while search results are up** ([#376](https://github.com/YUnauuu/hbook/pull/376),
+  from @Calvin-Davidson). Results come in each source's own order, so the toggle did nothing but throw the search away.
+  Searching with an empty box now goes back to browsing, like the ×.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.102.1 — 2026-10-30
+
+- Nightly cover-title processing waits for the online logo search for each checked manga before extracting a cover. Pending searches and provider retry pauses remain queued.
+- Canonical manga titles are fetched before cover-title verification and retry decisions, so a missing metadata cache no longer prevents otherwise valid results from being automatically applied. Existing checks, manual artwork and review corrections remain protected.
+- The automatic-title panel shows the auto-apply state, online-search progress and the reasons previews need review, with translations in every supported language.
+
+## v0.102.0 — 2026-10-29
+
+**Manga title artwork, cover extraction with precise corrections, and optional nightly library processing.**
+
+### Manga title artwork
+
+- Home and series heroes show cached transparent title logos when available, with readable captions for original-language
+  artwork. Genre and cover-colour title styles provide a fallback, with the same layout on phones and computers.
+- Title logos occupy more of the Home and series heroes, with proportional sizing for small originals and
+  compact layouts that keep reading controls clear on short screens.
+- Optional automatic lookup uses confirmed AniList manga identities to find Wikimedia artwork. Existing online-lookup
+  opt-outs remain effective; lookups run in the background and do not delay opening a page.
+- Edit details offers logo upload, image links, refresh, styled titles and reset to automatic. Manual choices take priority,
+  and artwork source information stays available with the preview.
+- Automatic discovery scans the eligible library without opening every manga, resumes after restarts, and honors
+  provider-wide retry pauses. The admin progress panel distinguishes unchecked titles from completed no-match results.
+- Logo matching also accepts transparent PNG originals and verifies bounded Commons discovery against the exact manga's
+  canonical identity, recovering artwork absent from the direct logo field.
+- Action, fantasy and science-fiction titles retain their distinctive typography when Comedy is a secondary genre.
+- Administrators can extract lettering from the current cover, adjust the title region and exclude credits, preview
+  the transparent result on a hero, and explicitly apply or discard it. Changed covers and newer artwork choices
+  invalidate old drafts. The optional model service remains isolated from the application and library files.
+- Cover selection reruns detection on overlapping title-line views and refines missed letters using the existing
+  local SAM weights. Automatic selection groups neighboring lines and separated characters. Edited regions immediately
+  hide the previous preview, and detected bounds remain separate from the administrator's requested selection.
+- Cover extraction can retain dark outlines and shadow strokes next to detected lettering when source-image
+  contrast, text-model support and bounded component checks agree. Original colors and previously detected ink
+  remain intact; ambiguous results still require visual review.
+- Title previews offer precise Restore and Erase brushes, zoom, pan, undo and reset. Corrections replay against an
+  immutable cover and alpha mask, save as a private revision, and require review before Apply. Revision checks prevent
+  older tabs from applying unseen corrections; manual corrections never inherit automatic quality approval.
+- Opt-in nightly cover extraction processes existing and newly added manga through a persistent queue. Manual
+  requests take priority; unchanged covers are skipped and uncertain previews remain available for 14 days.
+- A separate opt-in can apply results that pass the available canonical-title and image checks. Existing manual
+  artwork, styled titles and provider logos are preserved. Both options are off by default; missing identity,
+  unavailable recognition, incomplete titles and other failed checks leave results for review. Empirical calibration
+  remains separate from these runtime checks and is never inferred from an extraction score.
+
+## v0.101.0 — 2026-10-29
+
+**Search creators on sources, manage pages with undo, and preview source cleanup before deleting anything.**
+
+### Creator searches and local profiles
+
+- Discover offers Title, Author and Artist searches. MangaDex and Suwayomi extensions with declared creator
+  text filters use their actual creator fields. Unsupported fields are left out; role, exact spelling and
+  page remain separate through shared caches and pagination (#338).
+- The author-filtered library links to Discover. A selected provider retains its full first hundred works
+  before another page is requested.
+- Optional managed profiles can open on explicitly configured local networks. Local-only credentials stay
+  restricted on every request, including refresh, image cookies and remembered-profile switching (#351).
+- Local-only tokens use a separate cryptographic domain, so an older app image rejects them after rollback.
+  Existing credential sessions keep their format. Public-proxy defaults continue to require credentials.
+
+### Reversible page cleanup
+
+- Admins can manage a writable local CBZ from the reader's **Pages** sheet: preview and select images,
+  remove them, and restore their exact original bytes. Original page numbers, progress and bookmarks stay
+  in place. Unsupported formats and incomplete chapters keep the existing Skip control (#354).
+- Removed originals stay in server trash until explicitly deleted. Separate confirmations permanently
+  delete selected originals or unused retained images; shared originals still needed by another removed
+  page are kept. Backups and separately saved offline copies are unaffected.
+- Optional GIF skip rules apply to one series or every chapter from its recorded source, with a preview
+  of the scope. A series rule overrides its source rule, and a per-page rescue overrides both. Rules skip
+  images while reading and never delete files automatically.
+- Edited page images get fresh cache identities. An offline download refuses a chapter that changes
+  midway, preventing a saved copy from mixing old and new pages.
+
+### Deliberate source cleanup and installation fixes
+
+- Removing a source keeps downloaded chapters by default. Optional cleanup requires a fresh, account-bound
+  preview and a separate confirmation; source references/listings are checked under writer and database locks.
+  An empty, unavailable or shorter remaining listing cannot authorize deleting chapters (#339).
+- To clean up a main source, first promote its replacement and keep the old source as a follower. Explicit
+  cleanup removes that follower atomically so it cannot immediately download the unwanted chapters again.
+- Fresh development databases initialize with the existing Supabase PostgreSQL 15 image and its required
+  bootstrap identity. Existing volumes keep their data, extensions and configuration; SQL readiness also
+  detects an interrupted initialization with no application database (#363).
+- Security dependency patches update fast-uri and the desktop build's undici (#367, #368).
+- Open site is optional when an extension already searches and downloads normally. A verification loop in
+  that manual browser view is assessed separately from whether the extension works (#352).
+
+### Upgrading
+
+- No PostgreSQL major-version change is included. Existing authentication settings remain in effect.
+- Local profile picking and destructive cleanup require explicit configuration or confirmation.
+
+## v0.100.0 — 2026-10-29
+
+### Library, reader and source improvements
+
+- Source identity wins over a title match: different entries on one source remain separate even when their
+  titles are identical or normalize alike. Same-title additions receive separate download folders (#357).
+- The series chapter toolbar has **Select all** and **Clear selection**, respecting the current group and
+  missing-chapter filters across chapter pages (#364).
+- Import matching and **Add more sources…** keep slower sources' answers, retain more than twelve matches,
+  offer **More** for paged sources, and show author metadata when available (#353).
+- The reader can pan a zoomed page and offers a **Paper** tone. Touch taps distinguish catching a fling,
+  turning pages and double-tapping. Paged chapter changes show a brief chapter label.
+- Series menus offer **Move library**. Home's **Keep reading** row can hide and restore a series.
+- Alternate AniList titles appear on series pages; correcting the AniList link invalidates their cached identity.
+- An optional account setting filters new-chapter notifications to the next chapter the person would read,
+  including files that landed before indexing finished.
+- Phone Search can open the command palette. Admin settings show download limits and blocked sources.
+- Renaming a missing folder identifies an existing spelling that differs only in case.
+- Dependency updates cover the server, web app and desktop tooling, including Electron 45.
+
+**Tap an author on a series page to see everything of theirs in your library, and the library's search finds authors
+too.**
+
+### Find more by an author
+
+- **Each name in the *by …* line under a series' title is a link** to your library showing every series by that person,
+  with a tag above the grid to clear it ([#338](https://github.com/YUnauuu/hbook/issues/338), from @sonikvvv). A
+  series with several authors shows each name on its own.
+- **A name finds every way it is written.** *Chugong (추공)* also finds a series that only says *추공*, and
+  *Gi So-Ryeong* finds *Gi So Ryeong*. Only whole names match, so *Oh* is not every name with "oh" in it.
+- **Search your library finds authors as well as titles.**
+- **Save as list keeps the author,** so a list of someone's work fills itself as you add more of it.
+
+### Also
+
+- **A library the sign-in limits read addresses with is updated** (ip-address 10.7.4). On a server that trusts every
+  proxy (`TRUST_PROXY=true`), one crafted address could stall it.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.99.0 — 2026-10-22
+
+**Your picks on Discover get a spotlight of their own, right after the first row of covers, and Discover's rows line up
+with the page again.**
+
+### Your picks get the spotlight
+
+- ***Recommended for you* is a band of its own across the page,** right after the first row of covers. It used to be
+  one more row of covers inside the wall, easy to scroll past.
+- **The top pick is a big card** that says why it is there, with **Find and add**. The rest follow in a row you swipe.
+- **The top pick's art glows behind the band.** On a computer the glow takes the art of the card you point at. Under
+  *Reduce effects* or reduced motion it changes without fading.
+- **The covers of the series you read sit beside *Because you read…***, so you can see where your picks come from.
+
+### Rows that line up
+
+- **Discover's rows start on the page's edge again.** Their first card used to snap to the edge of a phone's screen, and
+  under the sidebar on a computer, which cut off the "1" of the Top 10.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.98.0 — 2026-10-22
+
+**Discover's hero is always there and quick on a phone, your picks are one full row, and the newest from your sources
+comes first.**
+
+### A hero that always loads
+
+- **The trending titles are kept on the server.** After every restart or update, Discover used to wait on AniList for
+  them; when AniList was busy, a phone showed no hero at all and never asked again. Now the hero comes from the kept
+  copy at once, and the copy is refreshed in the background every six hours.
+- **The hero's space is held while it loads**, so nothing below it jumps when it appears.
+- **On a phone each slide's picture loads once, and sharper.** It used to be fetched twice at two sizes, and was the
+  small cover stretched across the screen.
+- **It moves as Home's hero does:** slides crossfade, a phone's cover drifts slowly, bars show where the slides are, and
+  a **Pause** key holds it. Under *Reduce effects* or reduced motion it stays still.
+
+### One full row of picks
+
+- ***Recommended for you* and *Because you read* are one row.** Each card says why it is there: the service that
+  suggested it, or a small cover of the series you read. A title named by both is one card.
+- **Because you read uses your last five reads, not one**, a pick from each in turn. On a big library it often showed
+  four cards, because the rest were titles you already have.
+- **Your connected trackers can suggest up to eight titles per series you rated**, up from five. These come from
+  suggestions the server already stores, so it makes no extra requests.
+
+### The newest from your sources comes first
+
+- **The wall starts right under the search.** Your picks row comes after its first two rows of covers.
+- **The trending manhwa, manga and manhua rows come every four rows after that,** with the first ten numbered as on
+  Home's Top 10. They used to sit at the very end of the wall, where almost nobody scrolled.
+- A row waits at the end until the wall has filled up to its place, so nothing you are looking at moves.
+
+### Upgrading
+
+- Nothing to do. The server stores the trending lists in a new table, created on start.
+
+## v0.97.0 — 2026-10-21
+
+**Your favorites in your own order, chapters that failed every night on Natomanga and Mangakakalot now come from the
+image server the site itself uses, and the read-chapter cleanup no longer keeps a chapter of every series for its
+cover.** The last answers [#332](https://github.com/YUnauuu/hbook/issues/332). Thank you.
+
+### Your favorites, in your order
+
+- **Manage on Home's *Your favorites* row opens your favorites as a list.** Drag one into place (on a phone, hold it a
+  moment first), move it a step with its arrows, or take it off with ×.
+- **Home shows them in that order**, and so do your other devices and the OPDS feed. A series you favorite later comes
+  first until you move it.
+- Until you move one, nothing changes: they stay newest first, as before.
+
+### Chapters that failed every night
+
+- **On Natomanga and Mangakakalot, some chapters pointed their pages at an image server that doesn't have the files.**
+  It answers "File with such name does not exist", with some "slow down" replies among them. hbook took the failure
+  for a busy site and tried again every night, up to twelve times, for weeks.
+- **The site's own reader takes those pages from another server listed on the same page.** hbook now reads that
+  list first, so the next check asks the server that has the files. Chapters that already downloaded are unaffected.
+
+### Read chapters go, covers stay
+
+- **Delete read chapters kept one chapter of every series for good:** the one its cover could be drawn from. The
+  `[cleanup]` lines from v0.96.0 showed it holding most of what was left, on series whose cover comes from their source
+  and not from that chapter at all.
+- **Now that chapter is deleted like the rest.** When a series' cover really is its first page (no cover picture of its
+  own, or *Use the first page* chosen), hbook keeps a copy of that page first, so the cover doesn't change.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.96.0 — 2026-10-21
+
+**Drag things into place, a search on one source keeps going as you scroll, Shift picks a run of series, and the
+read-chapter cleanup says why it keeps what it keeps.** Drag to reorder is **Squeaks72**'s work
+([#330](https://github.com/YUnauuu/hbook/pull/330)); the rest answers
+[#331](https://github.com/YUnauuu/hbook/issues/331), [#332](https://github.com/YUnauuu/hbook/issues/332) and
+[#333](https://github.com/YUnauuu/hbook/issues/333). Thank you.
+
+### Drag to reorder
+
+- **Every list you put in order can be dragged now**, beside its arrows:
+  - Home's rows in **Customize Home**;
+  - a list's series while you **Edit** it;
+  - the **Source order**;
+  - the **Default priority** of scanlation groups;
+  - a series' own ranked groups in *Sources & translations*.
+- **With a mouse,** press an item and move it; a bar in the accent colour shows where it will land.
+- **On a phone,** hold the item a moment until it lifts, then drag. A quick swipe still scrolls the page.
+- **Escape** cancels a drag. The arrows stay, for keyboards and screen readers.
+
+### Search past the first page
+
+- **A site answers its search a page at a time.** BatCave gives ten at a time and has 209 results for *Star Trek*, and
+  Discover showed only the first page.
+- **A search on one source now keeps going as you scroll.** Pick the source in the source chip (or have only one) and
+  search. The next page loads as you near the end of the wall, up to 30 pages. Every extension's search does this.
+- A search across all your sources still shows each source's first page.
+
+### Why a read chapter is still there
+
+- **Delete read chapters keeps a chapter for good reasons:** someone part-way through, a bookmark, the cover chapter,
+  the last copy the sources no longer list, and a few more. Nothing said which one was keeping yours.
+- **With `LOG_LEVEL=debug`, every run now says so.** Lines starting `[cleanup]` give how many read chapters are in the
+  download folder and how many are due, then how many each rule keeps, with a few by title.
+
+### Pick a run with Shift
+
+- **In the Library's select mode, Shift-click picks every series** between the last one you clicked and this one.
+  Shift-clicking a picked series unpicks the run instead.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.95.0 — 2026-10-21
+
+**A series whose files you deleted yourself can be forgotten, and Find other sources proposes a series a site lists under
+a name of its own** ([#328](https://github.com/YUnauuu/hbook/issues/328),
+[#316](https://github.com/YUnauuu/hbook/issues/316)). Thank you, **Keddyan** and **TIGamingTV**.
+
+### Forget what you deleted yourself
+
+- **A removed series whose folder you deleted yourself could not be forgotten.** On a library hbook may only read
+  (the default, with `PUID` unset), Delete files refused "not writable" before it looked, though nothing was left to
+  delete. On a library with little else in it, it could not be sure the files were really gone and said "Deleted 0
+  files". Either way the row stayed in **Admin → Libraries** and **Forget** was never offered.
+- **Delete files now needs write access only for files that are still there.** Files already gone are marked deleted,
+  and the row offers **Forget**.
+- **When hbook can't tell a folder you deleted from a drive that isn't connected,** it asks: *24 chapter files are
+  not on disk*. If you deleted or moved them yourself, press **Mark them gone**, and Forget is offered. A library folder
+  that is empty or can't be opened is refused: that is what a drive that isn't mounted looks like.
+- After **Forget**, putting the files back adds the series again as a new one.
+
+### A site's own name for a series
+
+- **Some sites list a series under a name it doesn't have here.** *Revenge of the Iron-Blooded Sword Hound* is *Revenge
+  of the Baskerville Bloodhound* on Atsumaru, Manga Ball and MangaFire, and Find other sources found nothing.
+- **Let me review each match first now proposes it**, in amber with its cover: a series a site gave first when searched
+  under two or more of the series' names, whose chapter numbers line up both ways. Follow it if the covers match.
+  Following it keeps that name as one of the series' other names, so later searches find it on other sites too.
+- **An automatic run never follows one.** Two series with the same number of chapters number them alike, so only a
+  person can say it is the same series.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.94.0 — 2026-10-21
+
+**Open site opens the sign-in link a site emails you, so BatCave's email sign-in works**
+([#314](https://github.com/YUnauuu/hbook/issues/314)).
+
+### Open a link
+
+- **Sites that sign you in with a link they email you** (BatCave's *Email me a link*) sign in whichever browser opens
+  that link. Opened from your email, it signed in your own browser, not the extension engine's.
+- **Open site now has Open a link.** Ask the site for the link inside Open site, copy the link from the email without
+  opening it, press **Open a link**, paste it and press **Open**: the engine's browser opens it and is signed in. Then
+  press **Done**.
+- Only links on the extension's own site open there; anything else is refused, since the engine's browser sits inside
+  your server's network. The link is never logged.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.93.0 — 2026-10-21
+
+**A library or download disk that isn't connected is no longer taken for one that lost its chapters.** This is
+**globalteddy**'s work ([#323](https://github.com/YUnauuu/hbook/pull/323)). Thank you.
+
+### A disk that isn't there
+
+- **When a network share or a removable drive isn't mounted**, the folder hbook sees is an empty mount point, or one
+  holding only what a download wrote there meanwhile. The nightly page count, the fingerprint and page-hash passes,
+  Verify chapter files and the read-chapter cleanup used to write what they saw back for good: chapters stamped as
+  broken or unreadable, marked missing and downloaded again over files that were fine, or marked deleted and never
+  fetched back.
+- **Now each of them first checks that the folder holds the chapters it is supposed to.** If none of them, or fewer than
+  one in ten, are there, the job leaves everything as it is and tries again once the disk is back. The read-chapter
+  cleanup says so on its Tasks line ("stopped: 26 of 27 chapter files in the download folder are missing; is the
+  download volume mounted?"). A chapter a job may not read (a folder whose permissions slipped) is left for later too, never
+  marked.
+- **The check is cheap on a disk that is there:** a few dozen files looked at, not every chapter, so a NAS is not woken
+  for it. And a disconnected library no longer holds up the nightly page count for the download folder.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.92.0 — 2026-10-21
+
+**Nothing you could not get back is deleted, Discover keeps up with the sources it asks, and Find other sources can say
+why it found nothing.** Most of this is **globalteddy**'s work ([#317](https://github.com/YUnauuu/hbook/pull/317),
+[#319](https://github.com/YUnauuu/hbook/pull/319), [#320](https://github.com/YUnauuu/hbook/pull/320),
+[#321](https://github.com/YUnauuu/hbook/pull/321), [#322](https://github.com/YUnauuu/hbook/pull/322)), and the
+log setting is **TIGamingTV**'s idea ([#316](https://github.com/YUnauuu/hbook/issues/316)). Thank you both.
+
+### Nothing you could not get back is deleted
+
+- **The read-chapter cleanup keeps the last copy.** A chapter the sources no longer list (taken down, deleted, dropped
+  by the site) could not be downloaded again, so its file stays even when everyone has read it. So does one listed only
+  from a group you blocked, or only as a link to the publisher, which is how MangaDex keeps a licensed chapter. A file
+  holding several chapters is kept if any one of them is missing.
+- **A file the server may not read is not a file already gone.** When the server lost permission to a series' folder,
+  Delete files marked its chapters deleted and said "Deleted 0 files", and Forget could then erase everyone's reading
+  history while the files were still there. Now those chapters are left as they are, and the message says how many could
+  not be checked: fix the permissions and run it again. The hourly read-chapter cleanup follows the same rule.
+
+### Discover follows the sources it asks
+
+- With **Show 18+** turned off, or a source switched off, the wall kept that source's covers and counted it, and a
+  source chosen alone stayed chosen and searched for nothing. The wall, its *{done} of {total} sources* count and the
+  chosen source now follow the sources asked. Flipping *Newest*/*Popular* keeps a source chosen when the other listing
+  has it, and an empty wall says no source could be reached only when none of the sources asked now could be.
+
+### Why a series found nothing
+
+- **`LOG_LEVEL`** sets how much the server log says: `info` by default (a line for every request, as before), `warn`
+  for problems only, or `debug`.
+- **At `debug`, a Find other sources run explains itself.** For each series the log says the names it searched each
+  source under, what each source answered (the first few titles), which result it took, and why a match was refused:
+  its own title was not this series', or its chapter numbers did not line up, with how many it compared. The lines
+  start with `[find]`. Set it back when you are done; the log is long at debug.
+
+### Building the image yourself
+
+- A new version no longer makes `Dockerfile.aio` reinstall all its packages from nothing. They stay cached until a
+  dependency really changes, which saves time and over a gigabyte of build cache per release on a machine that builds
+  its own. The published images are the same as before.
+
+### Upgrading
+
+- Nothing to do. For a run's details, add `LOG_LEVEL=debug` to `.env` and restart. The deploy compose files pass it
+  through from this version on.
+
+## v0.91.1 — 2026-10-20
+
+**Open site: what you type reaches the site, and the page keeps up with you.** v0.91.0's Open site could not fill in a
+sign-in form, and on a home server's connection what happened on the page showed up about twenty seconds late.
+
+### Typing on Open site, without the lag
+
+- **Typing reaches the site.** In v0.91.0 a click on the page moved the browser's focus away from the field that carries
+  your keys, so nothing you typed arrived. A click or a tap now keeps it there, and on a phone a tap on the page brings up
+  the keyboard.
+- **A phone's keyboard types as you meant it.** Corrections, Backspace and words the keyboard is still composing reach
+  the site as typed.
+- **The page keeps up.** Each picture of the page is a JPEG about a tenth of the size it was, and the next is sent only
+  once the last has arrived, so a slow connection shows the newest page a moment late instead of every page later and
+  later. What you type is sent at once, never queued behind mouse moves.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.91.0 — 2026-10-20
+
+**Open site: sign in on an extension's site, the way Mihon's *Open in WebView* does.** BatCave now shows *Sign in to keep
+reading* to anyone not signed in, so in hbook it listed nothing
+([#314](https://github.com/YUnauuu/hbook/issues/314), reported by **langwire**); in Mihon you sign in once in its
+WebView. hbook had no such page until now.
+
+### Open site
+
+- In **Admin → Sources**, an extension's sheet has **Open site**: the site in the extension engine's own browser, live
+  and over the whole screen. Click, scroll and type as on the site: on a phone a tap is a click, a swipe scrolls, and
+  **Keyboard** brings up the keyboard. Sign in, or pass the site's check, and press **Done**: the engine keeps the
+  sign-in for that extension, and the sheet says whether the source answers now. **Start over** opens the home page
+  again.
+- **Kept working by itself.** A source you have done this for gets a quiet visit of its home page whenever it fails, at
+  most once in half an hour, and the call is tried again. BatCave's check lasts a day, so this keeps it going. An
+  extension that answers "Open in WebView…" gets the same visit.
+- Admins only, one site at a time, closed after ten minutes without input. It runs over ordinary HTTP, so a reverse proxy
+  needs no websocket setting for it. It needs the bundled extension engine, or your own Suwayomi from v2.4 on.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.90.0 — 2026-10-20
+
+**Comments and reactions can be switched off, each for themselves, and the Komga extension's WebView opens the series or
+the chapter you were on.** The WebView fix is **TIGamingTV**'s report
+([#312](https://github.com/YUnauuu/hbook/issues/312)). Thank you.
+
+### Switch comments and reactions off
+
+- In **Profile → Settings → Reading → Comments and reactions**, off hides the household's comments, reactions and their
+  counts for you everywhere: the line between two chapters, the key on a chapter's last page, the comments key in the
+  top bar, the end card and the series page. You get no comment alerts either.
+- **It's yours alone.** It is saved to your account, so every device you sign in on follows it. Everyone else still sees
+  the household's talk, including what you wrote before.
+- It is offered only where there is talk: a server with one account, or hbook Desktop, has nothing to switch off.
+
+### The Komga extension's WebView opens the right page
+
+- In Mihon, Tachimanga and other apps reading hbook through the **Komga** extension, **WebView** on a series or on a
+  chapter opened hbook's library. The extension opens Komga's own web addresses (`/series/<id>`, `/book/<id>`), and
+  hbook now sends them to its series page and its reader. WebView on the source still opens the library.
+- Both ways of running hbook do it: the single container, and the two-container setup's nginx.
+
+### Upgrading
+
+- Nothing to do. If you run the two-container setup with a copy of `web/nginx.conf` of your own, add its two new
+  `location ~` lines for the WebView fix.
+
+## v0.89.0 — 2026-10-20
+
+**Badges unlock frames for your avatar, you can merge or split double pages yourself, and a series can follow up to ten
+sources.** The frames are part three of **CheetahDoesStuff**'s badges idea
+([#267](https://github.com/YUnauuu/hbook/issues/267)), merging and splitting by hand began as **@Squeaks72**'s pull
+request ([#262](https://github.com/YUnauuu/hbook/pull/262)), rebuilt on v0.77.0's joining, and more sources per
+series is **TIGamingTV**'s request ([#305](https://github.com/YUnauuu/hbook/issues/305)). Thank you all three.
+
+### Badges unlock avatar frames
+
+- **Each badge unlocks a frame**, cast in the badge's own metal: *Bronze* for Reader, *Silver* for Bookworm, *Ember* for
+  On a roll (a flame for each day of the streak), *Gold* for Centurion (with a laurel), *Moonlight* for Devoted (a
+  crescent and stars) and *Aurora* for Legend (a crown and a slow halo).
+- **Pick one** in **Profile → Settings → Appearance → Avatar → Frame**, or from **Badges unlock frames for your avatar**
+  under the badges. A frame you have not earned yet is greyed: tap it to see what it takes. **None** takes yours off.
+- **Everyone sees it.** The frame goes wherever your avatar shows: the corner, the household board, comments and shared
+  lists. The server checks it is yours to wear, with the same rules the badges use.
+- **It moves a little.** A sheen passes over the metal now and then, the embers flicker and Legend's ring turns.
+  **Reduce effects** or your system's reduced motion keeps them still. Small avatars, in comments for example, show the
+  ring alone.
+
+### Merge and split double pages yourself
+
+- **When the joining gets it wrong.** *Join split double pages* can join two pages that are not one picture, or miss two
+  that are. Reading page by page, **This page** in the reader's settings (and the right-click menu) now offers what fits
+  the page you are on:
+  - **Merge with the page on the left** or **on the right**. Left and right are your screen's, so on a right-to-left
+    read the next page is the one on the left.
+  - **Show as two pages** for a pair the server joined, and **Join these two pages again** to give it back.
+  - **Undo the merge** for a pair you joined.
+  - In *Double spread*, two pages side by side: **Merge these two pages**.
+- **Yours alone.** It is saved on your account, so it follows you to your other devices and into chapters you download,
+  and nobody else's reader changes. A merge you made shows even with *Join split double pages* off.
+- A page is in one spread only, and wide pages and the ends of a chapter offer nothing. If a chapter's file is replaced
+  by one with another page count, it starts afresh.
+
+### More sources per series
+
+- **Other sources per series**, in **Admin → Settings → Downloads → More options**: how many sources besides its main
+  one a series may follow, from 1 to 10. It is 3 by default, as before. It counts the sources you add and the ones
+  hbook finds on its own alike.
+- Each extra source is one more chapter list to ask for at every library update, which the menu says. Lowering the number
+  unfollows nothing: a series that follows more keeps its sources, and follows no new one.
+- It replaces the server setting `MAX_FOLLOWED_SOURCES`, which is now only the starting value until the menu is used.
+- The add dialog no longer says *already following two* when a series has as many sources as it may.
+
+### Upgrading
+
+- Nothing to do. If your server sets `MAX_FOLLOWED_SOURCES`, the menu shows that number until you pick another.
+
+## v0.88.0 — 2026-10-19
+
+**Profile and Admin are one list each: no more tabs inside tabs.**
+
+### Profile and Admin, one list each
+
+- **One list, under the hero.** Your profile opens under its hero, as before, then **You** and **Insights** as two
+  pictures (your latest covers, your last four weeks), then **Settings**: **General**, **Appearance**, **Reading**,
+  **This device**, **Connections** and **Account**, with **Admin**, **Support hbook** and **Sign out** at the foot.
+  Admin opens under the server's hero (whether every check passes, the counts and **Scan library now**), then
+  **Overview** and **Health**, **Library** (Libraries, Sources, Art), **People** (Members, Sessions, Activity) and
+  **Settings** (Server, Series & chapters, Downloads, Maintenance, Notifications).
+- **On a phone the hero and the list are the first screen.** Tap a row to open its page, under a band of the same art
+  with the page's title; the key at the top, or the phone's own Back, returns you to the row you came from. On a
+  computer the list stays beside the page, and scrolls on its own when it is taller than the window.
+- **Tasks are on Maintenance**, under the nightly backup and repair, each with **Run now**.
+- **The hero is in full above You and Overview**, and a slimmer band of the same art above every other page on a
+  computer, so a settings page starts near the top.
+- **Overview** is what needs a look, each member's week and the top 10 in your library. Its four shortcut tiles are
+  gone: the list does that job.
+- **The search box finds pages too** (*tasks* finds Maintenance), and Ctrl+K (⌘K) opens a page or a setting of the
+  console you are on in place, without reloading it.
+- Old addresses and bookmarks still work: `?tab=Tasks` opens Maintenance, `?tab=Settings` the first settings page, and
+  `?tab=Health` is `?tab=health`.
+
+### One copy of each chapter
+
+- **Health finds a chapter a series holds twice, and keeps one.** Two files of one chapter in one series, such as an
+  older Suwayomi library's `Ch. 12 - Chapter 12.cbz` beside `Chapter 12.cbz` or a re-upload beside the first, were listed
+  twice and nothing showed them. "The same chapter saved twice" now lists each such series with **Keep one of each**,
+  and the card has **Keep one of each everywhere**. The first file saved stays unless it is incomplete. The other is
+  deleted from the download folder, or set aside where hbook may not delete. Reading progress moves to the copy
+  that stays, and a bookmarked copy is kept. Parts and extras filed under their chapter's number (`17e`, `1053a`)
+  are never offered. **Ignore** keeps both. Nothing runs on its own.
+- **A chapter a site numbers below zero is no longer downloaded.** A site's −1 means "number unknown". Natomanga listed
+  chapter 1 again as −1, which was saved as `Chapter -1.cbz` and read back as a second chapter 1.
+- **One chapter, one file, whatever the spelling of its number.** A site's 84.29999999999998 is the 84.3 the library
+  holds: it is not counted missing, and not downloaded a second time.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.87.0 — 2026-10-19
+
+**React to a chapter, and talk about it with your household.**
+
+### Chapter comments
+
+- **Where a chapter ends.** The reader runs one chapter into the next, so a chapter's talk sits at its end. In the
+  webtoon scroll, the line between two chapters now shows who reacted, how many comments there are, and the six
+  reactions, one tap each. Reading page by page, a small key sits on each chapter's last page, and the end card after
+  the last chapter has the same.
+- **A comments key in the top bar** opens the comments of the chapter on screen, with how many there are.
+- **Reactions:** ❤️ 😂 😭 😱 🔥 🤯, one each a chapter. Tap yours again to take it back, or tap another to change it.
+- **Comments** are plain text. One written in the reader remembers its page, and *p. 41* on it goes there. You edit or
+  delete your own, and an admin can remove anyone's.
+- **On the series page**, chapters people talked about show their top reactions and comment count, and a chapter's
+  **⋯** menu has **Comments**.
+- **Who sees it:** only members who can open the series. Faces show who reacted or commented, never who read. With
+  **Incognito reading** on, you can read comments but not post or react.
+- **Alerts:** a new comment sends a push only to the members who already commented on that chapter.
+- Nothing shows on a server with one account, or in hbook Desktop.
+
+### Fixed
+
+- **Escape** on the reader's chapter list or page grid closes it, and no longer leaves the reader as well.
+
+### Upgrading
+
+- Nothing to do. Two new tables hold the comments and reactions; v0.86.x runs on the upgraded database unchanged.
+
+## v0.86.0 — 2026-10-19
+
+**Settings are a few short categories with a search, instead of one long page.**
+
+### Settings, easier to find
+
+- **A few categories instead of one long page.** **Profile → Settings** is **General**, **Appearance**, **Reading** and
+  **This device**; **Admin → Settings** is **Server**, **Series & chapters**, **Downloads**, **Maintenance** and
+  **Notifications**. One category is on screen at a time, with at most eight rows, and its line in the list says what is
+  set in it. On a phone the categories are a list: tap one to open it, and Back returns to the list.
+- **Search every setting.** The box above the categories finds a setting by what it says, in your language or in
+  English, by the words people type for it (*discord*, *backup*, *rtl*), by a section's old name (*Scanlators*,
+  *Updates & schedules*) and by its help. Picking one opens its category and highlights the row. Ctrl+K (⌘K) and the
+  Search tab find every setting too, and go straight to it.
+- **Pictures for the choices you see.** The reader's mode and theme, what a wide page becomes, repeated pages and the
+  background are picture cards. Long lists (the language, the update interval, the backup time) are menus, and two or
+  three options are square toggles. No pills.
+- **Big settings are one row.** The scanlation groups (*Scanlators* until now), the source order, the slow archive, the
+  18+ filter, notice chapters and your avatar each say what is set and open their own editor. Rows few people change fold
+  under **More options**, and long help folds to two lines with **More** to read the rest.
+- **A few settings moved or became one:**
+  - The weekly goal is the ring at the top of your profile, no longer also a row in Settings.
+  - Brightness, the page gap, auto-scroll and the cover colour at the edges are set in the reader's own settings, while
+    you look at a page.
+  - The nightly backup is one menu: *Off*, or the time it runs. The nightly repair is one choice: *Off*, *Safe repair* or
+    *Fix everything*, with what each does under it.
+  - The space offline downloads use, **Protect downloads** and the way to the Offline downloads page are one row.
+  - **Compact chapter list** and **Type anywhere to search** are shown only where there is a mouse or a trackpad, where
+    they do something.
+- **Connections and Account** have square keys instead of pills.
+
+### Upgrading
+
+- Nothing to do. Links to the old sections (`?section=schedules`, `?section=housekeeping`, …) open where those settings
+  are now.
+
+## v0.85.0 — 2026-10-19
+
+**Read raw chapters in your own language: translated pages, an optional download that runs on your server.**
+
+### Translated pages
+
+- **Turned on once, for the whole server.** **Admin → Settings → Server → Translate pages → Download** fetches the
+  translation engine: a reader for the text in the pages, a translation model and the fonts it writes with. It is about
+  18 GB on a server with 28 GB of memory or more and about 2.4 GB elsewhere, and the row says what it will take before
+  you press it. Then one switch. Nothing changes for anyone until then, and **Remove the translation engine** takes it away.
+- **Each reader turns it on per series.** **Translate pages** in the reader's settings translates into the language
+  hbook is in for you, a page at a time from the page you are on. Each page switches to its translation as soon as it
+  is done, and the next chapter follows.
+- **It translates the scene, not single words.** A page's bubbles are translated together, with the lines before them
+  and the names already met in the series, so a character keeps one name. When the text is hard to read, the large
+  model looks at the page itself. The translation is written into each bubble in its own shape and colour, and sound
+  effects drawn on the art are left alone.
+- **Your pages stay home.** Everything runs on your server, at low priority, and stops when nobody is reading. Only the
+  download comes from the internet (GitHub and Hugging Face), each file checked against a checksum pinned in the app.
+- **Speed:** on a 6-core CPU with no graphics card, 15–20 seconds a page for Japanese and Chinese, and up to a minute for
+  a page whose text is hard to read (most Korean pages). See [USAGE](docs/USAGE.md#translated-pages) and
+  [CONFIGURATION](docs/CONFIGURATION.md#translated-pages).
+
+### Also
+
+- **A series' chapter list no longer looks short.** Its page picker said "86–129 of 149": 149 counted files, half
+  chapters like 12.5 included, next to chapter numbers, so a series numbered 0–129 looked twenty chapters short. The
+  count is gone from the picker, and the header says "149 chapters · Ch. 0–129" when the numbers and the count differ.
+
+### Upgrading
+
+- Nothing to do: the database gains three things, empty until Translate pages is used. If your config folder is on a
+  small disk, set `TRANSLATE_DIR` to a folder on a big one before pressing Download
+  ([CONFIGURATION](docs/CONFIGURATION.md#translated-pages)).
+- Not in hbook Desktop yet.
+
+## v0.84.1 — 2026-10-18
+
+**Reading on into the next chapter no longer reloads the reader.**
+
+### Seamless chapters
+
+- **The next chapter joins the one you are reading, every time.** The reader keeps the address on the chapter you are
+  reading, and moving it asked for the page again. When hbook had been updated since the reader opened, or the
+  connection dropped at that moment, the whole page loaded again on the new chapter, and the chapter before was gone.
+  The address now changes in place: reading on stays seamless, and scrolling back reaches the chapter before.
+
+### Upgrading
+
+- Nothing to do. A reader left open across this update can still reload once, at its next chapter: the open page runs
+  the previous version until then.
+
+## v0.84.0 — 2026-10-18
+
+**Downloads you can watch page by page, double pages that line up, and gallery chapters.** All three are pull requests
+from **@globalteddy** ([#296](https://github.com/YUnauuu/hbook/pull/296),
+[#295](https://github.com/YUnauuu/hbook/pull/295), [#294](https://github.com/YUnauuu/hbook/pull/294)), merged
+with his own commits. Thank you.
+
+- **Page-by-page download progress** ([#296](https://github.com/YUnauuu/hbook/pull/296)). A chapter coming in
+  shows its pages and the time left under the series in **Library → Downloads** and on the series page (*34/78 pages ·
+  about 40 s left*). The time left covers the chapters still to come, and the Library ring moves while a long chapter
+  comes in, not only when it lands. The time is measured by the server, so a device whose clock is off still reads it
+  right.
+- **Shift pairs by one page** ([#295](https://github.com/YUnauuu/hbook/pull/295)). In **Double spread**, the
+  reader keeps a chapter's first page alone as a cover. For a title whose chapters start on a story page, **Shift pairs
+  by one page** in Reader settings pairs pages 1–2, 3–4 and so on. It is remembered for that title, and the page you
+  are reading stays in view when you switch it.
+- **Gallery chapters** ([#294](https://github.com/YUnauuu/hbook/pull/294)). An extension that lists a gallery as
+  one chapter with no number made the series look empty. That chapter now counts as chapter 1, and an 18+ extension
+  listing only unnumbered parts gets them numbered in posting order. Chapters that have numbers are read as before.
+
+### Upgrading
+
+- Nothing to do. The database has no change.
+
+## v0.83.0 — 2026-10-18
+
+**When none of your sources has a series, hbook tries a few extensions from your repository.** A series stuck for an
+hour that no installed source has is looked for on extensions from your repository, a few at a time. One that has it is
+kept as a backup; the others are removed at once.
+
+### A few at a time
+
+- **Best matches first:** an extension named after a group that translates the series (as its chapters or
+  MangaUpdates say), then the most downloaded.
+- **Gently:** one install at a time, at most one an hour and six a day, and within the backup limit (5).
+- **One install, every waiting series:** each extension it tries is asked about every series waiting in that language
+  before it is kept or removed.
+- **Never twice for nothing:** an extension that doesn't have a series isn't tried for it again for a month. That
+  includes the ones *Fix everything* already tried, and *Fix everything* skips the ones this tried.
+- **Never** an 18+ extension for a series that isn't, one in a language you've hidden, or one you removed.
+- **One switch, as before:** *Finish downloads on their own*. Off, nothing is tried.
+
+### Upgrading
+
+- **Database:** one new table (`backup_misses`). Additive.
+
+## v0.82.0 — 2026-10-18
+
+**Extensions hbook added by itself are backups now.** They help while a series needs them, then go, and come back
+when the series is stuck again. Discover shows only the sources you added, and the extension engine doesn't keep
+extensions nothing uses.
+
+### Backup extensions
+
+- **Not in Discover.** An extension hbook installed by itself (*Fix everything* does, when no installed source has a
+  series) isn't shown in Discover or anywhere you pick a source. Your series still name it where a chapter came from.
+- **Removed when unused.** It stays while a series needs it, and is removed after 3 days without use. It is never
+  removed while a series uses it as its main source.
+- **Back when needed.** When a series it carried is stuck again for an hour or more, it is put back and the series
+  carries on, without searching every extension again.
+- **New chapters come from the main source** while that source works; a backup's copy is taken only when the main is
+  slowed or failed that chapter.
+- **At most 5 at once.** The one needed longest ago makes room; one in use never does.
+- **Yours if you want it.** **Admin → Sources → Added by hbook** lists them; **Keep** makes one yours. Installing
+  one yourself, switching its sources on or choosing it for a series does the same. One you remove is never installed
+  again, by *Fix everything* or anything else.
+- **One install at a time.** An extension you add or remove while another install runs waits for it, and says so if
+  it takes more than two minutes.
+
+### Upgrading
+
+- **Your extensions:** the ones *Fix everything* installed, and that nobody chose for a series since, become backups.
+  Each gets three days before anything is removed. An extension you removed yourself is remembered.
+- **One optional knob,** `BACKUP_EXTENSIONS_MAX` (default 5, `0` turns backups off), is in
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md) under *advanced, rarely needed*.
+- **Database:** two new tables (`backup_extensions`, `backup_links`) and one new column on `series_scout`. All additive.
+
+## v0.81.0 — 2026-10-18
+
+**Simpler, and faster.** Everything automatic about downloads is one switch now, a series says what it did for you,
+and a slow site no longer holds up the others.
+
+### One switch
+
+- **Finish downloads on their own** (Admin → Settings → Updates & schedules) now covers everything automatic about
+  downloads: going back for what is left, using a series' other sources when a site is slow or blocked, and finding a
+  new source when none of them can help. It is on by default. Off, chapters come only with the library update, from
+  the sources you picked. The separate *Use other sources on their own* switch is gone.
+- **You can see what it did.** A source hbook added is marked *followed for you* on the series' Sources list, with
+  when and why. Press × to remove it, and it is never added back for that series. Health's chapter gaps say where it
+  searched, too.
+
+### Faster
+
+- **Several sites at once.** Up to three series download side by side, each from a different site, so one slow site no
+  longer holds up the rest.
+- **The copy that can come now.** When two of a series' sources have the same release of a chapter, it comes from the
+  one that is quicker right now, not from the one that just failed it. A version you picked and a source order you set
+  are kept.
+
+### Upgrading
+
+- **Settings:** if *Finish downloads on their own* and *Use other sources on their own* were set differently, both are
+  off after the upgrade. Turn the switch back on to use them. One optional knob, `FINISH_DOWNLOADS_LANES` (default
+  3), is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md) with the others, under *advanced, rarely needed*.
+- **Database:** no change to its tables.
+
+## v0.80.0 — 2026-10-18
+
+**A series its sources cannot get its chapters from finds another source on its own.** When every site a series
+follows is rate-limiting, blocking or failing it, the server now looks for the series on your other installed sources
+in the background, follows one that has the missing chapters, and carries on from there. It works the same whether
+the series came from Discover, **Find missing chapters** or the scheduled checks.
+
+### Another source, found for you
+
+- **The scout.** Every few minutes it takes one stuck series and looks for it on the other installed sources:
+  - which series: any whose sources are all cooling, silent or refusing it; an add or Fetch a site refused; or chapters
+    left after their tries;
+  - which sources: only ones in the series' language, and no 18+ source for a series that isn't 18+;
+  - what it follows: a source that passes the same title and chapter-number check as any second source, and that lists
+    a chapter the series is waiting for.
+  The series keeps its main source; the new one fills in. Chapters that had used up their tries get them back, and the
+  series goes first in the next **Finish downloads on their own** run.
+- **It looks in the right places first.** Sources it has already found the series on come first. Next are sources
+  that downloaded well on your server this week, then the rest. Within each group, sites with fewer chapters already
+  waiting on them come before busy ones. It never asks a site that shares an image server with one the series already
+  follows: Mangakakalot can't stand in for Natomanga, because they slow down together.
+- **It remembers.** A source that said "not this series" isn't asked again for two weeks, and one that didn't answer
+  for a day. The sweep's own search for a failed chapter shares that memory, and so does **Find other sources**.
+  - A source you unfollow from a series is never followed there again on its own. Following it yourself undoes that.
+- **Gentle by design.**
+  - One series at a time, at most twelve sources and sixteen searches each.
+  - Forty searches an hour in all (`SCOUT_SEARCHES_PER_HOUR`).
+  - A series it just looked at waits: six hours after a follow, up to three days after every source said no.
+- **Room for it.** A series may now follow three other sources (two before). For the server's own follows, a broken,
+  switched-off or uninstalled follower doesn't count toward that limit, and it is kept.
+
+### Changed
+
+- The switch **Look for failed chapters on other sources** is now **Use other sources on their own**, in Admin →
+  Settings → Updates & schedules. It turns the scout and the sweep's own search on or off together, and it is still on
+  unless you turned it off.
+
+### Upgrading
+
+- **Database:** two new tables, `series_scout` and `scout_verdicts`. Additive: v0.79.x ignores them.
+- **Settings:** `MAX_FOLLOWED_SOURCES` now defaults to 3. To keep two, set it to `2`. The new `SCOUT_SEARCHES_PER_HOUR`
+  (default 40) can be set to `0` to turn the scout off on its own. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+## v0.79.0 — 2026-10-17
+
+**A site that is cooling down no longer holds a series up.** When a site rate-limits or blocks the server, the series
+that use it keep downloading from the other sources they follow, and the chapters only that site has are kept for when
+it can answer, wherever the download started: an add from Discover, **Find missing chapters**, or the scheduled checks.
+
+### Downloads that keep going
+
+- **A series whose main site is cooling down downloads from the other sources it follows.** The library update and
+  **Finish downloads on their own** used to line up every series behind its main site and wait out the cooldown, even
+  when another source had the chapters.
+- **The chapters only the cooling site lists stay on the list.** They used to drop out until the site answered again,
+  so the series looked caught up. Now they wait, and they are fetched as soon as the cooldown ends.
+- **A site that refuses a chapter's page list is treated as a refusal,** like refused images. The chapter gets the
+  twelve tries a refused chapter gets, and the site is given its cooldown, instead of three tries as a broken chapter.
+- **Adding from Discover while the site is cooling down keeps the series,** and so does an add whose page list the site
+  refuses. Its chapters come on their own. It used to answer "try a different source" and add nothing.
+- **Find missing chapters takes a chapter from another followed source when its own site is cooling down.** A chapter
+  no other source has downloads on its own when the site is ready, and the dialog says so. A download that every source
+  refuses part-way hands the rest on the same way.
+- **The finishing runs give way.** The library update, the nightly repair, **Fix everything** and **Find other
+  sources** no longer wait for a finishing run to end. It stops at the next chapter and picks up after them.
+
+### Upgrading
+
+- **Database:** one new column, `lib_series.finish_after`. Additive: v0.78.x ignores it.
+- **API:** `POST /api/sources/fetch` can skip a number with the reason `later`. Its site is cooling down, no other
+  followed source lists it, and **Finish downloads on their own** will fetch it. See [docs/api.md](docs/api.md).
+
+## v0.78.1 — 2026-10-17
+
+**Sign-in and account hardening.** Update soon, especially if people outside your household can reach your server.
+Thank you to **@globalteddy**, who reported these and wrote the fixes.
+
+### Security fixes
+
+- **A session follows its account as it is now.** Disabling or deleting an account ends its sessions on their next
+  request, and taking away someone's admin role takes it away at once, not when their session is next renewed.
+- **An admin's API token needs the admin scope for every admin-only action,** not only under `/api/admin`: stopping
+  someone else's download or archive, or seeing a series' admin details. Without it, the token acts as an ordinary
+  account.
+- **Covers and pages fetched on your behalf connect only to public addresses,** checked at the moment of connecting.
+- **A stranger's wrong passwords no longer lock an account.** Five wrong passwords for one name from one address pause
+  sign-in for that name from that address for 15 minutes, and the account's owner can still sign in from anywhere
+  else. Wrong two-factor codes, and wrong current passwords behind a signed-in session, still lock the account.
+- **Sign-in answers every wrong guess the same way,** whether the name exists or not. A disabled or locked account is
+  told so only once the right password is given.
+
+### Changed
+
+- **A sign-in that is being rate-limited** says so in your language.
+
+### Fixed
+
+- **Health's "Chapters that would not download"** no longer says a chapter a site refused was left alone after three
+  tries while **Finish downloads on their own** is still trying it. Its note says how many tries a refused chapter gets.
+- **Health's Chapter gaps note** read "…greyed with what it found.; Numbers none of…" since v0.78.0. Its sentences are
+  joined as sentences now.
+
+### Upgrading
+
+- **API:** `POST /auth/login` answers **429** with `Retry-After` after five failed passwords for one name from one
+  address in 15 minutes. A wrong password for a disabled or locked account is now **401** `invalid_credentials`; the
+  right one is still **403** `disabled` or **423** `locked`. See [docs/api.md](docs/api.md).
+- **Database:** no change.
+
+## v0.78.0 — 2026-10-17
+
+**Downloads that finish on their own, and gaps that are really gaps.** A series you add from Discover, or one whose
+sources have chapters you don't, keeps downloading through rate limits and blocks until it is done. And Health no
+longer calls hundreds of chapters missing when a site only numbered them differently.
+
+### Downloads that finish on their own
+
+- **Finish downloads on their own**, in **Admin → Settings → Updates & schedules**. **It is on unless you turn it off.**
+  A series that still has chapters to download is gone back to every 15 minutes, and again as soon as a site that was
+  refusing is ready, instead of waiting for the next library update: up to ten chapters a series each time. Before, a
+  series a site rate-limited half-way through an add got five chapters every six hours, and none while the site was
+  cooling down.
+- **A chapter a site refused is tried 12 times, not 3.** A rate limit or a block is a site saying "not now", so it no
+  longer uses up the three tries a broken chapter gets. The cooldowns space the tries out, and once a site has refused a
+  chapter twice the update also looks for it on other sources (with **Look for failed chapters on other sources** on, as
+  it is unless you turned it off).
+- **An add whose first chapter the site refused is kept.** The series is saved, its download card says the chapters will
+  come on their own, and they do. It used to be not added at all, with nothing left to carry on from.
+- **The library update no longer skips a turn** when another update is running at that moment. It tries again ten
+  minutes later, where it used to wait a whole interval.
+
+### Fixed
+
+- **Chapter gaps counts only chapters a site lists.** A series that took chapters from two sites numbering them
+  differently showed a long run of chapters missing that were the same chapters under the other site's numbers: one
+  series read 306 missing. Health now says those numbers apart on the row, greyed when they are all it has, as *numbers
+  none of its sources list*, and the reader's missing-chapters notice leaves them out. **Fill now** still asks other
+  sources for them, so a chapter some site really has is still found.
+
+### Upgrading
+
+- **Database:** one new column, `server_settings.finish_downloads`, on by default. Additive: v0.77.x ignores it.
+- **Settings:** four optional knobs, `FINISH_DOWNLOADS_MINUTES`, `FINISH_DOWNLOADS_PER_SERIES`,
+  `FINISH_DOWNLOADS_SWEEP_MAX` and `FINISH_DOWNLOADS_REFUSAL_CAP`. The defaults need nothing set. See
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md) → *Downloading*.
+- To keep downloads as they were, turn **Finish downloads on their own** off.
+
+## v0.77.1 — 2026-10-16
+
+**Sign-in and backup hardening, and recovery codes that work.** Update soon, especially if people outside your
+household can reach your server. Thank you to **@globalteddy**, who reported these and sent
+[#279](https://github.com/YUnauuu/hbook/pull/279), [#280](https://github.com/YUnauuu/hbook/pull/280) and
+[#281](https://github.com/YUnauuu/hbook/pull/281).
+
+### Security fixes
+
+- **The account lock covers every password and two-factor check.** A wrong two-factor or recovery code at sign-in
+  counts toward it, as a wrong password does. So does a wrong current password when you change your password or turn
+  two-factor on or off, and those three take at most 10 tries in 5 minutes from one address, like sign-in. Once a lock
+  has run out, the count starts again from one.
+- **Turning two-factor on asks for your password,** as turning it off already did. **Profile → Account → Two-factor
+  authentication** has a **Current password** field beside the code.
+- **A two-factor code signs in once.** After a code is used, only a newer one works: if you sign out and back in within
+  the same half minute, wait for the next code.
+- **First-run setup makes one admin,** however many setups arrive at once.
+- **Backups are readable only by the app's user and its group.** Each backup folder is `0750` from the moment it is
+  made, and its files are `0640`. Backups made before this version are tightened the next time a backup runs.
+- **A cover that redirects to another site is fetched without the first site's cookies, login or extra headers.**
+- **Every response carries a base Content-Security-Policy,** `object-src 'none'; base-uri 'self'; frame-ancestors
+  'self'; form-action 'self'`, from the server and from nginx in the split layout
+  ([#281](https://github.com/YUnauuu/hbook/pull/281)).
+- **Signing out clears the page's cached answers,** and so does every sign-in and sign-up, so the next person on a
+  shared device sees nothing of the last one's ([#280](https://github.com/YUnauuu/hbook/pull/280)).
+
+### Fixed
+
+- **Recovery codes work at sign-in.** The codes handed out since v0.21.0 were longer than sign-in accepted, so none of
+  them ever worked. They do now, typed with or without their dashes and in any case, and each one works once
+  ([#279](https://github.com/YUnauuu/hbook/pull/279)).
+
+### Upgrading
+
+- **If something outside the app reads your backup folder** (a job on the host, a NAS share), it now has to run as the
+  app's user or as a member of its group. Reading through the container (`docker compose exec`) works as before.
+- **Database:** additive only. A nullable `totp_last_step` column on `users`, created when the server starts. The
+  previous release starts on this schema.
+- **API:** `POST /auth/totp/enable` takes `password` beside `code`. `POST /auth/password`, `/auth/totp/enable` and
+  `/auth/totp/disable` answer **423** `locked` while the account is locked, and **429** past 10 requests in 5 minutes
+  from one address, as `/auth/login` does. The sign-in body's `code` takes up to 32 characters.
+
+## v0.77.0 — 2026-10-16
+
+**Spreads that a source served as two pages can be read as one, and one page of a pair can be brought into frame.**
+Both began as pull requests from **@Squeaks72** ([#229](https://github.com/YUnauuu/hbook/pull/229),
+[#232](https://github.com/YUnauuu/hbook/pull/232), [#261](https://github.com/YUnauuu/hbook/pull/261)); the
+spread detector is theirs. Thank you.
+
+### Double-page spreads, joined
+
+- **Join split double pages** ([#229](https://github.com/YUnauuu/hbook/pull/229), from @Squeaks72), in Reader
+  settings and Profile → Settings → Reading. **It is off until you turn it on.** Some sources serve a double-page
+  spread as two ordinary pages. In Paged mode the reader then shows the two as the spread, on one slide with the halves
+  touching, in single page and Double spread alike.
+  - The halves sit the way the picture runs, on the side the server found, whatever your reading direction.
+  - The page before a spread gets a slide of its own, so the pairs after it stay as they were drawn. A chapter can open
+    on a spread.
+  - On a phone held upright, **Wide pages** works as it does for a spread scanned in one piece. *Whole* shows it across
+    the screen, *Split* shows its two pages one after the other, and *Rotate* turns it on its side.
+  - Only a joined spread loses the gap down the middle. Every other pair keeps its gutter.
+  - The pages themselves never change: the counter, your progress, OPDS and your trackers still count two.
+- **Found in the background, once.** The server compares the inner edge of each page with the next page's. It looks
+  the first time someone with the setting on opens a chapter, one chapter at a time, and never while it answers the page
+  list. A chapter opens at once, and its spreads join a moment later without moving the page you're on.
+  - The answer is kept with the chapter, even when nothing was found or the file could not be read, so no chapter is
+    looked at twice. A replaced file is looked at again.
+  - A chapter downloaded after its spreads were found joins them offline too.
+- **Checked against this server's own library first.** As first written, the detector joined separate pages far more
+  often than it found spreads. In a sample of 375 chapters, 12 of its 80 joins were real spreads. Two facing pages whose
+  borders line up (a black bleed down both inner edges, or a white gutter crossed by panel borders at the same heights)
+  match as well as a real seam. Four tests now come after the match:
+  - the same texture on both sides of the cut;
+  - the small steps down the edge lining up, not only the bands;
+  - no other page of the chapter fitting either edge as well;
+  - the outermost columns of both pages being the same kind of thing.
+
+  On the first sample it now makes the 12 real joins and no others. On a second sample of 410 chapters, 16 of its 17
+  joins were real, and the one that was not led to the last test. On a third sample of 380 chapters, which it was never
+  tuned on, 14 of its 16 joins were real; the other 2 are facing pages whose drawings run to the seam on panels that
+  line up. No sample had a join in a webtoon chapter.
+
+### One page of a pair in frame
+
+- **Z** ([#261](https://github.com/YUnauuu/hbook/pull/261), from @Squeaks72) brings the first page of the pair on
+  screen into frame, in Double spread or on a joined spread. The arrows then step to the other page before they turn,
+  and Z again gives both back. A small squared key at the bottom names the page and gives both back too.
+  - Z is an action like the others under **Keys and controller**: it can be rebound, Y does it on a controller, and the
+    key list shows it.
+- **Tap a page of a pair to see it alone** ([#232](https://github.com/YUnauuu/hbook/pull/232), from @Squeaks72),
+  a setting for this device. **It is off until you turn it on.** On a slide of two pages, a tap on one of them fills the
+  screen with it in place of what its tap zone does. Turning toward the other page then shows that one.
+  - Taps beside the pages still do what Tap zones says.
+  - Off, every tap works as before, and the middle of the screen shows the controls.
+
+### Fixed
+
+- **Crop page borders on a pair read right to left** trimmed the inner edges of the two pages and left their outer
+  margins. It now trims the outer margins and keeps the gutter, as it always did left to right.
+
+### Upgrading
+
+- **Database:** one new column, `lib_books.spreads`, empty until a chapter is looked at. Additive: v0.76.x ignores it.
+- **API:** `GET /api/books/:id/pages?spreads=1` adds `join` to the pages of a spread. The `x-spreads` header says
+  whether the chapter has been looked at yet. Without the parameter nothing changes. See [docs/api.md](docs/api.md).
+
+## v0.76.0 — 2026-10-16
+
+**Hide a chapter a source lists that is not part of the series, and the extension engine gets the memory it really
+uses.** Hiding is **@Squeaks72**'s idea, from pull request [#240](https://github.com/YUnauuu/hbook/pull/240),
+rebuilt to hide only: nothing is ever deleted. The engine's memory was reported by **@Kedryn**
+([#275](https://github.com/YUnauuu/hbook/issues/275)). Thank you both.
+
+### Hide a chapter that does not belong
+
+- A source sometimes lists a chapter that is not part of the work, such as a 0.5 from an unrelated title or a number a
+  wrong match brought in. Nothing on the source's side takes it away. An admin can now hide that number with
+  **Hide chapter N** in a chapter's or a grey row's **⋯**, or **Hide n chapters** in the select bar. It asks first.
+- A hidden chapter is gone for everyone: the chapter list and its grey rows, the reader's next and previous, Continue,
+  the unread counts and badges, Updates, history, Insights, OPDS and the Komga-compatible API. Neither Health nor the
+  reader's note about missing chapters counts it as missing, and Health does not call it an impossible number.
+- It is never downloaded, by the nightly check, Check for new chapters, Fetch newest, the slow archive or Find missing
+  chapters. A download already waiting when you hide it stops before it asks the source.
+- Nothing is deleted. The file, the chapter's row and everyone's reading progress stay as they were, and neither the
+  read-chapter cleanup nor Fix everything touches it.
+- **More → Show hidden chapters** lists what is hidden and what each one is, with **Restore** and **Restore all**. A
+  restored chapter is back everywhere at once, and the next check fetches it if it is missing.
+- Merging two series keeps what either one hid, and renumbering a series by posting order moves a hidden number with
+  its post.
+
+### The extension engine gets the memory it uses
+
+- **Its memory ceiling is 2 GB, up from 1.5 GB** ([#275](https://github.com/YUnauuu/hbook/issues/275), reported by
+  **@Kedryn**). Its Java heap stays at 768 MB. The rest of the ceiling is for what the heap does not cover: Java's own
+  native memory, and the Chromium and Xvfb the engine runs, which came to 770 MB beside a 630 MB heap on a server with
+  45 extensions. At 1.5 GB that server's engine lived only by swapping; on a server without swap, Unraid's default, the
+  kernel kills it at the ceiling instead, which is what #275 reports.
+- **`MALLOC_ARENA_MAX=2` on the engine's container.** The C library otherwise keeps what a thread frees in that thread's
+  own arena, up to eight arenas per CPU core: 94 of them held 428 MB on that server, and two held about 120 MB less
+  under the same load.
+- The engine's card on **Admin → Sources** says it uses 1 to 1.5 GB, where it said about 750 MB. That figure is the
+  desktop app's engine, which runs without Chromium.
+
+### Upgrading
+
+- ⚠️ **An existing install keeps its old engine settings.** An update changes the image, never your compose file, your
+  Unraid container or your CasaOS app.
+  [If the engine keeps restarting](docs/extensions.md#if-the-engine-keeps-restarting) has the two settings to add, and
+  how to tell whether the ceiling is what stops it.
+- **Database:** additive only. A nullable `hidden_numbers` column on `lib_series` and a small partial index, created
+  when the server starts. The previous release starts on this schema and shows every chapter.
+- **API:** new `POST /api/admin/series/:id/chapters/hide`, `POST /api/admin/series/:id/chapters/unhide` and
+  `GET /api/admin/series/:id/chapters/hidden`. `POST /api/sources/fetch` skips a hidden number as `hidden`, and the
+  series DTO carries `hiddenChapters` for an admin.
+
+## v0.75.0 — 2026-10-16
+
+**Your reading, all of it: the Reading studio goes back to your first read, badges say what they take, and a new
+Insights tab shows what your reading adds up to.** The Insights tab began as **@Squeaks72**'s pull request
+([#249](https://github.com/YUnauuu/hbook/pull/249)), rebuilt on the app's own parts. All time and the badges are
+**CheetahDoesStuff**'s ideas ([#265](https://github.com/YUnauuu/hbook/issues/265),
+[#267](https://github.com/YUnauuu/hbook/issues/267)). Thank you both.
+
+### A new Insights tab
+
+- **A new tab** ([#249](https://github.com/YUnauuu/hbook/pull/249), from @Squeaks72), worked out from the chapters you
+  have finished, each counted once:
+  - **At this pace**: when you would finish each series you are reading, at your pace through it over the last four weeks.
+  - **Your best** day and week.
+  - **Genre and source mix**: this month's chapters by genre or by source, and the change since last month.
+  - **Series you started**: how many you finished, are still reading or dropped (chapters left and nothing read in two
+    months), and around which chapter you usually stop.
+  - **Backlog**: the unread chapters of the series you have started, which hold the most and which have waited longest.
+- Incognito reads are not in it, and an 18+ series is named only while Show 18+ is on.
+- The pull request's other cards (when you read, the year in review, numbers on the heatmap) were left out: the Reading
+  studio and Wrapped already show them.
+
+### Reading studio: All time
+
+- **All time** ([#265](https://github.com/YUnauuu/hbook/issues/265), suggested by CheetahDoesStuff). Beside 90, 180
+  and 365 days, the Reading studio shows one heatmap from the day you started reading to today, up to about ten years.
+  - Its days keep their size, so a long history scrolls sideways inside the card.
+  - It opens on the newest weeks, in Arabic too, where the weeks run the other way.
+  - The year and the month are written over the first week of each.
+  - Only the heatmap: the other panels are built for a window of up to a year.
+
+### Badges say what they take
+
+- **Each badge says what it takes** ([#267](https://github.com/YUnauuu/hbook/issues/267), suggested by
+  CheetahDoesStuff). Hover it, tab to it or tap it, and the line under the badges says it: *Bookworm · Read 50 chapters
+  · you have 40*. Until you pick one, the line is about the next badge.
+- **Show locked** lists the badges you have not earned yet, nearest first. It is off until you turn it on.
+- **Badges are drawn emblems now**, in place of the emoji: medals of bronze, silver, gold and an aurora for the chapter
+  badges, ember and moonlight for the streaks, each with its own picture. A locked one shows how close you are: a ring
+  round a chapter badge, the days already done on a streak's rim, both in your accent colour. A shine passes over the
+  earned ones now and then, and Legend glows; both stay still under Reduce effects or your system's reduced motion.
+
+### Phones
+
+- **The cover at the top of a series page and of Home now drifts**, slowly closer and back, as it was designed to in
+  v0.67.0. Until now it sat still, slightly enlarged: the animation was skipped before it began. Reduce effects or your
+  system's reduced motion keep it still.
+
+### Upgrading
+
+- **Database:** no changes.
+- **API:** `GET /api/stats?days=all` and `GET /api/stats/insights` are new; see [docs/api.md](docs/api.md).
+
+## v0.74.0 — 2026-10-16
+
+**The reader keeps your place through a refresh, a resized window and a turned phone, says which chapters a series is
+missing as you move on, and can narrow its column or fetch pages at your screen's size.** All four began as pull requests
+from **@Squeaks72** ([#263](https://github.com/YUnauuu/hbook/pull/263), [#236](https://github.com/YUnauuu/hbook/pull/236), [#233](https://github.com/YUnauuu/hbook/pull/233),
+[#234](https://github.com/YUnauuu/hbook/pull/234)), rebuilt on the app's own parts. Thank you.
+
+### The reader keeps your place
+
+- **A refresh reopens the chapter you are reading** ([#263](https://github.com/YUnauuu/hbook/pull/263)). Reading on into the next chapters
+  kept the address on the chapter you had opened, so a refresh went back there -- to its first page, if you had
+  finished it. The address now follows the chapter on screen, and a refresh resumes where you are.
+- **A window made wider or narrower keeps its page** ([#263](https://github.com/YUnauuu/hbook/pull/263)). In paged mode, dragging the window
+  to another screen or resizing it could move you to another page, even chapters on. Turning a phone with Wide pages:
+  Split keeps the page as well.
+
+### Missing chapters
+
+- **Moving on to a chapter that skips numbers says so** ([#236](https://github.com/YUnauuu/hbook/pull/236)): "Chapters 44–99 are missing here.
+  This continues at chapter 100." It is said as you reach the next chapter, and when you go to it with Next chapter,
+  `]`, a controller or the right-click menu.
+  - It counts what Admin → Health → Chapter gaps counts. A file holding several chapters, a chapter deleted on purpose
+    and a gap an admin chose to ignore are not missing.
+  - Offline, nothing is said.
+
+### On this device
+
+- **Column width** ([#233](https://github.com/YUnauuu/hbook/pull/233)). In webtoon scroll, Reader settings → Column width · This device
+  narrows the column to 30–100 % of what Fit gives, for a wide screen. At 100 % it is the column as it was.
+- **Fit pages to my screen** ([#234](https://github.com/YUnauuu/hbook/pull/234)), off until you turn it on. Each page comes at the size it
+  is drawn at instead of as scanned: less data and memory on a phone or a slow connection.
+  - It follows your zoom, Wide pages and Crop page borders, and zooming in fetches a sharper copy.
+  - A page already that small comes exactly as it is, and so do downloaded chapters.
+
+### For scripts
+
+- `GET /api/series/:id/gaps` answers the runs of numbers a series is missing, by Health's Chapter gaps rule.
+- `GET /img/books/:id/page/:n?fit=<px>` answers a page for a screen that shows it that wide. `?w=` is unchanged.
+
+### Upgrading
+
+- **Database:** no new tables or columns.
+- **Nothing changes until you choose:** Column width is 100 % and Fit pages to my screen is off on every device.
+
+## v0.73.0 — 2026-10-16
+
+**A series with no description, genres or author can have them filled in, a whole source can be rated Adult only,
+AniList sync waits when AniList asks instead of giving up, and a new Unraid extension engine asks for a password.**
+The first two began as pull requests from **@Squeaks72**
+([#257](https://github.com/YUnauuu/hbook/pull/257), [#245](https://github.com/YUnauuu/hbook/pull/245),
+[#256](https://github.com/YUnauuu/hbook/pull/256)), rebuilt on the app's own parts. Thank you.
+
+### Missing details, filled in
+
+- **Admin → Settings → Library housekeeping → Fill in missing details** ([#257](https://github.com/YUnauuu/hbook/pull/257),
+  [#245](https://github.com/YUnauuu/hbook/pull/245)). It is off by default. Once a night it fills in a description,
+  genres or an author for a series that has none of its own.
+  - It asks AniList first, for series linked there, in English, in libraries that look AniList up. Fifty series go in
+    one request, by id.
+  - Then it asks the series' own source and the sources it follows, in its language, for up to 15 series a night that
+    you keep updated. A source that is switched off, failing or cooling down is never asked.
+  - A series with no chapters yet gets a cover too.
+- **Nothing is replaced.** A series' own details win as soon as a scan brings them, and anything you set in Edit
+  details wins over both. Genres you cleared on purpose stay cleared.
+- **The 18+ filter sees the genres it adds**, like any others.
+- **A series it could not describe is asked again after a month.** Following a source by hand asks that source at once.
+- **Switching it off takes back everything it filled in**, covers included.
+
+### A whole source can be rated Adult only
+
+- **Admin → Sources**, open a source, **Age rating** ([#256](https://github.com/YUnauuu/hbook/pull/256)): **Automatic**
+  leaves it to the source's extension, and **Adult only** makes the whole source adult whatever the extension says.
+  That helps with built-in sources and sites added by address, which can never say.
+- **Accounts limited below 18 cannot use an Adult only source at all**, by any route, just as with a source whose
+  extension marks itself 18+. With Show 18+ off, it also leaves Discover, search and the latest and popular lists.
+- **No rating opens a source to a younger account.** A source whose extension marks it 18+ stays 18+.
+- **The 18+ filter's "Sources to treat as adult" chips are gone.** Those sources are now rated Adult only (see Upgrading).
+
+### Everywhere else
+
+- **AniList sync waits when AniList asks, instead of giving up.** AniList limits how many requests a server may make
+  a minute, and every AniList request hbook makes now shares that one limit: everyone's progress, ratings, art,
+  Discover and the new missing details. A push that AniList turns away is sent again after the wait AniList asks for,
+  so connecting AniList and pushing everything you have finished goes slowly instead of stopping after a dozen series.
+  Profile → Connections says **Syncing slowly** meanwhile, not an error, and Health's Tracker sync card leaves it out.
+- **A new Unraid install of the extension engine asks for a password**, and hbook's template has the matching user
+  name. An engine installed before keeps its settings. [A password on the engine](docs/extensions.md#a-password-on-the-engine)
+  says how to add one.
+- **The desktop app's extension engine gets a new password every time the app starts.** Nothing changes on screen.
+
+### Upgrading
+
+- **Sources you had ticked under Settings → 18+ filter → "Sources to treat as adult" are now rated Adult only, and
+  accounts limited below 18 can no longer use them.** Before, they only left the lists while Show 18+ was off. To let
+  such accounts use one again, set its Age rating back to Automatic under Admin → Sources.
+- **Database:** one new table (`series_auto_details`) and one new setting (`fill_details`, off). Both are additive.
+- **Optional:** `REPAIR_DETAILS_MAX` (1 to 200, 15 by default) sets how many series a night are asked about their
+  sources.
+
+## v0.72.0 — 2026-10-16
+
+**Health turns around: one card per series, with everything wrong with it. Three new cards say when the downloads
+disk is too full to download, which members' tracker sign-ins need them, and which chapter files cannot be read.**
+All of it began as pull requests from **@Squeaks72** ([#252](https://github.com/YUnauuu/hbook/pull/252), [#253](https://github.com/YUnauuu/hbook/pull/253), [#254](https://github.com/YUnauuu/hbook/pull/254)), rebuilt on Health's own parts.
+Thank you.
+
+### Health by series
+
+- **By check / By series** ([#254](https://github.com/YUnauuu/hbook/pull/254)), above the cards. By series shows one card per series with every finding about
+  it, each with the keys its own card has. The series that most need you come first.
+  - Every series is there, not only the fifty a card shows.
+  - **Remove from library** hides a series. Tick several to remove them together, after a confirmation that names
+    them. No file is deleted, and everyone's progress is kept.
+  - Only the series on the screen can be ticked, so a series that left the list after a re-check is never removed by
+    mistake.
+  - A finding about no single series, and a duplicate pair, stay in the By check view. Each device remembers its view.
+
+### New Health cards
+
+- **Disk space and folders** ([#253](https://github.com/YUnauuu/hbook/pull/253)). The card turns red when the downloads disk has less than `MIN_FREE_GB`
+  free (10 GB unless you set it), the point where new downloads stop. Before, only each download's error said so. It
+  turns amber below the slow archive's own floor while the archive has a series queued.
+  - It also names a library or download folder that cannot be opened, or that is empty while the library still
+    records chapters in it. That is almost always a network share that is not mounted.
+  - It reads only the first entry of each folder, so it never wakes every disk of an Unraid array.
+  - Ignoring a warning here does not silence a later problem.
+- **Tracker sync** ([#253](https://github.com/YUnauuu/hbook/pull/253)) lists every member's tracker connection with something wrong: a sign-in the tracker
+  refused, a sync that failed, or a sign-in that ended or ends within 14 days. Only the member can sign in again, so
+  the card tells you whom to ask.
+- **Chapter files** ([#252](https://github.com/YUnauuu/hbook/pull/252)) lists the chapter files the nightly repair found no page in: empty, cut short by a
+  download, damaged or gone. Nothing showed them before.
+  - **Fetch again** on a row downloads new copies of the files hbook downloaded itself. Each old file is kept
+    until its new copy lands.
+  - The card reads only what the nightly count stored, so it costs nothing to run. A file that changes is counted
+    again.
+  - Nothing on the card deletes a file.
+- **Fix everything lists these three under Needs you**, after everything else a person decides. It changes nothing
+  about them.
+
+### For API clients
+
+- `GET /api/admin/health?view=series` adds `bySeries`: every series with a finding, grouped from each card's whole
+  list. The new checks are `disk`, `trackers` and `files`, and each can be ignored.
+
+## v0.71.0 — 2026-10-16
+
+**Reading defaults for a whole library, sources and covers picked by hand, MangaUpdates tracking, and suggestions from
+your own tracker lists.** All of it began as pull requests from **@Squeaks72**, taken and finished on the app's own parts
+([#235](https://github.com/YUnauuu/hbook/pull/235), [#241](https://github.com/YUnauuu/hbook/pull/241), [#242](https://github.com/YUnauuu/hbook/pull/242),
+[#243](https://github.com/YUnauuu/hbook/pull/243), [#244](https://github.com/YUnauuu/hbook/pull/244), [#246](https://github.com/YUnauuu/hbook/pull/246),
+[#248](https://github.com/YUnauuu/hbook/pull/248)). Thank you.
+
+### MangaUpdates, and Recommended for you
+
+- **MangaUpdates** ([#244](https://github.com/YUnauuu/hbook/pull/244)) is a fourth progress tracker: it syncs the chapters you finish and
+  its list can be imported. You paste a session token, which its login gives you; the guide has the command, and your
+  password goes to MangaUpdates only. hbook asks MangaUpdates at most once a second.
+- **Recommended for you** ([#248](https://github.com/YUnauuu/hbook/pull/248)). With AniList or MyAnimeList connected, Discover shows what
+  their readers suggest after the series you rated well or read, minus everything on your lists and in the library.
+  - Each card says which service suggested it and *Because you read …*.
+  - Your list is read at most twice a day and each title's suggestions once in two weeks for the whole server, so
+    opening Discover again asks nothing.
+  - What is 18+ for you is left out, as in every Discover rail, and so are series of the library you may not open.
+- **A line above every page when a tracker needs a new token** ([#246](https://github.com/YUnauuu/hbook/pull/246)), with **Reconnect** and **Not
+  now**. Only when reconnecting would help: a rejected, lapsed or unreadable token, never a rate limit or an outage.
+
+### Series and libraries
+
+- **Reading defaults for a library** ([#235](https://github.com/YUnauuu/hbook/pull/235)). An admin can give a library a reading mode, pages per
+  view and reading direction, in its dialog under Admin → Libraries, or from the reader with **Use these settings for
+  every series in …**, which asks first. Every account gets them, under a source's default and a series' own; the theme
+  stays each reader's choice. A chapter downloaded for offline reading opens with them too.
+- **Add or move a source by hand** ([#243](https://github.com/YUnauuu/hbook/pull/243)). The Sources sheet has **Add more sources…**: search
+  the sources, compare a pick's cover, title and chapter count, then add it as an extra source or move the series to it.
+  It is for the series *Find other sources* cannot judge, those with fewer than three chapters.
+  - The title is still checked with the source. When the source calls it something else, the sheet says so and offers
+    **Attach anyway**.
+  - The **×** on the main source now detaches it, after asking: the next source takes over, or the series is left with
+    none. Chapters and progress stay. A series numbered by posting order keeps its main source.
+- **Change a cover to a source's** ([#242](https://github.com/YUnauuu/hbook/pull/242)): **More → Change cover**, or a click on the cover on a
+  computer. It shows the cover each source the series uses has for it, and takes an upload too. The server keeps its own
+  copy, and the new cover shows at once on this device's cards. Sources that are switched off, cooling down or failing
+  are not asked.
+- **Compare copies before replacing** ([#241](https://github.com/YUnauuu/hbook/pull/241)). A chapter's **⋯** menu has **Replace from another
+  source…** when another source has a copy: this server's file and that copy side by side, page by page, before the
+  usual *Replace with this version?*.
+
+### Upgrading
+
+- **Database:** additive only. A `reader_prefs` column on `libraries`, and two tables for Recommended for you,
+  `tracker_list_cache` and `tracker_rec_cache`. They are created when the server starts.
+- **Privacy:** *Recommended for you* reads the lists of the trackers a person connected, and asks AniList and
+  MyAnimeList about a few titles of them. [CONFIGURATION.md](docs/CONFIGURATION.md#progress-trackers) says what is
+  sent, with and without a token. An account that may not add series, or has no tracker connected, sends nothing.
+- **API:** `GET /api/trackers` rows carry `needsReconnect`. New: `POST /api/admin/series/:id/attach-source`,
+  `GET /api/admin/series/:id/cover-candidates`, `GET /api/admin/series/:id/copy-pages`,
+  `GET /img/series/:id/copy-page`, `GET /api/discover/recommendations`.
+
+## v0.70.0 — 2026-10-16
+
+**Each chapter you finish counts once. The reader gains a right-click menu and a list of its keys, and the 18+ reveal
+says it is on wherever you are.** Most of this release began as pull requests from **@Squeaks72**, taken as they were
+or rebuilt on the app's own parts ([#231](https://github.com/YUnauuu/hbook/pull/231), [#239](https://github.com/YUnauuu/hbook/pull/239), [#251](https://github.com/YUnauuu/hbook/pull/251),
+[#254](https://github.com/YUnauuu/hbook/pull/254), [#255](https://github.com/YUnauuu/hbook/pull/255), [#258](https://github.com/YUnauuu/hbook/pull/258), [#259](https://github.com/YUnauuu/hbook/pull/259), [#260](https://github.com/YUnauuu/hbook/pull/260)). The
+counting fix is **CheetahDoesStuff**'s report ([#264](https://github.com/YUnauuu/hbook/issues/264)). Thank you both.
+
+### Each finished chapter counts once
+
+- **Reading a chapter through counted it twice** ([#264](https://github.com/YUnauuu/hbook/issues/264), reported by CheetahDoesStuff). The page
+  before the last already counts as the end, and the last page then counted the chapter again. Re-reading a chapter
+  added more. So Wrapped, your profile's chapters, the Reading studio, the weekly goal, reading time and the admin's
+  member stats all said more than you had read. On one real server, 1,812 finished chapters were really 1,336.
+  - Each chapter now counts once, as the household board always counted it.
+  - This applies to the reading already recorded, too.
+- **Your numbers may go down.** The chapters on your profile, the badges they earn and the weekly goal count fewer than
+  before. A badge you had only because of the double count waits until you earn it.
+- **A chapter you mark as read from a list, and then really read, still counts.** One you only mark still does not.
+- **The Reading studio counts chapters over its heatmap.** A chapter read again on another day lights that day on the
+  heatmap, but it still counts once in the total.
+
+### Reading
+
+- **Right-click a page for a menu** ([#259](https://github.com/YUnauuu/hbook/pull/259)). It has zoom, bookmark the page, jump to a page, the next
+  and previous chapter, the chapter list, single pages or double spreads, full screen, show or hide the controls, the
+  reader's settings, the series and leaving the reader.
+  - Esc closes the menu, not the reader.
+  - Shift + right-click still opens the browser's own menu, and so does holding a page on a touch screen.
+- **Press ? for the reader's keys** ([#260](https://github.com/YUnauuu/hbook/pull/260)), as this device has them bound. On a computer there is also
+  a keyboard button in the top bar.
+- **A right or middle click no longer turns the page or toggles the controls** ([#258](https://github.com/YUnauuu/hbook/pull/258)).
+
+### Everywhere else
+
+- **"18+ titles are showing"** ([#255](https://github.com/YUnauuu/hbook/pull/255)). While the Show 18+ reveal is on, a line above every page says
+  so, with a **Hide 18+** key, as Incognito reading's line does. Before, a series page or a search reached from the
+  Library showed 18+ titles with no sign of it until the browser closed.
+  - The line appears only when the reveal has something to show you.
+  - The Show 18+ chips still turn it on and off.
+- **Your profile photo opens quick settings** ([#251](https://github.com/YUnauuu/hbook/pull/251)): Incognito reading, Show 18+ (where there is
+  something to show), Reduce effects, Profile, Profile settings and Sign out. On a phone, it is the photo on Home.
+- **Genres while you type** ([#239](https://github.com/YUnauuu/hbook/pull/239)). Edit details offers the genres your library already uses. A genre
+  typed in another case takes the library's spelling.
+- **Health says how the last Fix everything went** ([#254](https://github.com/YUnauuu/hbook/pull/254)), under its header: "Last nightly Fix
+  everything 3h ago: 1 needs you".
+- **`MAX_FOLLOWED_SOURCES`** ([#231](https://github.com/YUnauuu/hbook/pull/231)) sets how many other sources a series may follow: 2 by default, up
+  to 6. The Add dialog no longer states a number.
+
+### Upgrading
+
+- **Database:** no new tables or columns. The `reading_stats` view is redefined when the server starts.
+- **Badges and the weekly goal may count fewer chapters than before** (see above).
+- **Optional:** set `MAX_FOLLOWED_SOURCES` (1 to 6) to let a series follow more than two other sources. Each one more
+  is another chapter list read on every update check, for every series.
+
+## v0.69.1 — 2026-10-15
+
+### Security fixes
+
+**Update soon, especially if people outside your household can reach your server.** A full security review of the
+server, web app, desktop app and deploy files found the problems below. None needs anything from you to be fixed
+except updating; the few settings to know about are under Upgrading.
+
+### Accounts and sign-in
+
+- **An API token can only create an admin token if it is one.** A read+write token belonging to an admin (the kind you
+  make for Mihon or Komga sync) could create an admin-scoped token for itself. Now only an admin session, or a token
+  that already has the admin scope, can.
+- **Restarting the server no longer makes the oldest account an admin again.** It did on every start, which undid a
+  demotion and, after the oldest account was deleted, promoted the next one. A server with no admin at all still makes
+  its one account the admin, as an upgrade from a single-user install needs.
+- **A disabled or deleted account's browser stops loading pages and covers.** The image cookie kept working for up to a
+  week; for a deleted account it could even open libraries it was never given.
+- **Single sign-on routes are rate limited and do a bounded amount of work.** Failed sign-ins are logged once a minute
+  per kind, a sign-in ticket works once, and old failed sign-in entries are tidied away nightly.
+- **OIDC_LINK_BY_USERNAME links an existing account only when the provider reports exactly that username.** It also
+  matched the part of an email before the @, and a username with characters removed. An adopted account's role now
+  follows OIDC_ADMIN_GROUP from its first sign-in.
+- **Only your own reverse proxy can tell the server a visitor's address.** Anyone reaching the app's port directly could
+  choose the address the sign-in limits counted. See TRUST_PROXY under Upgrading.
+
+### What members can see
+
+- **Titles a source rates erotica or pornographic (MangaDex) are added as 18+,** and an age-limited account no longer
+  sees them in that source's listings or can open or add them.
+- **An extension source answers only for its own series,** so a series from an 18+ extension cannot be opened through
+  another one.
+- **For you and Featured drop a series as soon as a member loses access to it,** instead of up to ten minutes later.
+- **Discover, push notifications, Hidden gems, series colours and source icons respect each member's libraries and age
+  limit.** Discover still says when the server already has a title, but only names it to members who may open it; a
+  new-chapter notification goes only to members who may open the series; Hidden gems no longer counts what another
+  member read with Incognito on; an 18+ source's icon is a lettered tile for an age-limited account.
+- **Avatar colours and list colours are colours.** Anything else is refused, and shown as the default.
+
+### Files and outside requests
+
+- **One damaged or hostile file can no longer take the server down.** Archive pages are read with a size limit (a
+  small file that unpacks to gigabytes is refused), PDF pages are drawn at no more than 32 megapixels, and a chapter
+  folder's pages must be real files inside it, not links to elsewhere.
+- **The server only fetches from the public internet on a site's say-so.** Chapter pages, source icons, covers, the
+  Cloudflare solver and web-push addresses all refuse addresses on your own network, and stop reading at a size limit.
+  The extension engine's login is sent only to the engine.
+- **A search can no longer be made big enough to tie up the database.** A filter of more than 128 conditions is refused.
+- **In the split layout the extension engine no longer shares the database's network.**
+
+### Also
+
+- **Health reads trawl 1.8.0's solve timeout as a timeout.** trawl 1.8.0 says "Scrape deadline exceeded" where 1.7.0
+  said "…-challenge-timeout", so a site whose solve ran out of time got no cooldown and an "unknown" diagnosis. It now
+  gets the usual cooldown and "The site presented a Cloudflare challenge the solver could not finish in time".
+
+### Upgrading
+
+- **TRUST_PROXY (new):** by default the server believes a forwarded visitor address only from a proxy on the same
+  machine, in Docker or on your local network (nginx, Nginx Proxy Manager, Caddy, Traefik, Umbrel, CasaOS, a Cloudflare
+  tunnel). If your reverse proxy is on a public address or reaches the server over Tailscale, add its address (or a
+  CIDR range) to the default list rather than replacing it, so a hop on this machine or in Docker stays trusted:
+  `TRUST_PROXY=loopback, linklocal, uniquelocal, 203.0.113.9`. Behind Cloudflare's proxy (the orange cloud), have
+  your reverse proxy restore the visitor's address from `CF-Connecting-IP`, or add Cloudflare's ranges the same way,
+  or the activity log shows Cloudflare's addresses. Otherwise nothing to do. See docs/CONFIGURATION.md.
+- **Split layout (docker-compose.split.yml):** `docker compose up -d` moves the extension engine to its new network.
+  Nothing else changes.
+- **OIDC_LINK_BY_USERNAME:** accounts already linked are unaffected. A first sign-in links an existing account only if
+  your provider sends a `preferred_username` (or `nickname`) equal to the account's username.
+
+## v0.69.0 — 2026-10-15
+
+**The extension engine moves to v2.4.2366.** Every install mode now pins Suwayomi-Server v2.4.2366: the compose files,
+the Unraid template, the CasaOS add-on and the desktop app. It ran on a real server for a day before this release. A
+server that keeps v2.3.2243 keeps working, and **Admin → Health** recommends the update, with the backup to take first.
+The desktop app updates its engine by itself, and keeps a copy of the engine's database before the new version first
+opens it.
+
+### The extension engine moves to v2.4.2366
+
+- **What the new engine brings**, from Suwayomi's own notes: an extension whose update fails is no longer lost;
+  a Cloudflare-protected source's search reaches the site through the solver with its whole request, not only when it
+  is a form, and the source's own errors come through instead of reading as a failed Cloudflare check; a new chapter
+  with no date is no longer dated 1970 by the engine (hbook reads both since v0.64.0); and fixes for some
+  extensions' series links, browse filters with nested groups, and pages in non-Latin scripts.
+- **On a server, you choose when, and it is one way.** `docker compose pull` fetches the same engine again. This
+  release's compose files, Unraid template and CasaOS add-on name v2.4.2366; an install you already have changes one
+  line. The engine upgrades its database when v2.4.2366 first starts, and v2.3.2243 cannot read it again, so back it
+  up first: [Updating the engine](docs/extensions.md#updating-the-engine) has the steps for Docker Compose, Unraid,
+  CasaOS and an engine you run yourself, each with the way back.
+- **Health says so, quietly.** On an engine still at v2.3.2243, **Admin → Health → Extension engine** adds a greyed
+  line: older than the version this hbook was tested with, it works, updating is recommended, then the backup and
+  the step for your setup. Nothing turns amber: this release works with v2.3.2243 too. The step to update an engine
+  that is too old to work starts with the backup now as well.
+- **hbook Desktop updates its engine by itself.** On a computer that had the engine, the first start after this
+  update downloads v2.4.2366 (about 200 MB) without a click; until now an engine update would have left extensions
+  stopped until someone found the download button again. Before the new engine first opens its data, the app keeps
+  a copy of the engine's database in `engine-snapshots` in its data folder (the two newest copies stay), and if it
+  cannot make one, on a full disk, it does not start the new engine and says why. The old engine's files are deleted
+  once the new one runs.
+
+### For contributors
+
+- `bff/test/enginePins.test.ts` holds the FlareSolverr DTO fixture to the pin too: the desktop solver's contract must
+  decode with the pinned engine's DTOs, verbatim, and with no other engine's.
+- The solver contract has v2.4's two rules: a POST body of any kind reaches the browser byte for byte (the Electron
+  check compares the bytes a site receives, where it compared lengths), and a solve counts for v2.4 only with a
+  `cf_clearance` cookie, which the solver hands back from its jar untouched.
+- No test hard-codes the tested engine any more: Health's wording tests fix their own versions and the web tests read
+  the pin, so the next `scripts/engine/bump.mjs` moves the pin without touching them. `startFakeSuwayomi({ schemaFile })`
+  runs one fake as another engine, and the 1970-date guard is checked end to end against v2.3.2243 as well as the pin.
+
+### Upgrading
+
+- **hbook's own database:** no change; v0.68.0 runs on it.
+- **The extension engine on a server:** nothing changes until you change its tag. Do it with a backup:
+  [Updating the engine](docs/extensions.md#updating-the-engine).
+- **hbook Desktop:** the first start after the update downloads about 200 MB, once, and keeps a copy of the
+  engine's database first.
+
+## v0.68.0 — 2026-10-15
+
+**A series you add can go on your trackers as Plan to read.**
+
+### Plan to read when you add a series
+
+- **A new switch at the foot of Profile → Connections → Progress tracking** ([#223](https://github.com/YUnauuu/hbook/issues/223)).
+  With it on, a series you add to the library goes on your trackers as Plan to read: AniList's Planning,
+  MyAnimeList's Plan to Read, Kitsu's Want to Read. It is off until you turn it on.
+- **Only where your list has nothing for it yet.** An entry you already have, in any state, is left exactly as it is.
+- **On every tracker the series is linked to.** An add links it to AniList by itself; MyAnimeList and Kitsu links come
+  from importing your list from them.
+- **Only for you, and never while Incognito reading is on.** Adding a series that is already in the library counts too;
+  a series that arrives any other way (a library scan, an admin's import) is nobody's add.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.67.3 — 2026-10-15
+
+**Fast scrolling on a computer is smooth: the film grain steps aside while the page moves.**
+
+### Fast scrolling
+
+- **The film grain pauses while the page moves, and fades back in when it stops.** Its blend over the whole screen
+  made the graphics card redraw everything beneath it on every frame of a scroll, and that alone made a fast scroll
+  stutter. A fast flick through the Library now runs at about 56 frames a second instead of 39, and Home at 53–58
+  instead of 49–55. At rest nothing looks different.
+- **Scrolling does less work on every frame.** The scroll position is no longer measured on every frame of a scroll.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.67.2 — 2026-10-15
+
+**The app does about half the work while you are not touching it, a page change is the fade it was designed to be
+instead of a flicker, and a series opens already loaded.**
+
+### Less work, the same look
+
+- **Covers still loading below the screen no longer cost anything.** A cover that has not loaded wears a shimmering
+  placeholder, and the Library kept up to 158 of them shimmering where nobody could see them, every frame of them work
+  for the whole page. Off the screen they are now skipped, and a placeholder starts shimmering as it comes near. With
+  the processor slowed four times, as a modest computer or a phone: an idle Library does 47% less work, Home on a phone
+  49% less, scrolling Home on a phone 47% less, and running the pointer across covers 51% less.
+- **A phone no longer runs smooth scrolling's frame loop.** It only ever moves a mouse wheel's scroll, and a phone ran it
+  on every frame of every page, the reader's included, for nothing. A computer's is unchanged.
+
+### The page change, as designed
+
+- **The old page fades out, then the new one fades in, once.** Since it was written, a click showed the next page at
+  once inside the fade-out, faded it to black and faded it in again, and built it twice. Changing pages now does a third
+  to half less work.
+- **A series opens already loaded.** Its details and chapters are asked for at the click on its cover, not after the
+  fade, so it fades in with them.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.67.1 — 2026-10-14
+
+**Scrolling with a mouse wheel works over a series again, and on a phone Home opens on a cover too.**
+
+### Scrolling with a mouse wheel
+
+- **The page scrolls when the pointer is over a series.** On a computer, the page stopped dead wherever a series in a
+  row of covers was under the pointer (Home's rows, a series' Related, Discover, Admin's Top 10), so only the scrollbar
+  moved it. A sideways swipe or Shift+wheel still scrolls the row itself. The Settings index and a series' genres had
+  the same problem and are fixed too.
+
+### Home on a phone
+
+- **Home's hero is the daily pick's cover**, filling it edge to edge as a series page's has since v0.67.0, where it
+  showed the automatic banner's panels. A computer keeps the banner.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.67.0 — 2026-10-14
+
+**On a phone, a series opens on its cover.** The cover fills the top of the page edge to edge — a phone held upright is
+the cover's own shape — with the title on its lower edge and the reading button right under it. A computer's series page
+is unchanged.
+
+### A series opens on its cover
+
+- **The cover is the hero**: sharp, the screen's width, drifting slowly closer (still under **Reduce effects**). The wide
+  banner showed only a slice of its middle on a phone, in a strip a third of this height.
+- **The title sits on the art**: the status, the title and its details are on the cover's foot, where they had been
+  squeezed beside a small cover in up to four lines.
+- **A clean bar when you scroll**: clear over the art, then glass with the title once you scroll past it. Before, the
+  reading button showed through the bar as it scrolled under it.
+- **Continue comes first**: under the art, the reading button and the four keys, then the ratings and the sources. The
+  genres are one row you swipe.
+
+### The Cloudflare solver
+
+- **trawl 1.8.0 for the extension engine.** A Madara extension asks a Cloudflare-protected site for its lists and
+  searches with a form post, and trawl 1.7.0 refused every one (*body requires a Content-Type header to be set*), so a
+  site like ManhuaUS failed its Popular and Search through it. 1.8.0 takes them, and the trawl service in
+  [the Cloudflare solver](docs/CONFIGURATION.md#the-cloudflare-solver) now pins it.
+
+### Upgrading
+
+- Nothing to do in hbook itself.
+- **If you run trawl**, move its image to `ghcr.io/germondai/trawl:1.8.0` and recreate its container. No setting
+  changed, and neither FlareSolverr nor Byparr is affected.
+
+## v0.66.0 — 2026-10-14
+
+**Make hbook look the way you like.** Home's rails can go in the order you read them, and the background can be
+softer than true black. True black stays the default and looks exactly as before.
+
+### Home in your order, and two softer backgrounds
+
+- **Customize**, at the end of Home's greeting line, lists Home's rails with arrows to move each one and a switch to
+  hide it. Home changes as you go, and the arrangement is saved to your account, so your other devices open the same
+  Home. **Reset** brings back the original order.
+- **Your lists move as one rail.** Which lists Home shows is still chosen on **Lists**; the sheet's **Choose lists**
+  takes you there.
+- **A hidden rail isn't loaded at all.**
+- **Background**, in **Profile → Settings → Appearance**, offers **OLED black** (the default), **Graphite**, a soft
+  charcoal, and **Midnight**, a deep blue, for screens where true black feels harsh. The whole app follows: the page,
+  cards, sheets, the sidebar, and a phone browser's own bar.
+- **It is saved to your account** like the accent colour, and applied before the first frame, so a reload never
+  flashes black first. The sign-in screen stays black.
+
+### Upgrading
+
+- Nothing to do. For scripts: `/api/settings` carries two more keys the app writes, `homeRails` and `tone`
+  ([docs/api.md](docs/api.md)).
+
+## v0.65.1 — 2026-10-14
+
+**Two requests from @klave7, the first of them promised for the new look: chapters as one list, and Mark unread on a
+chapter you are part-way through.** Thank you.
+
+### Chapters as one list
+
+- **Layout**, at the end of a series' chapter toolbar, switches the chapters between **Columns** (side by side, as
+  before) and **List** (one row per chapter, the page's width), so a long chapter title is read whole
+  ([#214](https://github.com/YUnauuu/hbook/issues/214)). It is the Library's own Layout control, remembered on
+  this device; a phone shows one list either way.
+
+### Mark unread
+
+- **A chapter you are part-way through offers Mark unread** in its menu, beside Mark read, and its page goes with it
+  ([#215](https://github.com/YUnauuu/hbook/issues/215)). Before, only a finished chapter could be marked unread,
+  and one that was showed *page 0/19*.
+- **The series page's select bar** (Mark read, Mark unread, Fetch, Remove…) is keys, like the Library's.
+
+### Upgrading
+
+- Nothing to do.
+
+## v0.65.0 — 2026-10-14
+
+**A new look.** On a computer the menu is a slim sidebar with the art running under it, Home's banner shows whole
+pictures instead of slices, and a series opens on its banner at the window's full width. The rest of the app follows:
+Lists with covers, Offline downloads by series, Updates and History in columns, and Admin with a compact header and a
+Settings index. Nothing moved out of reach, and **Reduce effects** calms all of it as before.
+
+### On a computer
+
+- **A sidebar instead of the top menu.** Home, Library, Lists, Discover, History, Moments, Offline and Admin sit in a
+  rail of icons down the side, which opens into a labelled panel while the pointer rests on it (or when you Tab into
+  it). The Library's downloads ring and Admin's Health mark moved with them. The top bar keeps search, Updates and your
+  avatar, and it is see-through over a banner until you scroll.
+- **Check for new chapters** left the top bar for a key on **Updates**. The search palette and Admin still have it.
+- **Narrower than 1280 px**, the Library's filters are behind its **Filters** key, so the covers keep their room.
+
+### Home and the series page
+
+- **Home's banner shows whole pictures.** The automatic banner is four series side by side, and a narrower screen used
+  to cut the outer two in half. Now it shows three or four whole ones (two by two on a phone), faded into the page.
+- **Rails have arrows**, and their cards grow with the screen. **Continue reading** shows the page you're on.
+- **A series opens on its banner**, the window's full width, with the cover overlapping it. Its genres open the Library
+  filtered by them, and the chapter list's toolbar and pager are keys.
+
+### Everywhere else
+
+- **Lists:** each list shows its first covers, and New list and Delete use the app's own dialogs. The series page's
+  key says *Add to list*, and Lists is in the search palette.
+- **Offline downloads** are grouped by series, with their covers, even with no connection.
+- **Updates and History** use the screen's width instead of one narrow column.
+- **Admin:** the big header is on Overview only; the other tabs have a compact one. **Settings** has a row of keys that
+  jump to each section, and **Members'** actions are keys.
+- **Profile:** its tabs are one row, with Admin, Support and Sign out at its end.
+- **Tabs on a phone** are underlined rather than pills, and buttons that act are squared keys. Only filters and sorts
+  stay round.
+
+### Upgrading
+
+- Nothing to do. For scripts: `GET /api/lists` items carry `preview`, the ids of a list's first four series
+  ([docs/api.md](docs/api.md)).
+
+## v0.64.0 — 2026-10-14
+
+**You decide what a new member starts with, and hbook is ready for the next extension engine.** The first is the
+last part of **@DrummyFloyd**'s request ([#208](https://github.com/YUnauuu/hbook/issues/208)): a server that lets
+people sign up, or lets them in through its sign-on provider, no longer gives every new account the whole library. Thank
+you. The second changes no one's engine: every install mode still pins v2.3.2243, but hbook now works with v2.4.2366
+as well, says plainly when an engine doesn't match, and tests every new engine release before anyone runs it.
+
+### What new members start with
+
+- **Admin → Members → When someone signs up** sets what an account starts with when no admin chose for it. That is
+  someone signing up while Open registration is on, or signing in through your provider for the first time with
+  `OIDC_ALLOW_SIGNUP`. The card has a member card's own three chips: downloads, which libraries they can open, and an
+  age limit. In SSO-only mode the chips are on the *New accounts* card.
+- **The account is made with them.** Even its first page view is limited. Before, you had to find each new account in
+  Members and limit it after its first visit had already seen everything.
+- **Nothing else changes.** The defaults don't apply to the server's first admin or to an account you make in Members,
+  and saving them changes no account that exists. An account your provider makes an admin (`OIDC_ADMIN_GROUP`) sees
+  everything while it is one, and has the defaults if the provider ever makes it a member.
+- **A library you remove leaves the defaults.** If it was the last one, new members see nothing until you choose again,
+  never every library.
+- **For scripts:** `newMemberDefaults` on `PATCH /api/admin/settings`, in the shapes a member's own settings take
+  ([docs/api.md](docs/api.md#admin)).
+
+### The extension engine
+
+- **An engine that doesn't match says so.** When the engine refuses what hbook asks (an engine much older or newer
+  than this hbook knows), **Health → Extension engine** now reads *Not compatible*, quotes the engine, and gives the
+  one step for your setup: Docker Compose, Unraid, CasaOS, the desktop app or anything else. It used to say *Not
+  answering*, and restarting the container changed nothing. Its series say why they wait, and **Admin → Sources** says
+  it too.
+- **Health shows the engine's version** when it isn't the one this hbook was tested with: newer (with how to go
+  back safely), older, or too old to work.
+- **No more chapters dated 1970.** The engine dated some new chapters in seconds instead of milliseconds, so they showed
+  as January 1970 in Releases, a group's history, the catalogue and the Komga API. hbook reads both now, and puts
+  right the dates it already stored when you upgrade.
+- **Nothing the engine has marked for removal is used any more**, so its next releases can't break hbook that way:
+  the 18+ flag (an extension marked *mixed* counts as 18+), the chapter list, the engine's version, and repositories.
+- **Repositories are the engine's extension stores.** An address is checked when you add it, and if the engine can't
+  read it, the message says why in the engine's words. Adding, removing and the nightly restore work as before.
+
+### Fixed
+
+- **hbook Desktop on Windows no longer fails to start** when another program has its `state.json` open at the moment
+  it saves it: an antivirus scan or a backup, for example. Saving that file waits up to two seconds and tries again,
+  where the first such moment stopped the start and left the loading page up for good.
+
+### For contributors
+
+- **A weekly canary** (`.github/workflows/engine-canary.yml`) runs every new stable Suwayomi-Server, and the newest
+  preview, through what hbook asks of an engine: its schema, every GraphQL document hbook sends (one registry,
+  `bff/src/lib/sources/suwayomi/operations.ts`), a source end to end, an extension store, and the fake-engine tests.
+  `scripts/engine/bump.mjs <tag>` moves every pin at once. It posts nothing until the repository variable
+  `ENGINE_CANARY_POST` is `on`.
+
+### Upgrading
+
+- **Database:** three new columns on `server_settings`, all unset. Until you set a default, a new account opens every
+  library, has no age limit and may download, as before. At the first start, chapter dates stored as 1970 are put right
+  once (chapters, the chapter lists, posting order). v0.63.0 runs on the upgraded database and ignores the new columns.
+- **The extension engine stays at v2.3.2243.** Moving to v2.4.2366 is a later release.
+
+## v0.63.0 — 2026-10-14
+
+**Single sign-on can now be the only way in.** This came from **@DrummyFloyd**'s request
+([#208](https://github.com/YUnauuu/hbook/issues/208)), after a security review of their own server. Thank you.
+
+### SSO-only mode
+
+- **`AUTH_MODE=oidc-only`** makes your OpenID Connect provider (Authentik, Authelia, Keycloak…) the only way to sign
+  in. First-run setup, password sign-in, sign-up, password change and two-factor are not served at all, so a server on
+  the internet has nothing there to guess at or rate-limit. The sign-in screen shows the provider's button alone.
+- **The first admin comes from the provider.** On a new server, the first sign-in from the person
+  `OIDC_BOOTSTRAP_ADMIN_SUB` names, or else from someone in `OIDC_ADMIN_GROUP`, makes that person the admin. Nobody can
+  take a fresh server by being its first visitor. A refused first sign-in is logged with its subject, ready to copy.
+- **Accounts come from the provider.** With `OIDC_ALLOW_SIGNUP`, anyone the provider lets in gets an account at their
+  first sign-in. **Admin → Members** makes no account and resets no password in this mode.
+- **Linking the accounts you already have.** **Profile → Account** now has *Link to …*, which links the identity you
+  sign in with at the provider to your account here. Link accounts before you turn the mode on. At every start, the
+  log lists any account that can no longer sign in.
+- **A way back in.** If the provider is ever down, `AUTH_RESCUE_ADMIN` reopens password sign-in for one admin account
+  until you remove it. It's logged at every start and at every sign-in it allows.
+- **The server refuses to start in a configuration that can't work** and says why: a typo in `AUTH_MODE`, no provider,
+  `OIDC_LINK_BY_USERNAME`, or a new server with no way to make its admin.
+- **Setup:** the install guide's new *Single sign-on* section has an Authentik example. Every setting is in
+  [docs/api.md](docs/api.md#sso-only-mode).
+
+### Also
+
+- **The last admin keeps their role.** With `OIDC_ADMIN_GROUP` set, roles still follow the provider at every sign-in,
+  but the server's last admin is never demoted that way.
+
+### Upgrading
+
+- **Database:** no changes.
+- **Nothing changes unless you set `AUTH_MODE=oidc-only`.** The bundled compose files pass the three new settings
+  through from `.env`.
+
+## v0.62.0 — 2026-10-14
+
+**Chapters stay in the series' language, whatever the source. An admin can also fetch again, or delete, one chapter
+from its ⋯ menu.** Both came from a new user's report: a server set to English only downloaded a few series in
+Spanish; fetching them again gave every chapter two versions, and the Spanish one still won. Thank you.
+
+### Chapters in the series' language
+
+- **A chapter is never taken in another language than its series'.** hbook chose each chapter's copy by group,
+  source and date, and never looked at its language. Now a copy known to be in another language is never downloaded,
+  whichever source ranks first. A chapter out only in another language waits until it is out in the series' language.
+  *Fetch* on such a chapter says why, and the chapter's **Versions** mark that copy with its language.
+- **English MangaDex is English only.** For a title with no English chapters, it used to fall back to another
+  language, which is how an English series filled up with Spanish chapters. Its search now finds only titles that have
+  English chapters. Series that relied on the fallback move to MangaDex in their own language when you upgrade (see
+  *Upgrading*).
+- **Chapters already here in another language are listed above the chapter list**, for admins, with **Fetch them
+  again in English** (or whatever the series' language is). Each file is replaced on its own row, so everyone keeps
+  their place.
+- **A site added by address knows its language.** It is read from the site's homepage when you add it. The site's
+  sheet shows it and lets you change it. Before, every such site counted as English (or as your *Sites that do not say
+  their language*), so a Spanish site could be followed by an English series.
+- **A source in every language is never followed automatically.** An extension source that lists every language's
+  chapters together now reads *All languages, mixed*. Its sheet and **Languages** say what it is; before, *All
+  languages* there looked like a switch for every language. When a series does use one, hbook keeps to the group
+  of the chapters you have, instead of taking whichever translation came out first. In Discover's search, such a
+  source is offered last on a card.
+- **Changing a series' language re-picks its chapters at once**, not at the next check.
+- A series whose language was set by hand to one none of its sources has (Korean for a manhwa read in English, say)
+  updates as before.
+
+### One chapter at a time
+
+- **Fetch again** and **Delete from server** are in each chapter's ⋯ menu, for admins, on chapters hbook
+  downloaded. Before, they were only in the select bar. Each asks first.
+
+### Upgrading
+
+- **Database:** one new column, `lib_books.lang`, added automatically. It keeps the language of each chapter English
+  MangaDex fetched in another language, so those chapters can be listed and fetched again. v0.61.2 still runs on the
+  new schema if you need to go back.
+- **MangaDex:** a series stated in another language, whose chapters came from English MangaDex's fallback, moves to
+  MangaDex in that language. That language is switched on under **Admin → Sources → Add sources → MangaDex
+  languages**. Its chapters stay, and new ones come from the new source. Other series keep English MangaDex.
+- Nothing else to do.
+
+## v0.61.2 — 2026-10-13
+
+**AniList, MyAnimeList and Kitsu no longer mark a series Completed while it is still coming out. The Library's unread
+count no longer stops at 99+, and dashboards can show how many chapters you have.** All three came from
+**@CheetahDoesStuff** ([#201](https://github.com/YUnauuu/hbook/issues/201),
+[#202](https://github.com/YUnauuu/hbook/issues/202), [#204](https://github.com/YUnauuu/hbook/issues/204)).
+Thank you.
+
+### Completed only when a series has ended
+
+- **A series still coming out stays Reading.** Once you had read every chapter on the server, your tracker was told you
+  had completed the series, even while it was still releasing. So it moved to your Completed list every time you
+  caught up. Now hbook asks the tracker first. It moves a series to Completed only when the tracker says the series
+  has ended and you've reached its last chapter, the rule Mihon uses.
+- **A re-read stays a re-read.** A series the tracker already has at or past your chapter is left alone, so the
+  tracker never moves backwards.
+- **Series this already marked Completed** go back to Reading the next time you finish a new chapter of them. You can
+  also fix them on the tracker straight away.
+
+### The whole unread count
+
+- **The unread tag on a series shows the whole number**, for example "1,150", instead of stopping at "99+". Before,
+  nearly every long series showed the same "99+". Hover the tag to see that it counts unread chapters.
+
+### Chapter totals, and Homepage
+
+- **Admin → Overview** shows how many chapters your library holds, next to the series count.
+- **[Homepage](https://gethomepage.dev)'s own Komga widget works with hbook.** It shows your libraries, series
+  and chapters, with a read token and nothing to map. The user guide has the snippet (section 9, *On a dashboard*).
+- `GET /api/admin/stats` also gives `booksTotal`, every chapter as one number, for your own dashboard tiles.
+  hbook doesn't record volumes, so there is no volume count.
+- For Komga apps, `GET /api/v1/books` now lists every chapter you can see; before, it was always empty. So the
+  *Books* type in Mihon's Komga extension lists them too.
+
+### Upgrading
+
+- **Database:** no changes.
+- Nothing else to do.
+
+## v0.61.1 — 2026-10-13
+
+**Backups stay small wherever the backup folder is mapped, and you choose how many to keep, or switch the nightly backup
+off.** Both came from **@Wolf92s**'s report ([#199](https://github.com/YUnauuu/hbook/issues/199)). Thank you.
+
+### Backups that stay small
+
+- **A backup no longer includes the backup folder.** With the backup folder mapped inside the config folder, or onto
+  the same folder, every backup carried all the earlier ones, which carried the ones before them. The folder grew
+  exponentially, however few backups were kept. Each run now finds its own folder inside the config folder and leaves
+  it out, whatever the mapping. If yours grew like that, you can delete the old, oversized backups yourself.
+- **Admin → Settings → Updates & schedules** has two new rows beside the backup time:
+  - **Nightly backup**, on by default. Switch it off if you back up another way; *Run now* under Tasks still makes a
+    backup.
+  - **Backups to keep**, from 1 to 365. The oldest backups beyond that number are deleted after each backup, never
+    when you save the number. Until you save one, it is `BACKUP_KEEP`: 14, unless you set that variable.
+- **Run now on the backup** now reports a backup that missed the config folder, as the nightly one already did.
+
+### Dependency updates
+
+- The server's Fastify plugins and argon2, Next.js 16.4 and framer-motion 14 in the web app, and Electron 44.7 in the
+  desktop app ([#195](https://github.com/YUnauuu/hbook/pull/195),
+  [#196](https://github.com/YUnauuu/hbook/pull/196), [#197](https://github.com/YUnauuu/hbook/pull/197),
+  [#198](https://github.com/YUnauuu/hbook/pull/198)). Nothing should look or work differently.
+
+### Upgrading
+
+- **Database:** two new settings columns, `backup_enabled` and `backup_keep`, added automatically. v0.61.0 still runs
+  on the new schema if you need to go back.
+- Nothing else to do.
+
+## v0.61.0 — 2026-10-12
+
+**When the next chapter is due, how long you've read, what to read next, lists that keep themselves up to date, and a
+reader that fits more screens.** Also: connecting AniList works the first time
+([#190](https://github.com/YUnauuu/hbook/issues/190)), a sign-up form, and Incognito reading.
+
+### Release radar
+
+- hbook now estimates **when a series' next chapter is likely**, from when its chapters usually come: the dates its
+  sources list, or, where they list none (most don't), when chapters arrived on this server. Only for a series that
+  keeps a rhythm (four releases or more, mostly evenly spaced, still running), and always said as an estimate:
+  *~Friday*, *usually Fridays*, *due any day*, *running late*.
+- It shows under the reading progress on the series page, on **Updates → Expected this week** (your favourites and what
+  you read in the last 90 days), as the Library's **Releasing soon** order, and on the reader's last page, which now
+  says *You're all caught up* when more is on the way.
+- **Smart update checks** (Admin → Settings → Updates & schedules, off by default): the scheduled check asks series
+  that have been quiet for a long time less often, at least every three days, and every series as usual while its next
+  chapter is due. *Check now* always asks at once. On the library it was tested on, about half as many requests a day.
+
+### Reading time
+
+- **How long you've read**, worked out from the page turns hbook already records, so it covers your reading from
+  before the update too. **Profile → Reading studio** shows the last 7 days, the last 30 days and the year, about how
+  long a chapter takes you, the hours of the day you read and on which devices. A pause of more than five minutes is a
+  break, and two devices reading at once are never counted twice.
+- **Wrapped** adds the year's hours, and a series page says *Catch up in ~2 h* beside the release estimate.
+- The household's weekly board stays a count of chapters.
+
+### Related works and recommendations
+
+- **Related** on the series page: AniList's sequels, prequels, main story, side stories, spin-offs and alternative
+  versions. One you have opens in your library; one you don't opens Discover searching your sources for it.
+- **Next in the story** on the reader's last page.
+- **More like this** now puts first what AniList's readers recommend that you already have.
+- **Discover**: *Because you read …* (for accounts that may add series), and **trending manga** and **manhua** rails
+  beside the manhwa one. A Discover address with `?q=` opens on that search.
+- All of it is kept in the background with the AniList scores, about every six hours: nothing asks AniList when a page
+  opens, a library with AniList lookups off sends nothing, and the 18+ switch and age limits apply to each person.
+
+### Lists
+
+- **Save as list** in the Library keeps the filters and order you have on as a **live list**, which follows your
+  library as it changes. *Edit filters* opens the Library with them on.
+- **Share** any list with the household: everyone else can read it and put it on their Home, never change it, and sees
+  only the series they may open.
+- Lists has *Your lists* and *Shared with you*; live and shared lists can be Home rails, and OPDS readers get each list.
+
+### Small touches
+
+- **Incognito reading** (Profile → Settings → Reading, or the reader's settings): your place is kept, but what you read
+  stays out of your history, stats and the household's boards, and nothing is sent to your trackers. It covers your
+  whole account, every device and Mihon, because the server applies it.
+- **Pick back up** on Home: series you stopped part-way through, three months to two years ago.
+- **Hidden gems** on Home: series AniList's readers score 75 or more that nobody on this server has read.
+- **OPDS readers** get your own shelves: Keep reading, Favourites and your lists.
+- **Reading done offline is dated when you read it.** It used to land on the day the phone came back online, in history,
+  streaks and Wrapped, and a chapter first opened offline resumed at the first page read offline, not the last.
+
+### The reader
+
+Every new setting is off, or the reader as before, until you change it.
+
+- **Wide pages:** on a phone held upright, a double-page spread can be split into its two pages or turned on its side.
+- **Crop page borders** trims the blank margins around scanned pages.
+- **Colour filter**, per device: invert, grayscale or e-ink (e-ink also turns pages without sliding).
+- **Tap zones, keys and a game controller**, per device: Edges, L shape, Kindle-style or Off; any key for any action;
+  and a controller, on an https address.
+- **Pick the mode for each series:** long strips and webtoons open in Webtoon mode, manga and right-to-left series in
+  Paged. A series or source you have set yourself keeps its own.
+- **Long webtoons** keep far fewer images decoded (three tall strips at most, down from nine), start loading the next
+  chapter earlier, and keep your place through a zoom.
+- Fixed: settings that synced late could change the open title's mode; a source's default mode could open a chapter on
+  its first page while the counter said 9; switching mode mid-chapter lost your place.
+
+### Connecting trackers
+
+- **Get a token from AniList** opens AniList's own page for hbook: approve it, copy the token AniList shows, paste it.
+  If what you paste is an app's client ID or secret, hbook says so. Thanks to **@Kedryn** for the report
+  ([#190](https://github.com/YUnauuu/hbook/issues/190)).
+- Connecting says why it failed: a token the service turned down, a service this server could not reach, and a service
+  that refused the request are three different messages. **Test connection** checks a connection whenever you like.
+- The user guide has step-by-step guides for MyAnimeList and Kitsu tokens.
+
+### Sign-up
+
+- With Admin → Settings → **Open registration** on, the sign-in screen has **Create an account**. A name that differs
+  from an existing one only in capital letters is taken, and two people signing up for the same name at once can't both
+  get it.
+
+### Upgrading
+
+- **Database:** two new tables (`series_radar`, `anilist_related`) and new columns on `collections` and
+  `server_settings`, all added when the server starts. v0.60.1 still runs on the new database if you go back.
+- Release estimates appear a minute after the server starts; related works fill in over the next AniList round.
+- **For scripts** ([api.md](docs/api.md)): new `GET /api/updates/expected`, `GET /api/stats/time`,
+  `GET /api/series/:id/reading-pace`, `GET /api/series/:id/related`, `GET /api/discover/because`,
+  `POST /api/trackers/:provider/test`, `GET /opds/continue`, `GET /opds/favorites` and `GET /opds/lists/:id`. Every
+  series carries `hbook.radar`; `GET /api/collections?scope=all` adds live and shared lists; `GET /api/discover/trending`
+  takes `country`; `GET /api/series/:id` sends `seriesType`; `/auth/register` takes a device name and answers 409 for a
+  taken name.
+
+## v0.60.1 — 2026-10-12
+
+**Eight fixes found by reading a contributor's fork: Keep reading, extension installs, long strips in the nightly repair,
+and a few small ones.** Every one was found by **@Squeaks72**, who built them in their own fork and offered them back
+([#176](https://github.com/YUnauuu/hbook/discussions/176)). Thank you.
+
+### Fixes found in a contributor's fork
+
+- **Keep reading lost a series** when the chapter you were part-way through was deleted: by an admin, by Verify, or by
+  the cleanup of read chapters. The row now offers the series' next chapter instead.
+- **Installing, updating or removing an extension** unregistered every extension source while the engine answered. For
+  those seconds:
+  - Health called every extension series "no longer installed".
+  - The check for new chapters skipped them.
+  - A download in progress could fail.
+  - Discover lost them.
+
+  Sources now stay registered until the new list is ready, and are swapped in one step.
+- **The nightly repair no longer replaces long-strip chapters.** Since v0.55.10, Health has known that a webtoon chapter
+  stitched into one or two very tall images is not a failed download. The repair didn't: it could follow new sources for
+  the series and swap the chapter for another site's sliced copy. It now leaves them alone, and long strips can no longer
+  use up its 20 chapters a night.
+- **With Fix everything as the nightly,** three steps never ran: the opt-in group upgrades and borrowed chapter names,
+  and learning which way series read. They now run after it, as they do in the plain nightly.
+- **Very tall strips** failed to load in the page grid, as chapter thumbnails, and as a series cover made from such a
+  page. These are images over 16,383 pixels tall at the size asked for. Such a page now comes as JPEG, and its thumbnail
+  shows the top of the strip. Every other image is unchanged.
+- **On a phone, a long series title** could slide under the banner and lose its first lines.
+- **The heart leaned left:** its two halves met two pixels to one side of its tip. It is symmetric now.
+- **After an admin adds, renames or removes a library,** the Library page's library filter and the 18+ switch update
+  straight away, instead of up to five minutes later.
+
+### Upgrading
+
+- **Database:** no changes.
+- Nothing else to do.
+
+## v0.60.0 — 2026-10-11
+
+**A calmer, cooler series page and Library, and ratings said once.**
+
+### The series page
+
+- **One button to read:** *Continue · Ch. 42* when a chapter is half read, *Next · Ch. 11* after chapters 1–10, *Start
+  reading* the first time, and *Read again* once everything is read. A line under it says how far you are.
+- **Four keys** under it: Favourite, Offline, List and **More**. Everything else (notes, mark all read, find missing
+  chapters, archive slowly, copy link, and the admin tools) is in More, in groups. Before, up to twelve buttons were
+  stacked under the cover, and on a short screen an admin's bottom ones could not be reached.
+- On a phone, a small bar with Continue, the heart and More stays at hand while you scroll the chapters.
+
+### The Library
+
+- A **toolbar**: search your library, one **Sort** menu where every order runs both ways (*Newest first* or *Oldest
+  first*, *A–Z* or *Z–A*, …), and **Comfortable, Compact or List**, remembered on each device. The sidebar keeps the filters.
+- **Covers show how far you are**: a thin progress bar along the bottom edge, and squared unread tags.
+- Changing a sort, filter or search keeps the grid on screen until the new one arrives, instead of blanking it, and a
+  library that fails to load says so, with Try again.
+- **The filters are rows, not pills.** Each choice has its own mark (a ring that fills for read state, a sign for status,
+  the source's icon, a cover mosaic for formats and genres), its count, and a tick when it is on. Sections fold, and a
+  folded one still says what it is filtering by.
+
+### Ratings, said once
+
+- The series page shows AniList's score and how many readers list it, beside **your own stars**, in one panel. Before,
+  both appeared up to three times on the same page.
+- The AniList tile opens the series' AniList page.
+- Tap your current star again to **clear your rating**. A rating that could not be saved now says so.
+- Library and Home cards show a score as ★ 84 and popularity as a count of readers.
+
+### Sources
+
+- A site added by address that has stopped answering a real search (its search now lands on its homepage) fails its
+  search, Newest and Popular instead of showing that homepage's titles as results.
+
+### Upgrading
+
+- **Database:** no changes.
+- **For scripts** ([api.md](docs/api.md)): `hbook.anilist` carries the AniList entry's `id`; `PUT /api/settings` accepts
+  `librarySortDir: 'asc' | 'desc' | null`.
+
+## v0.59.0 — 2026-10-11
+
+**Discover loads its sources more reliably, and a source you switched off no longer takes a working one's place.**
+
+These come from going through every extension and source on a real install with Discover asking all of them.
+
+### Sites behind Cloudflare
+
+- **More time for their first page.** A site this server opens through the Cloudflare solver now gets up to 45
+  seconds for its first Discover page, not 15. A fresh solve took 15 to 25 seconds, so the first visit of the day
+  lost exactly these sites, and then counted them as slow. The setting is `SOURCE_LATEST_SOLVER_TIMEOUT_MS`.
+- **Covers no longer tie up the solver.** A cover is fetched straight from the site first, and the solver is asked
+  only when the site actually refuses. Before, every cover from such a site asked the solver first: on one install
+  about 89 of those requests, all of which failed, kept the solver busy while Discover's own pages waited behind them.
+- **One solve per site at a time**, however many covers ask at once. A request whose page has stopped waiting is
+  dropped from the solver's queue instead of being solved for nobody.
+
+### Fairer to slow sources
+
+- Only a source's **first page** counts towards *slow*. Later pages, asked while you scroll, no longer do.
+- **Slow is not quiet.** A slow source keeps its place in Discover's order. Only a source whose page keeps coming back
+  empty is asked last.
+- A source **resting after being slow** still shows its Popular and Newest pages when nothing is saved for them, instead
+  of showing nothing. A source that refused the server still rests, as before.
+
+### Every source on its wall
+
+- A source with a Popular page and no Newest page now shows on Discover's **Popular** wall. It used to be on neither.
+
+### Extensions and the source limit
+
+- A source you **switched off in Health** no longer holds one of the extension source slots (`SUWAYOMI_MAX_SOURCES`)
+  that a working source needs. It registers after every working one. On one install, 16 of the 40 slots went to
+  switched-off sources while a working one was left out.
+- Switching a source off or on in Health takes effect **at once** while the limit is full. Before, a source switched
+  back on stayed out of everything until the next restart.
+- Fix everything's check for room counts the same way.
+
+### Smaller fixes
+
+- The add dialog's search asks **six sources at a time**, not every source at once.
+- A Discover cover that will not load no longer falls back to the extension engine's internal address in your
+  browser.
+- The *slow* note on a site behind Cloudflare names its real time limit.
+
+### Upgrading
+
+- **Database:** no changes.
+- **New setting:** `SOURCE_LATEST_SOLVER_TIMEOUT_MS` (default `45000`, see
+  [CONFIGURATION.md](docs/CONFIGURATION.md)).
+- **For scripts** ([api.md](docs/api.md)): in `GET /api/sources`, a source that is only slow now reads `ok`, with its
+  `note`, not `quiet`.
+
+## v0.58.0 — 2026-10-11
+
+**Ratings from AniList beside your own, sort the Library by popularity, chapters and more, and Discover asks every source.**
+
+### Ratings from AniList, and your own
+
+- Every series linked to its AniList entry now shows AniList's **score** and how many people have it in a list (its
+  **popularity**), next to your own star rating, which stays exactly as it was.
+- The server fetches them in the background: a few minutes after it starts, then every six hours, and only what is
+  missing or three days old. A library whose AniList lookups are off is never asked about.
+
+### More ways to sort the Library
+
+- New sorts: **Most popular**, **Top rated**, **My rating**, **Most chapters** and **Recently read**, beside Updated,
+  Newest, A–Z and Most unread.
+- With one of the new sorts, each card shows the number it is sorted by.
+- Series with no AniList score yet come after the ones that have one, whichever way you sort.
+
+### Home
+
+- A new **Most popular in your library** rail, with each card's AniList score. **See all** opens the Library sorted by
+  popularity.
+
+### Upgrading
+
+- **Database:** additive only. A new table `anilist_scores`.
+- **For scripts** ([api.md](docs/api.md)):
+  - Series carry `hbook.anilist {score, popularity}` and `hbook.lastReadAt`.
+  - `POST /api/series/search` sorts by `popularity`, `score`, `rating`, `chapters` and `lastRead`.
+  - `GET /api/home` carries `popular`.
+  - `librarySort` accepts `popular`, `score`, `rating`, `chapters` and `read`.
+
+## v0.57.0 — 2026-10-10
+
+**Merging duplicate series keeps each chapter once, and the merge shows which copy to keep.**
+
+### One copy of each chapter
+
+- **Before:** merging two copies of a series moved every chapter of one into the other, so a chapter both had was
+  listed twice, on the series page and in Mihon.
+- **Now:** a chapter both copies have is kept **once**.
+  - The kept series' copy stays, unless it is missing pages and the other copy is whole.
+  - What anyone read of the other copy moves onto the one that stays: a finished chapter stays finished, and a
+    chapter half read stays half read. Reading history and notes follow it too.
+  - The other copy leaves the list. Its file is deleted from the download folder. In a library folder the server
+    does not delete from, the file is left where it is and is no longer listed.
+  - A copy someone bookmarked stays, and the merge says so.
+- **Only real duplicates.** It only touches a chapter number each copy had exactly once. An extra filed under its
+  chapter's number (17 beside 17e), a chapter's parts (1053a–d), and a series numbered by posting order are left
+  as they are.
+
+### Duplicates from earlier merges, cleaned once
+
+- A few minutes after the update, the chapters that earlier merges left twice are kept once by themselves, by the
+  same rules. This happens once.
+- On a library with read-only folders, the copies there are set aside (no longer listed, never touched) rather than
+  deleted.
+
+### Which copy to keep
+
+- **Health → Duplicate series → Merge** and **Merge all** now show, for each copy:
+  - its number of chapters;
+  - its main source, and how that source is doing (healthy, failing, turned off…).
+- **Recommended** marks the copy to keep: the one whose source still works, then the one with more chapters. You can
+  still pick the other one.
+- Fix everything's merges pick by the same rule.
+
+### Upgrading
+
+- **Database:** additive only. A new table `set_aside_files` lists the files taken off the list but left on disk.
+- **Going back to v0.56.0:** its scan would list the set-aside files again. The deleted copies stay deleted.
+- **For scripts** ([api.md](docs/api.md)):
+  - `POST /api/admin/series/:id/merge` answers `duplicates` and `keptBoth`.
+  - A Health duplicates row carries `copies`.
+  - Audit: `series.extra_copies`.
+
+## v0.56.0 — 2026-10-10
+
+**Discover shows each series once, with every source that has it, and leaves out what you already have.**
+
+### One card per series
+
+- **Before:**
+  - Discover only merged two sources' copies of a series when their names matched letter for letter, after setting
+    aside case and punctuation.
+  - So "Solo Leveling (Webtoon)", "The Player Who Can't Level Up" against "Player Who Can't Level Up", "Pokémon" against
+    "Pokemon", and every completely different translation showed as separate cards.
+  - Titles in Korean or Japanese script dropped out of search entirely.
+- **Now:**
+  - Names are compared with accents, a "(…)" aside and a leading "The" set aside, in any script.
+  - hbook also asks which series a name is: AniList first, then MangaDex, then MangaUpdates, once per name, in the
+    background. It keeps every other name the answer lists, so "Solo Leveling" and "Only I Level Up" become one card.
+  - It also uses every name your library knows a series by, and the other names a source's own page lists.
+  - A card can fold into another within a minute or so of the wall appearing, as answers come in.
+- **The card shows each source's icon,** up to three plus "+N", instead of "{n} sources". MangaDex shows once, whatever
+  its languages.
+- **Only exact names count,** never "contains", so a spin-off like "Tokyo Ghoul:re" stays its own card.
+
+### Nothing you already have, while browsing
+
+- **Newest, Popular and Trending leave out every series your library holds,** in any language. Before, they were dimmed
+  with an *In library* ribbon.
+- **A series counts as held** when Discover's copy is:
+  - the very series on the very site you added or follow it from (still found after a site moves to a new address);
+  - any name it goes by, including what a followed source calls it;
+  - the same AniList entry.
+- **Search still shows them,** marked **✓ In library**, so searching for something you have finds it.
+- **Adding a series you already hold under another name** now asks first, as adding one with the same title always did.
+
+### Settings and privacy
+
+- **Admin → Settings → Match Discover titles online** switches the lookups off. Cards then fold by their names alone,
+  and nothing is sent anywhere.
+- **What the lookups send:** the title shown in Discover, and your server's address. Nothing about your library.
+
+### Upgrading
+
+- **Database:** additive only.
+  - a new table `title_works`;
+  - `server_settings.discover_lookups` (on by default);
+  - two indexes.
+
+  v0.55.11 runs on the same database, so going back is one line of your compose file.
+- **For scripts** ([api.md](docs/api.md)):
+  - Discover's items and cards carry `work` and `owned`.
+  - New: `GET /api/discover/works`.
+  - `MANGAUPDATES_API_URL` is a new test knob.
+
+## v0.55.11 — 2026-10-09
+
+**The desktop app no longer freezes on an error box when you quit it.**
+
+### Desktop app
+- **The bug (since v0.55.7):**
+  - Quitting could show "A JavaScript error occurred in the main process" and stop there. The built-in database had not
+    shut down yet.
+  - The cause: the app's server sometimes wrote its last log line after it had stopped, and the log file was already
+    closed by then.
+  - It hit about one quit in five on Windows. The newer Electron in v0.55.7 started delivering that late line, where the
+    old one dropped it.
+- **Now:** each log stays open until its background process has finished writing, so quitting is clean.
+- **v0.55.10's desktop downloads** were held back by this bug: the Windows check caught it on every attempt. This release
+  has them.
+
+### Under the hood
+- An error in the desktop app's main process now fails its automated checks at once, with the error's stack. Before, the
+  checks waited ten minutes for an app frozen on that box.
+
+### Upgrading
+- **Database:** no change. The server only changes its version number.
+
+## v0.55.10 — 2026-10-09
+
+**Safari no longer races through a right-to-left series near the end of a volume and marks the skipped volumes read.
+Health stops calling long-strip chapters short, and stops listing a source as slow days after it last was.**
+
+### Reader: the end of a volume in Safari
+
+- **The bug:**
+  - In paged mode, reading right to left, the reader adds the next volume four pages before the end of the current one.
+  - Safari, on iPhone, iPad and Mac, then jumped to the same spot near the end of the new volume. That added the next
+    volume, and so on to the last one.
+  - Every volume it went past was marked read, and the change was sent to your trackers.
+  - Right to left is the default for Japanese series since v0.48.0. Chrome and Firefox were never affected.
+  - Reported by **@elydan** ([#180](https://github.com/YUnauuu/hbook/issues/180)): on volume 5, Safari jumped to the
+    end of volume 8.
+- **Now:** the page you are on stays put when the next volume, the *Up Next* card or a loading error is added, and each
+  page turn moves exactly one page.
+- **If it happened to you:** mark the skipped volumes unread on the series page, and check your tracker's progress for that
+  series.
+
+### Health
+
+- **Short chapters:**
+  - A chapter whose one or two images together are at least ten times as tall as they are wide is a complete chapter
+    stitched into long strips, so it is no longer listed as short.
+  - Health measures those pages once, the way the reader does.
+  - Placeholders, ads and credits banners are still listed.
+  - On the maintainer's library this cleared 6 of 20 findings. Eleceed 215, for example, is two strips each about 54,000
+    pixels tall.
+- **Slow sources:**
+  - A Discover search that took too long counted toward a source being "slow", but a search that answered in time never
+    reset that count.
+  - So one evening of slow searches kept four working sources on the Health card for six days.
+  - A search that answers in time now resets the count. Health, the *Test* button and Discover's source list ignore slowness
+    nobody has run into for a day.
+
+### Smaller
+
+- **Dependencies:** fast-jwt 6.3.4.
+
+### Upgrading
+
+- **Database:** no change. v0.55.9 runs on the same database, so going back is one line of your compose file.
+- **For scripts:** `diagnosis.code` `too_slow` now comes only from slowness seen in the last day.
+
+## v0.55.9 — 2026-10-09
+
+**New chapters download again for a series whose own source is an extension marked 18+.**
+
+### Downloads from a series' own 18+-marked source
+
+- **The bug (v0.55.8):**
+  - A series that isn't rated 18+ but follows a source marked adult had its new chapters listed but never downloaded, by the
+    update check or the slow archive. This is common with manhwa extensions, which mark their whole site.
+  - Nothing was logged, so the series quietly fell behind. Downloading by hand still worked.
+  - Found and fixed by **@TIGamingTV** ([#177](https://github.com/YUnauuu/hbook/pull/177)).
+- **Now:** the copy a series takes from its own source answers to the series following that source, as before v0.55.8. The
+  adult rule still keeps everything else away from a series that isn't 18+: other sources' copies, and new sources found
+  for a missing chapter.
+- **The same for three older jobs:**
+  - completing a chapter saved with missing pages;
+  - replacing a chapter that came in too short;
+  - upgrading a chapter to your preferred group's version.
+
+  These now also use a series' own source when it is marked adult. Before, those chapters stayed as they were.
+
+### Upgrading
+
+- **Database:** no change. v0.55.8 runs on the same database, so going back is one line of your compose file.
+
+## v0.55.8 — 2026-10-08
+
+**Your Library sort is now a default, up to three Lists can live on Home, and each library can opt out of automatic
+AniList lookups. Chapter cleanup is durable and recoverable, scanlator blocks apply safely everywhere, and Reduce
+effects no longer leaves a page hidden after navigation.**
+
+This release incorporates and credits **@TIGamingTV**'s chapter-management and scanlator work in
+[#171](https://github.com/YUnauuu/hbook/pull/171), with the transaction, concurrency, recovery and authorization
+guards needed for release.
+
+### Library and Home
+
+- **A Library sort becomes your default** when you click **Updated**, **Newest**, **A–Z** or **Most unread**, and follows
+  your account to every device. A sort in a shared URL wins for that visit without changing the default. This completes
+  the Library part of [#150](https://github.com/YUnauuu/hbook/discussions/150).
+- **Choose zero to three Lists for Home**, put them in positions 1–3, and move them earlier or later. Home follows that
+  order and shows up to twelve series per rail. An empty selected List keeps its slot; choosing none means no List rails.
+  Until the first edit, the old first-three-nonempty behaviour remains. This completes
+  [#164](https://github.com/YUnauuu/hbook/discussions/164).
+- **Show all chapters at once** is an account setting: one page, every grey row, and older runs unfolded.
+
+### Chapter cleanup and recovery
+
+- **Delete downloaded chapters over a Library selection** is now a persisted background run:
+  - the server answers before it starts unlinking, and the progress window can be closed or rejoined after a reload or
+    proxy timeout;
+  - only one run is active, cancellation happens between series, and an unexpected restart records *interrupted*
+    instead of silently replaying deletion;
+  - each series is rechecked at execution time, and the shared folder lock stays held through deletion, optional
+    unmonitoring and its audit;
+  - manual files, bookmarks, covers, chapter rows and reading progress remain. The confirmation warns that deleting a
+    chapter somebody is reading can lose their position in that file.
+- **Deleted chapters keep their identity.** Duplicate numbers and chapter ranges remain separate tombstones carrying
+  their book id, range, deletion reason and every reader's progress.
+- **Members who may download can restore a deliberate tombstone** from its grey row. hbook uses only that row's
+  canonical stored source copy; it accepts no client-supplied path or source, and never falls back to another copy.
+- **Why a file is absent is no longer blurred together:** `deleted` is deliberate, `missing` is Verify's evidence,
+  and `rescan_missing` is a read-library file Rescan found absent. Ambiguous legacy rows are backfilled conservatively.
+- **Show deleted chapters as ghosts** is consistent in the web app and the Komga-compatible list, detail and page
+  routes. The reveal control counts both source ghosts and deliberate tombstones, so it cannot hide itself.
+- **Unmonitor really means unattended work stops:** the sweep, partial completion, short and gap repair, Fix everything
+  and the slow archive re-read the switch before each new source/network operation. Manual Check, Fetch and Fill remain.
+
+### AniList privacy per library
+
+Asked for in [#168](https://github.com/YUnauuu/hbook/discussions/168):
+
+- Every library, including the default one, has **Look up art and metadata on AniList automatically**.
+- Off means no automatic art, title/id match, reading-direction/type repair, startup match check or scheduled enrichment
+  for series currently in that library, and no negative lookup cache entry is made.
+- Existing art, links, type and direction stay. Moving a series adopts the destination library's policy.
+- Explicit Admin Art, Relink, Check online matches, tracker import/sync and Discover actions remain available and say
+  that the action may contact AniList.
+
+### Scanlator and source safety
+
+- Blocking or unblocking a scanlator now rebuilds every affected stored choice in the same transaction as the
+  preference. Concurrent checks are serialized, effective preferences are re-read under the lock, and a failed rebuild
+  rolls the preference back instead of leaving settings and listings disagreeing.
+- A blocked row retains its natural *available*, *held* or *covered* state, so unblocking restores the right one.
+- Ordinary Fetch, the slow archive, partial repair and same-release rotation all apply the same blocklist. Only a copy
+  explicitly pinned by a person may override a block, and a pinned copy never falls back. A 403/429 refusal never
+  triggers fallback or a source hunt.
+
+### Reader, navigation and dependencies
+
+- **Reduce effects navigation is visible again:** in-app links switch synchronously in that mode, so an outgoing page
+  cannot leave the main body hidden. Fixes [#174](https://github.com/YUnauuu/hbook/issues/174), reported by
+  **@AlexisJAnderson**.
+- The reader's **Cover colour at the edges** setting from v0.55.7 remains available under both reader and profile
+  settings, as requested in [#170](https://github.com/YUnauuu/hbook/discussions/170).
+- **Security dependency:** sharp 0.35.5, from Dependabot
+  [#173](https://github.com/YUnauuu/hbook/pull/173).
+
+### Upgrading
+
+- **Database:** additive changes only:
+  - `libraries.anilist_lookup`;
+  - `series_listing.unblocked_status`;
+  - the persisted `admin_bulk_delete_runs` table and its chapter-level `current` progress snapshot;
+  - the `admin_bulk_delete_items` intent journal used to reconcile an interrupted unlink without repeating it;
+  - the new `rescan_missing` value in the existing `lib_books.pruned_reason` provenance field, with an audited legacy
+    backfill.
+
+  v0.55.7 can run on the same database, so rolling back the application is still one image-pin change. A database
+  restore cannot recover files deliberately deleted by a cleanup.
+- **For scripts** ([api.md](docs/api.md)):
+  - `/api/settings` validates `librarySort`, `homeCollections` and `showAllChapters`, while retaining unknown keys;
+  - library create/update accepts `anilistLookup`, and library rows carry `anilist_lookup`;
+  - Book responses carry stable tombstone identity, range, progress and `rescan_missing`; new
+    `POST /api/books/:id/refetch` restores one canonical deliberate tombstone;
+  - bulk chapter delete is `POST` → **202** `{runId}`, `GET` for persisted progress, and `POST .../cancel`;
+  - admin settings document `deleted_as_ghosts`.
+
+## v0.55.7 — 2026-10-07
+
+**Online matches must carry the series' name, Rescan everything merges moved folders, and the reader's cover-colour edges
+get a switch. Lists gain unread badges and sorting, and scans are faster on slow disks.**
+
+### Online matches carry the series' name
+
+- **The cause:**
+  - For a series with no source, hbook looked its title up on AniList (and MangaDex for art) and took the top answer
+    without checking its name.
+  - Two of **@Kedryn**'s *Morgan Lost* comics got a manga's cover that way
+    ([#168](https://github.com/YUnauuu/hbook/discussions/168)).
+  - The same wrong answer became the series' AniList link, so progress was pushed there, and it could group two unrelated
+    series as duplicates.
+- **Now:** an AniList, MangaDex or Kitsu answer counts only when one of its names is the series' name or one of its other
+  names (a leading "The", "A" or "An" aside when the remaining name is long enough). A spin-off is not the work.
+- **What's already stored gets checked:**
+  - *Check online matches* (Admin → Tasks) goes over every automatic AniList link and every cover or banner found online,
+    a few minutes after the upgrade.
+  - It removes those that belong to another work. It never touches a link you made or your own art choices.
+  - On the maintainer's library the final pre-release dry run kept 192 of 194 links and identified 2 for removal.
+- **Health's *Duplicate series*** only groups links a person made or the check confirmed, so *Fix everything* never merges on a
+  wrong match.
+- **Edit details → Cover → Use the first page** keeps the series' own first page as its cover, whatever a lookup finds. Admin →
+  Art has it too.
+
+### Rescan everything: merged folders and renamed files
+
+- **A chapter follows its renamed or moved file**, keeping everyone's reading history. It no longer shows twice.
+- **Merge "Zagor 1-100" into "Zagor":** when every chapter of a series moved into one other series' folder, the preview offers
+  the merge for you to tick. Reading history, favourites and lists follow. Reported by **@Kedryn**
+  ([#150](https://github.com/YUnauuu/hbook/discussions/150)).
+- **Moves are recognised sooner:**
+  - Files are fingerprinted a few minutes after a scan finds them, and never mid-unpack, so a later move is recognised.
+  - A file moved before it was fingerprinted is recognised by its name and its exact modification time, when exactly one file
+    matches.
+- **The scheduled update check** leaves a series alone while Rescan, a renumber or a download holds it.
+
+### Faster scans on slow disks
+
+A scan reopened the first chapter file of every series to read its details. Now it does so only when that file has changed. On
+2,000 series on a slow disk, a rescan with nothing new went from about 56 seconds to about 13.
+
+### Reader
+
+- **Cover colour at the edges:** the soft wash of the cover's colour at the top and bottom of the reader can be switched off.
+  - It's in *Profile → Settings → Reading* or in the reader's own settings, and on by default.
+  - Asked about by **@jordanske** ([#170](https://github.com/YUnauuu/hbook/discussions/170)).
+- **The controls** no longer leave a thin gap at the screen edge as they spring in. Spotted by **@DannyDynamite39**.
+
+### Lists
+
+Asked for by **@AlexisJAnderson** ([#164](https://github.com/YUnauuu/hbook/discussions/164)):
+
+- **Badges:** every series in a list shows the Library's unread badge, and its NEW, favourite and offline marks.
+- **Sorting:** *Your order*, *A–Z*, *Z–A*, *Last read*, *Most unread* or *Latest chapter*, remembered per list.
+- **Editing:** *Edit* replaces the hidden delete button. It removes a series, or moves it in your own order.
+- **Adding:** a series added to a list goes to its end.
+
+### Smaller
+
+- **Placeholder group names:** sites that label every chapter "Unofficial" or "Unknown" no longer count as one scanlation group,
+  so downloads only take turns between them when their page counts agree
+  ([#158](https://github.com/YUnauuu/hbook/discussions/158)).
+- **Series page:** "File no longer on disk" and "Deleted from the server" are never cut off.
+- **Translations:** every message in the app is now translated, including the last English-only notices and Admin → Art. In
+  Arabic, "99+" reads correctly and counts read correctly for any number.
+- **`LIBRARY_REMATCH`** never moves a series onto a folder that has its own.
+- **Dependencies:** Next.js 16.3.8, Electron 44.5.1, pg 8.23.1, sharp 0.35.5, and others.
+
+### Upgrading
+
+- **Database:** additive columns only:
+  - `series_trackers.checked_at`, `series_art.checked_at`;
+  - `lib_series.info_read`;
+  - `server_settings.match_check_last_run` / `match_check_last_result`.
+
+  v0.55.6 runs on the same database, so going back is one line of your compose file.
+- **After the upgrade:**
+  - *Check online matches* runs in the background, paced for AniList, for a few minutes.
+  - What it removes is listed in its result and in the audit log. A tracker import re-links a series by id.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /api/collections/:id` items carry `lastReadAt` and `latestChapterAt`.
+  - New settings keys: `reader.coverEdges` and `listSorts`.
+  - Rescan's plan and apply gain `follow` and `merges`.
+  - The cover mode `first_page`, and the `matches` task.
+  - `ANILIST_API_URL` also moves the title and id lookups.
+
+## v0.55.6 — 2026-10-06
+
+**A library scan that takes minutes no longer reads "Scan failed": the scan answers at once, and the page follows it
+to its end with how far it has got.**
+
+### Long library scans no longer fail
+
+- **The cause:** *Scan library now* waited for the whole scan before it answered. A big library on a slow disk can
+  take minutes (Unraid shares, a NAS). That's longer than a proxy in front of the server will hold a request: nginx gives
+  up at 60 seconds, Cloudflare at 100. So the button said *Scan failed* every time while the scan went on. Reported by
+  **@Kedryn** ([#150](https://github.com/YUnauuu/hbook/discussions/150)).
+- **Now:** the server answers within 15 seconds, and the page follows the scan until it ends.
+  - The admin home and Health show how far it has got: *Folder 1,200 of 3,400*, a ticking clock, then the counts.
+  - A request a proxy cuts off follows the scan it started instead of failing.
+- **A scan that really fails says why,** in the server's words, instead of a bare *Scan failed*.
+
+### Upgrading
+
+- **Database:** no change. v0.55.5 runs on the same database, so going back is one line of your compose file.
+- **New setting:** `REFRESH_FIRST_ANSWER_MS` (default `15000`), how long *Scan library now* waits before it answers
+  that the scan is still running.
+- **For scripts** ([api.md](docs/api.md)):
+  - `POST /api/refresh` answers `running: true` and `since` when the scan takes longer than that.
+  - It answers `scanned: false, reason: 'error'` when the scan fails, with the server's `message` for an admin.
+  - New `GET /api/refresh` says whether a scan runs, and for an admin its progress and how the last one ended.
+
+## v0.55.5 — 2026-10-06
+
+**Normal titles are no longer counted as 18+: a site that flags itself 18+ no longer marks every title it shares with
+other sites, and Natomanga's series keep their own genres instead of the site's whole genre menu.**
+
+### Fewer false 18+ in Discover search
+
+- **The cause:** each extension says whether its site has adult content, and the extension index flags a whole site when
+  it hosts any adult title. General sites such as **AllManga**, 11toon and Manga Bab carry the flag too.
+- **What went wrong:** since v0.55.4, one flagged site among a title's sources made the whole card 18+. With **Show 18+**
+  on, most manhwa AllManga also carries wore the **18+** mark under *All*, vanished under *Hide 18+* and showed under
+  *18+ only*.
+- **Now:** a site's own flag makes a title 18+ only when no other site carries it. A MangaDex erotica or pornographic
+  rating, a genre on your 18+ list, or a source you named on it still make a title 18+ wherever it is found.
+- **Unchanged:** with Show 18+ off, flagged sites aren't searched at all, and a flagged site's own row of results stays
+  behind 18+.
+
+### Natomanga series keep their own genres
+
+- **The cause:** Natomanga's series pages now carry the site's whole genre menu, and hbook read every genre link on
+  the page. Some series got all 69 genres, Adult, Hentai and Smut among them; on the owner's library that was 12 series,
+  such as *Return of the War God* and *The Glutton*.
+- **Now:** genres come from the series' own genre row only (Natomanga and Mangakakalot).
+- **Repaired on upgrade:**
+  - series that already hold the menu get their own genres back;
+  - they get a series type where those genres name one, so the notice-chapter switches apply to them;
+  - neither a chapter file still carrying the menu nor a new add from any source brings it back.
+- It hid nothing on its own, since the library hides by genre only for genres on your 18+ list. But those series showed
+  dozens of genre chips and turned up under Hentai.
+
+### Upgrading
+
+- **Database:** no new column. A one-time step cleans genres holding a site's genre menu, in series and in their Edit
+  details overrides, and types those series from what is left. v0.55.4 runs on the same database, so going back is one
+  line of your compose file.
+- **For scripts** ([api.md](docs/api.md)): in `GET /api/sources/search-all`, a provider 18+ only by its extension's
+  flag makes a card 18+ only when every provider is one. Providers still carry `rating: adult` for it.
+
+## v0.55.4 — 2026-10-05
+
+**Easier to find: the version at the foot of the admin menu, "Import your library" where a new library starts, and a
+search that finds settings. Plus *Rescan everything*, downloads that use every source carrying a release, and an 18+
+filter in Discover search.**
+
+### Easier to find
+
+- **The running version is at the foot of the admin menu**, with *up to date* or *update available*, which links to the
+  release. On a phone it ends the admin header.
+- **"Import your library"** appears on an empty Library and on Home's welcome. It takes a Mihon or Tachiyomi backup, a
+  MangaDex list, your AniList, MyAnimeList or Kitsu list, or pasted titles. The Library header also has *Import a list*
+  for admins. Until now it was only under Admin → Sources → Add sources.
+- **The search box (Ctrl+K, or the phone's Search page) also finds pages and settings by name**, in your language and in
+  English: *notice*, *import*, *version*, *solver*, *backup time*, *2FA* and the like. A result opens the page and
+  scrolls to the setting.
+- Asked for by **@Kedryn** ([#150](https://github.com/YUnauuu/hbook/discussions/150)) and **@DannyDynamite39**
+  ([#158](https://github.com/YUnauuu/hbook/discussions/158)).
+
+### Rescan everything
+
+**Admin → Tasks → Rescan everything** re-reads every folder and shows a preview before it changes anything:
+- **Gone:** chapters whose files are gone from your own folders.
+- **Kept:** files that were only moved or renamed (matched by their contents).
+- **Download folder:** chapters missing there, left to *Verify chapter files*.
+- **Empty series:** series with nothing left, each with a link.
+
+On **Apply**, the gone chapters read *File no longer on disk*. Nothing is erased and no file is touched: everyone's
+reading history stays, and a file that comes back is picked up again by the next scan. It refuses a folder that looks
+unmounted, leaves alone files it couldn't read, and checks everything again right before applying.
+
+**Optionally, number chapters again by the v0.55.2 file-name rules,** for the series you tick: chapter words, `#12`,
+years in brackets, ranges like `01-07`. The preview shows each series' changes first, with how many readers and trackers
+they touch, and nothing is sent to a tracker. Asked for by **@Kedryn** ([#150](https://github.com/YUnauuu/hbook/discussions/150)).
+
+### Downloads that use every source carrying a release
+
+- **The slow archive and *Fetch all*** take a series' chapters from every source you follow that carries the same
+  release (the same scanlation group), in turn. Sources on different image servers download side by side.
+- **Sites on one image server count as one**, like Natomanga and Mangakakalot, so turns never double the requests to it.
+- **What never changes source:** a chapter you picked yourself, a series with its own source order, posting-order
+  series, and the regular update check.
+- **In a test with two image servers,** a 12-chapter *Fetch all* took 1.4 minutes instead of 2.8, and each server got
+  half the requests.
+- Asked for by **@DannyDynamite39** ([#158](https://github.com/YUnauuu/hbook/discussions/158)).
+
+### An 18+ filter in Discover search
+
+- **Search results can be filtered:** *All · Hide 18+ · 18+ only*. A result is 18+ when the source says so, when MangaDex
+  rates it erotica or pornographic, or when it carries one of your 18+ genres. Results with no rating stay under *All*
+  and *Hide 18+*. Adult results carry a small *18+* mark.
+- **With Show 18+ off, search now hides adult results** too. Before, MangaDex's erotica still showed.
+- Asked for by **@DannyDynamite39** ([#158](https://github.com/YUnauuu/hbook/discussions/158)).
+
+### Smaller
+
+- **A series whose cover chapter's file is gone** now shows no cover; it used to answer with an error.
+- **A Rescan that changes a series waits for it:** a series with a download or a check running is left alone for the
+  next Rescan, and a Fetch or the archive waits for the Rescan to finish.
+
+### Upgrading
+
+- **Database:** two nullable columns on server settings, `rescan_last_run` and `rescan_last_result`. v0.55.3 runs on the
+  same database, so going back is one line of your compose file.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /api/admin/stats` carries `version`.
+  - `POST /api/admin/tasks/rescan/run`, `GET …/rescan/status` and `POST …/rescan/apply` drive the rescan.
+  - `GET /api/sources/search-all` takes `rating=all|safe|adult` and marks results with `rating`.
+  - MangaDex results carry `contentRating`.
+  - A chapter carries `prunedReason`.
+
+## v0.55.3 — 2026-10-05
+
+**A backup Cloudflare solver, gentler downloads from sites that ask for fewer requests, and failed chapters that follow
+their series to a new source.**
+
+### A backup Cloudflare solver
+
+- **`FLARESOLVERR_FALLBACK_URL`** sets a second solver. When the main one doesn't answer a request with a page (it's
+  down, it timed out, it answered with an error or an empty page, or it stays busy), the same request goes to the
+  backup.
+- **Each site goes first to the solver that last solved it,** for 6 hours. Its Cloudflare pass (the cookie and browser
+  identity) is kept per solver, so downloads use the pass of the solver that earned it.
+- **A solver that is only busy is waited for, not blamed.** When a solver answers *too many requests* itself (trawl does
+  when all its browsers are in use), hbook waits, retries, then asks the backup. It never counts as the site refusing.
+- **trawl is recognised as itself.** Health says *Ready (trawl v1.7.0)* and checks trawl's own releases; before, it was
+  compared with FlareSolverr's and read as a false "update available". [CONFIGURATION.md](docs/CONFIGURATION.md)
+  describes FlareSolverr, trawl and Byparr, with a compose example of trawl as the main solver and FlareSolverr as the
+  backup. On a real library, once trawl had solved a site, its next pages took about 2 s instead of about 12 s.
+- **Health's solver card lists both solvers.** It is amber when one is down and the other keeps solving, and needs
+  attention only when both are down. Fix everything says a down solver clears by itself while the other one works.
+- trawl's own error messages are read for what they mean.
+
+### Gentler with a site that asks for fewer requests
+
+- **Downloads stay slow longer.** After a site's image server answers *too many requests* (HTTP 429), downloads from it
+  stay slower for at least an hour. They speed up one step at a time, after a run of good chapters. Before, they sped up
+  after the first success and were refused again.
+- **One chapter at a time while slowed,** and a refusal pauses every chapter from that site, not just the one refused.
+- **Sources whose pages come from the same image server share one pace,** like Natomanga and Mangakakalot.
+- Health says *Downloading slowly: the site asked for fewer requests* on such a source.
+- **Measured on a test server allowing 60 requests a minute:** 6 of 18 chapters failed before; now 2 of 18 do, and only on
+  the first night. Downloads take about twice as long.
+
+### Failed chapters follow their series
+
+- **When a series moves to another main source,** the chapters that had failed on the old source move with it and are
+  tried again from the new one. A move is a Replace, Make main, Fix everything, or a source being unfollowed or removed.
+  Before, they stayed filed under the old source, where Health counted them as failing and Fix everything listed them as
+  needing you.
+- Chapters already left behind are moved on first start.
+- While the new source is rate-limited or slowed, they show as waiting.
+
+### Fix everything tries the extensions most people read first
+
+- The download counts that order the extension search no longer favour recently updated extensions. The big sites now
+  come first: MangaDex, MangaFire, Asura Scans, Comick, Weeb Central, Mangakakalot and the like. Everything is still tried
+  eventually.
+
+### Notice chapters: "Only hide short ones"
+
+- A new switch under **Admin → Settings → Notice chapters**, **on by default**, keeps today's rule: only chapters numbered
+  like 12.5 with 3 pages or fewer are hidden.
+- Turned off, it hides every chapter numbered like 12.5 of the types switched on, including real chapters a site split
+  into parts.
+- Asked for by **@TIGamingTV** ([#147](https://github.com/YUnauuu/hbook/pull/147)).
+
+### Upgrading
+
+- **Database:** one new column (`server_settings.hide_notice_short_only`, on by default), and a one-time move of failed
+  chapters left under a source their series no longer uses. Both happen by themselves. v0.55.2 runs on the same
+  database, so going back is one line of your compose file.
+- **New optional setting:** `FLARESOLVERR_FALLBACK_URL` (CONFIGURATION.md → *The Cloudflare solver*). Nothing changes
+  until you set it.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET` and `PATCH /api/admin/settings` carry `hideNoticeShortOnly`.
+  - Source states gain `slowed`.
+  - Health's solver card gains its main and backup rows.
+  - A failed chapter can be `moved`.
+
+## v0.55.2 — 2026-10-04
+
+**Hand-collected comics get the right chapter numbers from their file names, and the notice "chapters" some sites post
+can be hidden.** Both apply only from now on or only when you switch them on: nothing already in your library is
+renumbered, and nobody's read status changes on upgrading.
+
+### Chapter numbers from file names
+
+For files added from now on:
+- **A chapter word wins:** `Vol 3 Chapter 12.cbz` is chapter 12, not 3 (*Ch*, *Chapter*, *Cap*, *Capitolo*,
+  *Capítulo*, *Chapitre*, *Kapitel* and their short forms).
+- **Otherwise `#` makes the number the chapter:** `Batman #12 (1987).cbz` is 12.
+- **A year is never the chapter:** a 4-digit year in `( )` or `[ ]` is skipped. A name with only a year, like
+  `Watchmen (1986).cbz`, gets no chapter number and sorts by name.
+- **A range is one file holding several chapters:** `Batman 01-07.cbz` shows as *Ch. 1–7*. Chapters 2 to 6 don't count
+  as missing, and finishing it tells your tracker 7.
+
+Files the downloader saves (`Chapter 12.cbz`) read exactly as before, and *Edit number & title* still overrides any
+chapter. Suggested by **@Kedryn** ([#150](https://github.com/YUnauuu/hbook/discussions/150)).
+
+### Notice chapters, if you switch them on
+
+- Some sites post an announcement (a hiatus, a delay) as a short chapter numbered after the latest one, like *100.5*.
+  **Admin → Settings → Notice chapters** has a switch for each series type: Manga, Manhwa, Manhua, Webtoon, Comic and
+  other. For each type switched on, chapters numbered like 12.5 with **3 pages or fewer** are hidden from the library,
+  the reader, Updates, OPDS and Mihon, and one a site lists as that short isn't downloaded.
+- Longer ones stay, because those are real chapters a site split into parts, and so does any chapter whose pages
+  haven't been counted yet. Nothing is deleted: switching a type off shows them all again.
+- A series can override its type in its *Sources & translations* sheet, which also shows how many are hidden.
+- *Edit details* has a **Series type**, filled in automatically from the series' genres, then its source, then AniList.
+- All the switches are off by default, and while they're off it costs nothing.
+- Contributed by **@TIGamingTV** ([#147](https://github.com/YUnauuu/hbook/pull/147)). The page rule was added at
+  merge: on a real library, about 170 of 1,759 chapters numbered like 12.5 were notices of 3 pages or fewer, while about
+  1,500 were real chapters of 6 pages or more.
+
+### Upgrading
+
+- **Database changes, all additive and made by themselves:**
+  - new columns on series (`series_type`, `series_type_from`, `hide_notices`) and series overrides (`series_type`);
+  - one on server settings (`hide_notice_types`);
+  - three on chapter files: `name_rule` (which rule read the name, so existing chapters keep theirs), `number_end` (a
+    range's last chapter) and `created_at`;
+  - one index.
+
+  On first start, every series without a type gets one from its genres. v0.55.1 runs on the same database, so going
+  back is one line of your compose file; while it runs it reads every file name the old way.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET` and `PATCH /api/admin/settings` carry `hideNoticeTypes`.
+  - Series carry `seriesType`, `hideNotices`, `hideNoticesEffective` and `hiddenNotices`.
+  - A chapter that holds a range carries `numberEnd`, and its number reads like *1–7*.
+
+## v0.55.1 — 2026-10-04
+
+**Fix everything no longer mistakes a busy site for a broken one, and it keeps looking for an extension that carries
+your series until it finds one, the most popular first. Libraries can also hold several folders, and the Library can
+show the series with no source.** The first real Fix everything run moved series off a
+site that was only asking for a pause, and moved three of them onto a site that could not load pages. Both causes are
+fixed, and the next run undoes it.
+
+### Fix everything, after its first real run
+
+- **A site asking for a pause is not broken.** When a site answers *too many requests* (HTTP 429), its source now cools
+  down instead of failing: Health shows it as *Rate limited*, with no Replace, Fix everything never moves series off it,
+  and its chapters are listed as waiting for the site's pause (*Clears by itself* at the end of a run, and greyed on
+  Health's *Chapters that would not download*), not as failing.
+- **Replace never moves a series onto a source that cannot download it.** A source whose search works but whose pages
+  fail is never a destination, and one run never moves a series onto a source it is replacing. A series already moved
+  onto such a source is moved again, to one that carries it.
+- **Retries leave a site that asked for a pause alone,** so a run no longer makes its limit worse.
+- **Extensions: no cap, the most popular first.** Fix everything keeps trying extensions, one at a time, until the
+  series is found or the run's time is up, and the next run continues where it stopped. It tries first an extension
+  named after one of the series' own translation groups, then the most downloaded ones, from the extension
+  repository's own download counts on GitHub (read once a day), then the rest. An extension that finds nothing is
+  removed straight away, and it is not tried again for the same series for a month. 18+ extensions are tried only for
+  18+ series. The end says it in one line: *Tried 6 extensions and kept Gap Scans*.
+
+### Libraries with several folders
+
+- **A library can hold several folders** (Admin → Libraries): tick them in the folder browser, where a folder another
+  library holds says so. Saving moves their series in or out at once, and the dialog says how many before. The most
+  specific folder still wins. Suggested by **@Kedryn** ([#148](https://github.com/YUnauuu/hbook/issues/148)).
+
+### "No source" in the Library's filters
+
+- **Main source → No source** lists the series with no source to download from: folders you added by hand, and
+  anything never matched to a site. Suggested by **@Kedryn** ([#149](https://github.com/YUnauuu/hbook/issues/149)).
+
+### Smaller
+
+- Health names every source on *Series that can no longer update* by its name, never an id like `sw:2522…`.
+- A source the engine's source limit left out says so on its sheet (*The engine's limit of 40 sources is full*) and no
+  longer offers Replace. Health tells it apart from an extension that is no longer installed.
+- For an admin who hides 18+, Fix everything's lines now leave out only the 18+ series' names, not every series' name.
+- Deleting a library unpins the series it held by hand, and the move preview reads right in every language.
+- The repository no longer tracks a `web/node_modules` link that v0.55.0 committed by accident, which stopped
+  contributors from pulling.
+
+### Upgrading
+
+- **One new table,** `library_paths` (a library's folders), created and filled by itself. v0.55.0 runs on the same
+  database and files new folders by each library's first folder, so going back is one line of your compose file; the
+  next v0.55.1 start repairs whatever v0.55.0 changed in between.
+- **Settings** ([CONFIGURATION.md](docs/CONFIGURATION.md)): `AUTOFIX_INSTALLS` now defaults to no cap (`0` still
+  switches the extensions part off). New: `GITHUB_API_URL`, where the download counts are read.
+- **What leaves your server:** once a day, Fix everything reads the extension repository's download counts from
+  GitHub, the same place extensions are installed from. Nothing is sent.
+- **For scripts** ([api.md](docs/api.md)):
+  - `POST /api/series/search` takes `hasMainSource` (`isTrue`, `isFalse`), and `GET /api/library/sources` adds `none`.
+  - The libraries routes take and return `paths`, saves answer `moved`, a 409 names the library that holds a folder,
+    and a PATCH of an unknown library answers 404.
+  - `GET /api/admin/sources/overview` marks a source the limit left out with `overLimit`.
+  - Fix everything's lines that name a series carry `seriesIds`, and its history leaves out `tried`.
+  - Source health records a refusal for room as its own kind, `rate_limited`.
+
+## v0.55.0 — 2026-10-03
+
+**Health's Fix all is now Fix everything, and it can do the whole job by itself: Fix it for me works through every
+card until it is green, then says in a few lines what it did and what only you can fix.** Until now Fix all was only
+the repair's four steps. It skipped broken sources, series stuck on a dead source, duplicates, numbering, odd chapter
+numbers and chapters saved twice, and it disappeared when only those were left.
+
+### Fix everything
+
+- **Health** has a **Fix everything** key beside Re-check whenever any card has a finding. It asks one thing:
+  - **Fix it for me** (the default): replaces broken sources, fetches missing and broken chapters, and finds new
+    sources, installing up to 3 extensions if it has to. It also merges duplicate series, deletes chapters saved twice
+    or numbered impossibly, and applies safe renumbering. Those can't be undone, and the sheet says so before Start.
+  - **Let me choose:** the safe repair as before (retries, short chapters, gaps), and the rest card by card.
+- **The run** goes through ten steps, with the step, a progress bar and what it is doing now. **Run in background**
+  keeps it going; it shows on **Server tasks** as *Fixing everything*, and reopening Health's sheet shows the run.
+  **Stop** ends it at the next safe point, never inside a merge, a delete or a renumber.
+- **The end** is short: one headline (**All green**, or *2 need you* with *Everything else is green* under it), up to
+  six lines of what it did (*Moved 184 series off Aqua Manga*, *Fetched 37 missing chapters*, *Installed Asura Scans
+  (found 3 series)*), what only you can fix, each with its one key, and what clears by itself, with a time. The rest
+  is under **Details**. **Run again** shows only when a run could still change something.
+- **Every night** (Admin → Settings) can be the **Safe repair**, as before and still the default, or **Fix
+  everything**. Recent repairs lists Fix everything runs with their headline.
+
+### What it does, and what it never does
+
+- **Sources:** it tests the failing ones and clears a block only after a passing test, then **Replaces** each broken
+  source that some series use as their main source, and turns off the broken ones nothing uses. A cause in your
+  set-up (the engine, the source limit, a hidden language) is never "fixed" by replacing.
+- **Duplicates:** two copies of a series in different languages are linked as editions. Two copies in the same
+  language are merged only when the AniList id, the language and the titles (or most of the chapters) agree. It keeps
+  the copy on a working source, and that copy now follows the other one's main source too.
+- **Numbering:** only plans marked clean are applied. The rest wait for you.
+- **Extensions:** for series no source carries any more, and gaps nobody had, it tries extensions in the series'
+  language, the ones whose name matches the series' own translation groups first. It switches on only that language,
+  keeps a package that found something and removes one that didn't. At most 3 a run.
+- **Files:** it deletes the later copy of a chapter saved twice only when the copy kept is complete and at least as
+  long, and an impossible chapter number with the delete key's own checks. Nothing bookmarked and nothing outside the
+  download folder is ever deleted; those go to *Needs you*.
+- **Never Ignore.** What a run can't fix (the solver or the engine down, folders mounted twice, a chapter no site
+  has) is listed under *Needs you*, never hidden.
+- It refuses to start beside a repair, a Find or Replace, or the sweep, and says which. A Find pressed while it runs
+  says that Fix everything is already finding sources.
+
+### Fixed on the way
+
+- **The nightly gap step** searched the same five biggest gaps every night, so the rest were never looked at. It now
+  takes the least recently checked first, and skips the ones just found missing everywhere.
+- **Chapters before where a series starts** (*Latest N*) were filed as "the sweep will fetch it" and never were. They
+  are now an info line, *before where you started*, not a finding.
+- **Series stuck because of the source limit** offered Replace, which could not help. They now offer **Free a slot**,
+  which opens the source in Admin → Sources.
+- **A newly installed extension could push sources your series use past the engine's source limit**
+  (`SUWAYOMI_MAX_SOURCES`) and freeze them. The sources your series use now always register first.
+- **Merging two copies of a series** dropped the absorbed copy's main source. It is now kept as a source the
+  remaining copy follows.
+- **A chapter numbered impossibly** (a 2024 in a series of 80) showed as a gap of thousands of chapters on Health and
+  sent the gap step searching for them. It is the odd chapter numbers card's alone now.
+
+### Upgrading
+
+- **One new database column,** `server_settings.nightly_mode` (default `repair`), added by itself. v0.54.1 runs on the
+  same database, so going back is one line of your compose file. Nothing changes in compose files.
+- **Optional settings** ([CONFIGURATION.md](docs/CONFIGURATION.md)): `AUTOFIX_MAX_MINUTES` (90), `AUTOFIX_SEARCHES`
+  (60) and `AUTOFIX_INSTALLS` (3; `0` stops it installing extensions).
+- **For scripts** ([api.md](docs/api.md)):
+  - `POST /api/admin/health/autofix` starts a run (409 `busy` with what is running), `GET` answers the live run and
+    the last one, `GET …/:runId` one run, and `POST …/stop` stops it. The summary's lines are said codes.
+  - `GET` and `PATCH /api/admin/settings` carry `nightlyMode` (`repair` or `autofix`).
+  - `GET /api/admin/tasks/repair/runs` lists Fix everything runs as `kind: "autofix"`, and `GET /api/sources/jobs`
+    carries its run card. `POST /api/admin/sources/find` answers 409 `autofix_running` beside one.
+  - Health's stuck-series rows carry `free_slot` for the source limit, and a merge's answer carries `carried`.
+
+## v0.54.1 — 2026-10-03
+
+### Byparr works as the Cloudflare solver
+
+- **@DannyDynamite39** runs Byparr, a FlareSolverr-compatible solver, and pointed `FLARESOLVERR_URL` at it
+  ([#144](https://github.com/YUnauuu/hbook/discussions/144)). Solving already worked, since Byparr answers
+  FlareSolverr's own requests, but hbook checked that the solver was up by FlareSolverr's greeting at its address.
+  Byparr sends that address to its docs, so Health said the solver was not answering while it solved fine, and the
+  repair skipped its solver step. hbook now also accepts the solver's `/health` answer, and compares the version
+  with FlareSolverr's latest release only when it is FlareSolverr.
+- The extension engine has a Cloudflare helper of its own. **Connect** points it at the same address, but whether the
+  engine itself works with Byparr is up to the engine.
+
+## v0.54.0 — 2026-10-03
+
+**Admin → Providers and Admin → Extensions are now one place, Admin → Sources, and a source that stopped working can
+be replaced in one press: its series move to sources that work, and it is turned off.** Until now nothing could change
+a series' main source. Find other sources added followers, so a series whose site went offline kept that site as its
+main source for good, in every count, filter and queue.
+
+### One Sources section
+
+- **Admin → Sources** holds every source, of every kind: the built-in ones, MangaDex's languages, the sites you
+  added by address and every extension's sources. One list, the ones your series use first, each row one line
+  (*Healthy · 125 series · English*) and at most one key. The switched-off ones fold away.
+- **Needs attention** comes first, when there is anything: a broken source your series depend on, with **Replace**;
+  the failing sources nothing uses, with **Turn off all**; extension updates, with **Update**.
+- **Test all** tests every source, with how far it has got. **Add sources** has the extensions catalogue, adding a
+  site by its address, MangaDex's languages and Import a list.
+- **One sheet for every source:** how it is doing (with the evidence under *Details*), how many series use it, which
+  opens the Library on them, **Test**, **Replace**, **Turn off** or **on** (which asks first when series use it) and
+  **Remove** for a site, and, for an extension, its languages and settings.
+- **Old links still land.** `?tab=Providers`, `?tab=Extensions`, `card=mangadex` and `settings=` open the same things
+  in Sources, so bookmarks and notifications keep working.
+
+### Replace a source
+
+- **Replace** on a broken source says what it will do before it does it: *184 already follow a working source: it
+  becomes their main source. The other 11 are searched for on your other sources. It is turned off once nothing uses
+  it.* Then it does it, with the series moving as you watch and the count of moved, newly found and not replaced.
+- A series that already follows a working source moves at once: the best of them becomes its main source, by health,
+  then by how many of your chapters it carries, then your source order. One that follows none is searched for, under
+  its other names too, and the first match becomes its main source. A series numbered by posting order is left alone
+  and says why: its numbers come from its main source.
+- **Let me review each match first** shows every move before it happens, with **Make main** and **Make all green
+  main**.
+- **Make main** is also on each working source in a series' *Sources & translations*, for one series at a time.
+- Nothing moves on disk: chapters stay in the series' folder, and what you read stays read. A chapter that had failed
+  too often on the old source gets another try from the new one.
+
+### Turned off means off
+
+- A switched-off source was still asked for every chapter list by the scheduled check, and new chapters could still
+  be downloaded from it, whatever the button said. Now a switched-off source is never asked and never downloaded
+  from, and a series whose every source is off is skipped until one is back.
+- **Health** leads with **Replace** on a broken source that some series use as their main source. *Series that can no
+  longer update* now also lists series whose main source is broken or switched off with nothing working to fall back
+  on, and a switched-off source no longer counts as a working backup.
+- A source still main to any series cannot be removed or retired: *It is the main source of 3 series. Replace it
+  first.* A site added by address could be removed before, and its series stopped updating without a word.
+
+### Upgrading
+
+- **No database change.** v0.53.1 runs on the same database, and nothing changes in compose files or the environment.
+- **A behaviour change:** turning a source off now stops its chapter lists too, not just its downloads. Turn it back on
+  to see its lists again.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /api/admin/sources/overview`: every source with its kind, standing, series counts and what needs attention.
+  - `POST /api/admin/series/:id/main-source` `{sourceId, old?}` makes a followed source the main one. It answers 409
+    for posting order, a pending renumber, a series being checked, a source switched off, unloaded or in another
+    language, and a source not followed.
+  - `POST /api/admin/sources/find` takes `mode: "replace"` (with `turnOff`), with
+    `GET /api/admin/sources/:id/replace-preview` and `POST /api/admin/sources/find/:runId/promote`. Runs carry
+    `mode`, `promoted`, `left`, `turnedOff`, `sourceId` and `sourceName`.
+  - `POST /api/admin/sources/:id/retire` `{how}` turns off or removes a source no series has as its main source,
+    and `DELETE /api/admin/sources/custom/:id` refuses while the site is in use.
+  - Series sources carry `standing`, and Health's source rows and frozen series carry `replace_source`.
+
+## v0.53.1 — 2026-10-03
+
+**Find other sources asks the sources you can see, and learns a series' other names before it searches.** Both, and a
+repair for installs whose other names could not be read, are **@TIGamingTV**'s
+([#141](https://github.com/YUnauuu/hbook/pull/141)).
+
+### Find other sources finds manhwa again
+
+- **Sources marked 18+.** A run asked a source that flags itself adult only for a series rated 18+, the background
+  hunt's rule. Most manhwa extensions flag themselves adult, so on a library that reads them nearly every series ended
+  with *no other source could be asked* or *no match*. A run, and a review's **Follow**, now ask every source the admin
+  who started it may see, as Discover and following a source by hand already do. The background hunt keeps its rule.
+- **Other names before the search.** A series added before v0.49.1 has no other names stored, so it was searched
+  under its own title alone, and a manhwa whose sites each romanise it another way matched nothing. A run now first
+  takes the names its description lists, and only when that gives none, its main source's description: once, with a
+  time limit, and never while that source is switched off, cooling down or already failed in the run. They are kept
+  like any other name, so a name you removed stays removed.
+- When a series has no source to ask, the server log now says why, by count.
+
+### Upgrading
+
+- **The database:** an install that ran the fork build of PR #119 kept that build's `series_alt_titles`, which every
+  read failed on, so no other names showed and none were searched. It is brought to the right shape on first start.
+  On any other install nothing changes, and v0.53.0 still starts.
+
+## v0.53.0 — 2026-10-03
+
+**Three screens that had grown cluttered are redone around what you do on them: Admin → Extensions, Health's Source
+health, and a series' Edit details. Each now says first what needs you, offers one action for it, and keeps the rest
+a tap away.** And the series page shows a series' banner sharp. Much of the Extensions work answers **@Kedryn**'s notes
+on Discussion [#121](https://github.com/YUnauuu/hbook/discussions/121).
+
+### Admin → Extensions, redesigned
+
+- **The engine at a glance.** One slim strip. **Extension engine** says *Ready*, its version and how many sources are
+  on against the limit (*5 of 25 sources on*). **Cloudflare helper** says *Connected*, or offers **Connect** with one
+  line on why it matters. Turning the engine off is under the strip's ⋯. When the engine is not answering or not set
+  up, the tab is the setup screen, as before.
+- **Installed and Browse,** two views with their counts, and **Languages** and **Check for extension updates** beside
+  them.
+- **Installed is one list.** While something needs you it is grouped: **Needs attention** first, with **Update all**
+  and **Turn on all** in its header, then **Ready**. Each extension says at most one thing (*Update available*, *No
+  source on*) and offers at most one key; the others show their languages and how many are on. The amber bars and the
+  warning on every card are gone.
+- **Browse reaches every extension.** On a repository of 1,300 the list stopped at the first 400 and said *narrow the
+  search*, so an extension past them, MangaFire in Kedryn's case, could not be found by scrolling. Browse now shows
+  60 at a time and the next ones as you scroll, to the last. Search by name and pick a language. **Show 18+
+  extensions** is a switch that says what it does (a chip reading *18+* was taken for "only 18+"), and the Browse tab
+  counts what the list holds. *1 repository* in the count line opens the repositories.
+- **Install is one press,** with its own busy state: the extension's sources switch on and are searchable from
+  Discover at once, and one with several languages then opens on them, so you can switch off the ones you don't read.
+- **An extension installed in the engine's own page** arrived with every source off, and the only way on was Remove
+  and Add again. Now it says *No source on* and offers **Turn on**. A language you hid stays off.
+- **The extension's sheet:**
+  - a switch per language (*Each language is its own source; turn on the ones you read.*), with a status under one
+    only when something is wrong: failing, blocked by the site, over the source limit, or hidden in every extension;
+  - the source limit, said when you are near it;
+  - **Settings**, folded until you open them. *Settings for* picks whose settings you see: a language select there
+    looked like it chose the language to read;
+  - **Remove extension**, which asks first and says how many series came from it.
+- **Languages** lists every language your extensions offer, with its sources, how many are on and how many series
+  came from it, and a switch that hides it in every extension, now and in the next one you install.
+- **Phones and right-to-left.** The sheets come up from the bottom and nothing scrolls sideways at 390 px; in Arabic
+  names and facts keep their own direction.
+
+### Health: Source health, sorted by what it costs you
+
+- On a library with many extensions the card listed every source with anything to say, switched-off ones first. On
+  one real library that was 31 sources turned off on purpose, each with its own Test key, under a glossary and a
+  paragraph, and above the few sources its series depended on: several screens of it.
+- It now leads with **Used by your series**, the most series first. Each row is one line (*Rate-limited — trying
+  again in 20 minutes · 37 series*) with one key, **Test** or **Clear block**; the rest are under ⋯, and the evidence
+  under *Details*.
+- **Failing, used by no series** comes next, with **Turn off all**, which asks first and turns them off one by one.
+- **Switched off by you** and **Nothing to fix right now** fold into one line each. The switched-off ones link to
+  where each comes back on, Providers or Extensions. What the keys do, and what counts as failing, are links at the
+  card's foot.
+- The card's summary counts the two groups that matter: *4 sources your series use need a look · 5 sources nothing
+  uses are failing*.
+
+### Edit details, redone
+
+- A series' **Edit details** was one long column where some fields saved at once and the rest only with a *Save
+  details* key halfway down, easy to miss. It is now a dialog with tabs, **Details**, **Reading**, **New chapters**
+  and **Files**, and every field saves itself, said once at the top (*Saved*), as Profile and Admin → Settings do.
+- **The art is in view while you edit:** the cover and the banner as the page shows them, with **Upload** (or
+  drop an image on the preview), **From a link**, **New banner** while the banner is an automatic one, and **Reset to
+  automatic**. Images up to 11 MB, as it says: a picture over about 9 MB used to fail as too large.
+- Status, reading direction and age rating are one-tap choices; *Always show* and *Auto-update* are switches. The
+  folder paths and **Mark caught up** keep their place, under Files and New chapters. On a phone it is a sheet with
+  **Art** as a tab of its own. Its words that were still English in every language are translated, and so are
+  Content → Art's notices and the home page's *Because you read*.
+
+### The series page shows its banner sharp
+
+- A series with a real banner, AniList's or one you set, now shows it sharp at the top of its page, under the same
+  shading that keeps the title readable. It was blurred, like the cover that stands in for a series with none, which
+  stays blurred, because a cover stretched that wide looks rough sharp. The banner made from a series' own pages
+  (v0.51.0) was sharp already. Content → Art's review tiles show a banner the way the series page does.
+
+### Also
+
+- A language switched on in an extension's sheet, for a source hbook had not recorded yet (one installed in the
+  engine's own page), stayed off without a word. It now switches on.
+
+### Upgrading
+
+- **No database change.** v0.52.0 runs on the same database, and nothing changes in compose files or the environment.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /api/admin/extensions/catalog` answers a page at a time: `offset` (from 0) and `limit` (default and maximum
+    400, so a call with neither gets the first 400 as before), echoed beside `shown` and `matched`. It takes
+    `updates=true`, `hiddenAdult` counts the 18+ extensions the other filters match (it counted the whole catalogue),
+    and `adultTotal` is the whole catalogue's 18+ extensions that are not installed.
+  - `POST /api/admin/extensions/catalog/:pkgName` takes `enable` beside `install`, `update` and `uninstall`: it
+    switches an installed extension's sources on as its install would, answering `{ok, sources, on, hidden,
+    registered}`, or 409 `no_sources`; it is audited as `extension.enable`.
+  - `GET /api/admin/extensions/sources` gives each source `used`, the series that came from it, and
+    `POST /api/admin/extensions/sources/bulk` records a source it has no row for and switches it as asked.
+  - Health's `sources` items carry `group` (`affected`, `unused`, `quiet`, `off`), `state`, `stage`, `cooldown`,
+    `offBy` and `icon`, and come in that order. The card's summary uses new codes (`sources.affected`,
+    `sources.failingUnused`, `sources.working`) and a new join, `dot`.
+  - `GET /img/series/:id/backdrop` takes `style=banner`: a real banner sharp, the blurred cover for a series without
+    one.
+  - `PUT /api/admin/series/:id/art` accepts the body of an 11 MB picture.
+
+## v0.52.0 — 2026-10-02
+
+**A series can now be in your library in more than one language, as editions of one work: one card in the Library,
+chips to switch between them on the series page and in the reader, and in each language its own chapters, folder and
+reading progress.** MangaDex serves other languages than English, one source per language, switched on in
+**Admin → Providers**. And a source in another language than a series is never followed for it automatically, so a
+series stays in one language. Editions are **@p3t3t3**'s request on Discussion
+[#72](https://github.com/YUnauuu/hbook/discussions/72), MangaDex's languages **@tagius**'s
+([#123](https://github.com/YUnauuu/hbook/issues/123)), and two smaller ones are **@Kedryn**'s: full paths for
+admins ([#136](https://github.com/YUnauuu/hbook/issues/136)) and a warning when the downloads folder sits inside
+the library ([#134](https://github.com/YUnauuu/hbook/discussions/134)).
+
+### Language editions
+
+Blue Lock in English and in Spanish used to be one title to hbook: Discover showed the Spanish source folded under
+an *In library* card that opened the English series, and following the Spanish source from the English series mixed
+the two, each chapter in whichever language won that number. Now each language is its own **edition**: a series of
+its own, linked with the others as one work.
+
+- **Each edition is a series.** Its own folder (`MangaDex (ES-419)/Blue Lock (ES-419)`, so it never lands in the
+  original's), its own sources, chapters, numbering and reading progress, so reading the Spanish edition never moves
+  where you are in the English one. A series added now states the language it is in, and an admin can set it for
+  one already here.
+- **Adding one.** *Sources & translations* has a **Languages** section that says which language the series is in and
+  offers **Add a language**: pick one of the languages your sources offer, then the title there (searched under the
+  series' title and its other names). An admin is pointed to MangaDex's languages in **Admin → Providers** too,
+  where the one wanted may be a tap away. Or add it from Discover: a card whose title you have in another language stays
+  addable and says so (*EN in library*), and picking its Spanish source offers the Spanish edition straight away. A
+  source that does not say its language asks which one it is, and *It is a different series* adds it on its own.
+- **One card in the Library.** A work shows once: the edition you read last, else the first one added, with every
+  language under its title (*EN · ES-419*).
+- **Switching.** The series page has a row of language chips under the title, and *Spanish · Ch. 12* says how far
+  you are there. The reader's chapter list has the same chips: one opens the chapter you are on in the other edition,
+  or that edition's page at the chapter when the server does not have it yet, with its Fetch.
+- **For admins.** *Edit details* has a **Language** field (*Automatic* shows what it would be). Health's duplicate
+  check counts works, not series, and a pair in two languages offers **Link as editions** instead of a merge, which
+  is refused inside a work. The × in Languages unlinks an edition, which stays in the library on its own. The age
+  rating and *Always show* in *Edit details* apply to every edition, so an 18+ work is 18+ in each language; and a
+  viewer sees only the editions they may open.
+- **Mihon, OPDS and trackers.** Komga's API (what Mihon reads) and OPDS keep the editions separate and title one
+  *Blue Lock (ES-419)* while another edition is there, with its language set. The editions share their AniList,
+  MyAnimeList or Kitsu entry, and reading the one that is behind never pushes your progress back.
+
+### MangaDex in other languages
+
+**@tagius** ([#123](https://github.com/YUnauuu/hbook/issues/123)) reads MangaDex in other languages than English.
+MangaDex was one English source that fell back to Spanish or Portuguese for a chapter English did not have.
+
+- **One source per language.** In **Admin → Providers**, MangaDex is one card, its languages behind **Manage**. English
+  is always on; each language you tap on becomes a source of its own, *MangaDex (ES-419)* say, at once and with no
+  restart, with its own Newest and Popular in Discover and its chapters in that language only. A series you add from
+  it is in that language. Turning off a language that series came from asks first: they keep their chapters and get
+  no new ones until it is back, and Health says which switch it is.
+- **English is unchanged**, the same source with the same search and fallback, except one thing: Discover's MangaDex
+  **Newest** is now the newest chapters in the language (English for English), where it used to list a title as new
+  when a chapter came out in any language.
+- **One rate limit for all of them.** Every MangaDex request goes through one pace, a quarter of a second apart, and
+  when MangaDex asks hbook to slow down, with a 429 or by saying none are left, every language waits as long as
+  it says, downloads included. A request that would wait more than ten seconds is given up rather than queued, and
+  costs the source no cooldown.
+- **Sites that do not say their language.** Most sites added by address, and some source packs, declare no language.
+  A new setting beside **Add a site** says which language they are in: English unless you choose another.
+
+### Every automatic follow keeps to the series' language
+
+A Spanish source followed by an English series fills it with Spanish chapters. Now the add dialog's *Also check the
+other sources*, the hunt for a missing chapter, Find other sources (automatic or reviewed) and Find missing chapters
+never follow, search or offer a source in another language than the series; a source in every language counts as any
+of them, and a series' own source always passes. Following one by hand from an older list is refused with both
+languages named, and with **Add it as an edition**, which opens the add dialog on that language. Borrowed chapter
+names come in the series' own language too.
+
+### Full paths, for @Kedryn
+
+- **Where a series and a chapter are on disk** ([#136](https://github.com/YUnauuu/hbook/issues/136)). An admin
+  sees a series' folder, in full, under *Edit details* (**Folder on the server**), and a chapter's file in its ⋯ menu
+  (**Copy file path**); one tap copies it and says what it copied.
+
+### Mark caught up
+
+- For a series already in your library, **Mark caught up** (an admin's, in *Edit details* beside Auto-update) stops
+  the updater fetching what is already out, the whole back catalogue, and keeps it fetching every new chapter, as
+  *Nothing yet* does for a series you add. It says what it does before it does it, and **Undo** puts back the floor
+  the series had. Chapters already here stay; older ones can still be fetched from the chapter list. Asked for by
+  **@p3t3t3** on [#72](https://github.com/YUnauuu/hbook/discussions/72).
+
+### The chapter select bar says what it removes
+
+- The series page's select bar greyed out *Remove* until chapters were ticked, and it read as the way to remove the
+  series. The bar is up from the moment you tap Select, its key says what it acts on (*Remove 3 chapters*), and with
+  nothing ticked it says *Tick chapters to remove them*, beside **Remove the whole series**, the series' own Remove.
+
+### Health: Folders scanned twice
+
+- **@Kedryn** ([#134](https://github.com/YUnauuu/hbook/discussions/134)) mounted his manga at `/library` with
+  hbook's downloads folder inside it, so the library scan read every downloaded chapter a second time, as a series
+  with no source beside the one with its source, and nothing said why. A new Health check, *Folders scanned twice*,
+  warns while one folder is inside the other, by their paths or as the last scan met it, names where, and says how
+  to fix it: mount them side by side. The install guide has a new
+  [Volumes](docs/INSTALL.md#volumes) section with the compose lines, and the desktop app words it in its own terms.
+
+### Also
+
+- **Earlier searches reopen.** Each earlier Find other sources search is a key in the results sheet that opens it in
+  place, *Back to the latest search* above it, so a review whose matches are still waiting is not lost once another
+  search runs. A search stopped during its first series no longer reads *1 of 4 series* on the Server tasks card;
+  only the series it searched count. *Skipped* has its own key for series (*Skipped series*) and for a match
+  (*Skipped for good*), so Spanish, French and Portuguese agree each with what it names.
+- **Shuffle on a short series.** A series of eight chapters or fewer, ten pages or fewer each, had every page read
+  whatever the shuffle, so **New banner** drew the same four panels and said *Banner changed*. It now chooses among
+  panels about as striking, reaches further down only when nothing near is left, and says *This is the only banner
+  this series’ pages give.* when there is no other.
+- **The hunt reads a chapter's parts the way updates do.** A site that numbers a chapter's parts its own way (its
+  11.1 and 11.6 for your 11 and 11.5) lists that chapter, as v0.50.0 taught the updater, so the hunt for a missing part
+  takes it from there at once.
+- **Singulars and translations.** The last nine counts that read wrong at one in languages that agree a word with its
+  number (*1 seleccionados*, *1 supprimés*) now agree: selected, deleted, saved, filed by hand, not here yet, the two
+  kinds of skipped chapter, and Downloads' two delete confirmations. Still English until now, and translated: Admin →
+  Extensions' paragraph, its out-of-date banner and every toast; the series page's favourite button and save notices;
+  *Deleted 1 file*; *Delete 1 chapter from the server?*; and *Check for new chapters now*.
+- **The desktop app's server-mode check** in CI failed now and then (macOS on v0.50.0, Windows on v0.51.0's pull
+  request) while everything it printed was right. The app was fine: on a first visit the web app reloads once when its
+  offline worker takes over, and the check's wait for the sign-in form could lose its grip across that reload. It
+  now decides on the page that stays.
+
+### Security updates
+
+- `brace-expansion` 5.0.12 ([#139](https://github.com/YUnauuu/hbook/pull/139)), for two high-severity advisories
+  and a medium-severity one, all denials of service on crafted brace patterns. The server reaches it only through
+  `@fastify/static`, which expands one fixed pattern over the web app's files at start, so no request ever did.
+
+### Upgrading
+
+- **The database** gets one migration on first start, and it only adds: `lib_series.lang` (the language a series is
+  in) and `lib_series.work_id` (the work an edition belongs to), with an index that allows one edition per language
+  in a work, and `server_settings.mangadex_langs` and `unstated_lang`. A data migration then states the language of
+  each MangaDex series from its own chapters, so a title that came in through English's fallback and is in Spanish
+  says so. v0.51.0 still starts on a migrated database: every new column is empty or has a default, and it never
+  reads them. There, a series added from a MangaDex language other than English reads *Source not installed*, kept
+  rather than lost, until you come back to v0.52.0.
+- **New source ids:** `mangadex-<code>` for each MangaDex language you switch on (`mangadex-es-419`,
+  `mangadex-pt-br`); `mangadex` stays English.
+- Nothing to change in compose files, and no new environment variables; the MangaDex languages and the language of
+  sites that do not say are settings, kept in the database.
+- **For scripts** ([api.md](docs/api.md)):
+  - New routes: `GET /api/sources/edition-candidates?seriesId=` (the languages a series could be added in, and with
+    `&lang=` the search there), `POST /api/admin/series/:id/editions` (link two series as editions) and
+    `DELETE /api/admin/series/:id/edition` (unlink one).
+  - `POST /api/sources/add` takes `edition: {of, lang?, ofLang?}`; its 409 `duplicate` offers `edition: {of,
+    heldLangs, lang}` when the source's language is not one the library holds the title in, and it refuses with
+    `edition_exists`, `edition_hidden` or `edition_lang`.
+  - Series payloads carry `lang`, `workId` and `edition` (admins also `langStated`, `langAuto`, the series' `paths`
+    and each chapter's `path`); `POST /api/series/search` takes `collapseEditions`; Discover's answers carry
+    `libraryLangs` and each provider's `lang`, and `inLibrary` now means held in that source's language.
+  - `PATCH /api/admin/series/:id` takes `lang` and `chapterFloor: 'caught_up'` (answering `{floor, previous}`), and
+    a merge inside a work is refused as `same_work`. `PATCH /api/admin/settings` takes `mangadexLangs` and
+    `unstatedLang`, and `GET` returns `mangadex_langs`, `unstated_lang` and `mangadex_available`.
+  - A follow refused for its language answers 409 `language_differs` with `edition: {of, lang}`, from the manual
+    follow and from a review's follow. `GET /api/admin/sources/find?runId=` reads an earlier run; Shuffle can answer
+    `{ok: true, seed, same: true}`; Health has a new check, `folders-twice`.
+  - A chapter copy's `lang` from MangaDex is the app's code (`es-419`, no longer `es-la`), as its sources are named.
+
+## v0.51.0 — 2026-10-02
+
+**A series AniList has no banner for now gets one made from its own pages: four striking panels from different
+chapters, side by side, behind its title and in Home's carousel.** And Find other sources can show you each match
+beside your series before it follows anything, with **Follow all green** for the ones it would have followed anyway.
+That idea is **@TIGamingTV**'s, from issue [#132](https://github.com/YUnauuu/hbook/issues/132) and pull request
+[#133](https://github.com/YUnauuu/hbook/pull/133). Plus three fixes to importing a list, for **@Kedryn**
+([#121](https://github.com/YUnauuu/hbook/discussions/121)).
+
+### Hero banners made from a series' own pages
+
+The banner behind a series' title, on its page and in Home's carousel, is AniList's banner art or one an admin set.
+On the server this was built for, 84 of 283 series had one; the other 199 showed their cover over a blur of itself.
+
+- **Four panels from the series itself.** For a series with no banner of its own, the server reads pages from up to
+  eight chapters spread across the series, picks the four most striking crops, from four different chapters where
+  it can, and sets them side by side. It looks for colour and detail, and stays away from what makes a poor banner:
+  white gutters and speech bubbles (a crop more than 12 % paper white is never used), flat text boxes, lettering,
+  glare, and the top and bottom of a page, where watermarks and credits sit. A chapter's first and last two pages,
+  the credits and the "read it at" plugs, are never used, and a black-and-white manga is judged as one.
+- **Never for 18+.** No banner is made for a series rated 18+, by its scan or by an admin, in an 18+ library,
+  carrying one of the admin's 18+ genres, or from an adult source, whatever *Always show* says. A banner is shown,
+  unasked, to everyone who can open the series, and an explicit panel must never become one.
+- **A real banner always wins.** AniList's banner or an admin's shows as before, and an automatic one is only made
+  once the AniList lookup has found none.
+- **New banner.** Under *Edit details* on the series page, while its banner is an automatic one, an admin can press
+  **New banner** for other chapters and other pages. The new banner is made before it replaces the old one, so a
+  series whose other pages make nothing keeps the one it had.
+- **The tall frame on phones.** On a phone, Home's carousel is taller than it is wide, and a strip of four would show
+  the gap between the middle two panels and half of each. A phone gets the same four panels, two by two.
+- **When they are made.** In the background, one at a time: 20 minutes after the server starts (10 in the desktop
+  app), then daily, up to 60 series a run, ten seconds apart, standing aside for the sweep, a repair or the daily
+  source check. A series you open with no banner of its own, a new one say, gets its own soon after, the same way. A
+  page shows the banner once it is made and never waits for one; until then, and for a series whose pages make none
+  (not tried again for a week), it looks as it did.
+
+### Review first, for Find other sources
+
+**@TIGamingTV** ([#132](https://github.com/YUnauuu/hbook/issues/132)) confirms matches by eye: one of his other
+sources offered a match whose chapter count was exact and whose cover showed it was another series, and the automatic
+judgement would have followed it. His pull request [#133](https://github.com/YUnauuu/hbook/pull/133) replaced
+automatic following with a review page; here the review is an option beside it, on the same search, with two of the
+pull request's rules.
+
+- **Follow automatically, or Review first.** Every place that starts Find other sources asks which: Health's source
+  row, the Library's **More**, and **Find more sources** in a series' *Sources & translations*. *Follow
+  automatically* is the default and works as before, and the choice you make is remembered on that device.
+- **To review.** A review-first search follows nothing. Its results list what it found under *To review*: for each
+  series, your cover beside each match's, with its title, its source, its chapter count and how the numbers line up
+  (*13 of our 14 chapters line up*, *We list 12 of its 14*), and **Follow** and **Skip**.
+- **Green and amber.** A green match is one an automatic search would have followed. An amber one says why it needs
+  a look first: it matched only under another name of the series, or a name matches exactly and the chapter numbers
+  do not line up. A title that merely contains yours, with numbers that do not line up, is the shape of a sequel or a
+  spin-off, and is not offered at all (#133's rule).
+- **Follow all green** follows every green match, one after the other, and leaves the amber ones to follow one at a
+  time. **Skip** is for good: a skipped match stays skipped.
+- **Checked again when you follow.** A review can wait, so a follow checks again that the series is not numbered by
+  posting order by now, and that the source is still loaded, switched on, not the series' main source and not
+  followed already. A source the series already follows another way is never re-pointed (#133's other
+  rule), and the cap on followed sources holds as for every follow.
+
+### Import
+
+From **@Kedryn**'s questions in [#121](https://github.com/YUnauuu/hbook/discussions/121), on bringing a Mihon
+library over.
+
+- **Titles you already have no longer count toward the 500.** One import looks up at most 500 titles, and the 500
+  was counted before the titles already in your library were set aside, so a backup of more than 500 imported a
+  second time landed on the same first 500, by then mostly yours, and never reached the rest. Titles you have are
+  listed as skipped and do not count now, and a longer list says *(first 500 not in your library kept; import again
+  for the rest)*: once those are in, importing the same list again brings the next ones. A tracker list keeps its
+  own limit, as before.
+- **Select all “same source as before”** on the review selects the exact pairs, each backup entry found on its own
+  extension at its own address, in one press.
+- **Hide already imported** hides the titles your library holds, so a list brought over again shows only what is
+  left to decide.
+
+### Upgrading
+
+- **The database** gets one migration on first start, and it only adds a table: `series_hero` (each series' banner
+  seed, when its banner was made, and when a try last failed). v0.50.0 still starts on a migrated database and never
+  reads it, so going back is safe. The banners themselves are files in the image cache (`CACHE_DIR`), beside the
+  covers.
+- Nothing to change in compose files or settings, and no new environment variables.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /img/series/:id/hero` is the automatic banner (`?ar=tall` for the two-by-two frame), gated as the series'
+    cover is, and **404** where there is none. Every series payload carries `autoHero`: `{seed}` once the banner is
+    made, or `null`.
+    `POST /api/admin/series/:id/hero/shuffle` (admin) makes a new one: `{ok: true, seed}`, or `{ok: false, error:
+    'not_made'}` with the old one kept, and **409** `not_automatic` for a series that may not have one.
+  - `POST /api/admin/sources/find` takes `review: true`; such a run reads `review: true`, and its series carry
+    `proposals`. `POST /api/admin/sources/find/:runId/follow` and `…/dismiss`, with `{seriesId, sourceId}`, decide
+    one; a follow from a review is audited as `series.follow_source` with `via: find_review`.
+  - `POST /api/admin/import/batches` keeps the titles already in the library as skipped rows besides the 500 it
+    looks up, so its `total` can be more than 500; `truncated` says more titles not in the library remained.
+
+## v0.50.0 — 2026-10-02
+
+**Following a second site no longer downloads chapters you already have: hbook compares a chapter's parts, not
+just its numbers, when sites split or number them differently.** Health lists the copies that came in twice before
+this release and deletes them when you say so, a card under Needs attention can be dismissed from the start, and
+three pull requests from [@Squeaks72](https://github.com/Squeaks72): Previous chapter opens at the last page and
+stray taps no longer skip ahead ([#129](https://github.com/YUnauuu/hbook/pull/129)), the 18+ filter honours a
+series' own rating ([#130](https://github.com/YUnauuu/hbook/pull/130)), and a card in Discover for a series you
+own opens it ([#131](https://github.com/YUnauuu/hbook/pull/131)).
+
+### Chapter parts that sites number or split differently
+
+A long chapter is often posted in parts, and sites do not agree on how to number them. On *Tales of Demons and Gods*
+mangapill posts a chapter as 335 and 335.5, mangaread as 335.1 and 335.6; another site splits chapter 78 of *The
+Great Mage Returns After 4000 Years* into ten parts, 78 and 78.1 to 78.9, where the server had it as one file. The
+updater compared exact numbers, so once the main source of the server this was built for went offline and its series
+followed sites like these, it took their numbers for new chapters: on 1 October it downloaded about a hundred
+chapters that were already there.
+
+- **The same parts under other numbers are the same parts.** When a site lists as many parts of a chapter as you
+  have (two or more) under other numbers, they are matched in order: its 335.1 and 335.6 are your 335 and 335.5, and
+  nothing is downloaded. A part you are missing is saved under your numbering. With nothing of that chapter on disk
+  yet, the main source's numbering decides, then the numbering most of the series' chapters already use, so two
+  sites that disagree still give you one copy of each part.
+- **Another split of a chapter you have is not a new chapter.** A part a site lists at a chapter you already hold a
+  file for, from a different site than that file came from, shows on the series page as *another split* (of a
+  chapter you have, its tooltip says). The updater leaves it alone, it is not counted in *{n} not here yet*, and *Fetch newest* reads the series
+  as up to date; the cloud icon on the row still fetches it if you want it. A part the same site lists beside the
+  chapter it already gave you is part of that site's own numbering and is downloaded as before, which is how a real
+  extra like 40.5 still arrives.
+- **One split per new chapter.** When nothing of a chapter is here yet and two sites split it into different
+  numbers of parts (540 and 540.5 on one, 540, 540.1 and 540.2 on another), only the parts of the site that comes
+  first in the series' source order are downloaded; the other's show as *another site’s split*.
+- **What you will see.** No more second copies after following another site, and grey rows like *78.1 · another
+  split · via mangaread* under chapters you hold. Mihon does not list those rows. None of these rules touches a
+  series numbered by posting order, or one whose numbering change is waiting for you.
+
+### Health: the same chapter saved twice
+
+- **A new check, *The same chapter saved twice*,** lists series where two sites' splits of one chapter are both on
+  disk, the second having arrived after the first: 335.1 and 335.6 from mangaread beside 335 and 335.5 from
+  mangapill. Each row names the files that arrived later and offers **Delete chapters** for exactly those; the
+  card's **Fix all** does the same for every row, after a confirmation that lists them. It warns while it finds any,
+  and nothing is deleted until you confirm. A part one site supplied under another's numbers, when that
+  site lists it too, is not a second copy and is not listed. Deleted files stay listed as deleted chapters, everyone
+  keeps their reading history, and updates do not fetch them back.
+
+### Needs attention: Dismiss from the start
+
+- A card of chapters that could not be saved, from the scheduled check or *Check now*, offered **Try again** and
+  **Open**, and **Dismiss** appeared only after a *Try again* had made a download of it: the server refused to
+  dismiss a card with no download behind it. Every such card now has **Dismiss** from the start, for an admin or
+  whoever started the download. Dismissing a failed download no longer brings its chapters back as a card of their
+  own, and a restart does not bring a dismissed card back either.
+
+### From @Squeaks72
+
+- **Previous chapter opens at its last page, and stray taps no longer leave a chapter**
+  ([#129](https://github.com/YUnauuu/hbook/pull/129)). Previous chapter, the footer button and `[`, opens the
+  chapter before at its last page, and a chapter whose last pages are hidden opens at its last remaining page instead
+  of the first. The footer's next-chapter button asks for a second press within three seconds unless you are within
+  two pages of the end; holding `[`, `]`, `f` or Escape does not repeat; a tap right after a double tap is ignored; tap
+  turns can no longer overshoot, and paged mode moves one page per swipe. Merged as it was.
+- **The 18+ filter honours a series' own rating** ([#130](https://github.com/YUnauuu/hbook/pull/130)). With
+  *Show 18+* off, a series rated 18+ on its own page, or by an admin, leaves Home's *Continue reading*, the Library and
+  every rail, as one in an 18+ library always did. **Always show** keeps a series on the shelf against all three: its
+  library's rating, its own and its genres. The pull request also let *Always show* lift an account's age limit for
+  that series, and that part was left out: *Always show* is a shelf switch in the edit dialog, and who may open a
+  series stays each account's age limit. To let an account with a limit read one title, rate that title lower. The
+  switch's help text says what it does, in every language.
+- **A card in Discover for a series you own opens it** ([#131](https://github.com/YUnauuu/hbook/pull/131)). A
+  card marked *In library* was a disabled button; it now opens the series in your library. The pull request's tests
+  failed on something it did not touch: a test deleted a series while a background refresh was writing that series'
+  chapter list, and the two deadlocked. The refresh now locks the series first, so deleting a series (*Forget*) while
+  its list is being refreshed can no longer fail with "deadlock detected" either.
+
+### Upgrading
+
+- No database change: the stored chapter listing gains a status, `covered`, in a column it already has. Nothing to
+  change in compose files or settings.
+- **For scripts** ([api.md](docs/api.md)): `GET /api/series/:id/listing` can answer `why: covered`; `GET
+  /api/admin/health` has a new check, `saved-twice`; `DELETE /api/sources/jobs/:folder` also dismisses a folder's
+  failed chapters when the folder has no job, and dismissing a job clears them too. The search results of
+  `/api/sources/search`, `search-all`, `latest` and `popular` carry `librarySeriesId` beside `inLibrary`. `adultExempt`
+  on `PUT /api/admin/series/:id/meta` now also outranks a series' own 18+ rating and an 18+ library in listings; it
+  does not lift `max_age_rating`.
+
+## v0.49.2 — 2026-09-29
+
+**The Library can be filtered by where a series comes from: Main source shows the series added from a source, and
+Any source every series that reads from it, as its main source or a followed one.** Both are **@TIGamingTV**'s, from
+pull request [#124](https://github.com/YUnauuu/hbook/pull/124), split out of
+[#119](https://github.com/YUnauuu/hbook/pull/119) as its review asked, with a few fixes on top. Plus two
+security updates to the server's dependencies.
+
+### Main source and Any source, the Library filtered by where a series comes from
+
+- **Two more sections in the filter panel**, in the sidebar on a laptop and in *Filters* on a phone, once the library
+  has more than one source. **Main source** lists the series added from a source; **Any source** the series that read
+  from it at all, as their main source or one they follow as a second source. Each source carries its count, busiest
+  first, ten of them before *Show all*. A tap filters and a second tap clears; both combine with every other filter,
+  live in the address like the rest, and show under the header as *Main: …* and *Any: …* chips, each cleared by its
+  ×. A source whose extension is gone still filters, dimmed.
+- **The counts are the grid's.** They are counted over what you may see (your libraries, the age cap, the 18+
+  switch), so the number beside a source is what tapping it shows, and a source only a library closed to you uses is
+  not listed at all.
+- **With Find other sources**, for a source that went away: filter by it under **Main source**, then **Select** →
+  **Select all** → **More** → **Find other sources** (admins). *Select all* takes what the grid has loaded, so scroll
+  to the end first.
+
+On top of the pull request:
+
+- **The counts refresh with the grid.** After *Remove from library* or another bulk action, a pull to refresh or the
+  header's refresh, the grid changed and the counts did not: they went on counting a series that had just left, until
+  a reload. They refresh together now.
+- **A source is named as Health names it.** A source that series only follow read as a raw id (*sw:4709…*) whenever
+  the extension engine was down or the source was switched off, and a source that is not loaded could be named after
+  the folder its series sit in. It now reads the name the engine gave it, as on Health and Providers.
+- **Wording.** *Any source* said "a linked one"; the app says a series *follows* a second source, and keeps *linked*
+  for trackers. In Japanese, *Any source* said "all sources", and the new Japanese and Chinese strings use those
+  files' full-width brackets and colon. A chosen chip for a source that is not loaded keeps its highlight.
+
+### Security updates
+
+- `fast-uri` 4.2.1 and 3.1.8 ([#126](https://github.com/YUnauuu/hbook/pull/126)), for two high-severity
+  advisories: authority injection and host confusion when parsing a URI. Fastify and the API reference's schema
+  resolver depend on it.
+- `ip-address` 10.7.2 ([#127](https://github.com/YUnauuu/hbook/pull/127)), for a medium-severity advisory. The
+  rate limiter groups IPv6 clients with it.
+
+### Upgrading
+
+- No database change, and nothing to change in compose files or settings.
+- **For scripts** ([api.md](docs/api.md)): a new route, `GET /api/library/sources` (`{id, name, main, any,
+  installed}` for every source the viewer's library comes from), and two more conditions for
+  `POST /api/series/search` on the owned backend, `mainSource` and `anySource` (`is` / `isNot` a source id).
+
+## v0.49.1 — 2026-09-28
+
+**When a site goes away, its series can find other sources in one press: Find other sources searches the other
+sites for every series of that source, or any you pick, calmly, one series at a time, and follows the ones that
+really carry them.** A series can go by other names, Health recognises a site that says it is offline, and Health
+and Library → Downloads now read in your language. Plus a round of fixes to things v0.49.0 said wrong. The idea for
+Find other sources, the list of other names and the way they are read from a source's description are
+**@TIGamingTV**'s, from pull request [#119](https://github.com/YUnauuu/hbook/pull/119), rebuilt here on the
+server's own search and follow rules.
+
+### Find other sources, for every series of a site that went away
+
+A site that goes away takes its series' new chapters with it. One Madara site has served only its own *temporarily
+offline* page since 23 September; on the server this was built for, 189 of its 195 series had no second source, so
+none of them has had a new chapter since. Following a second source was one series at a time, from *Find missing
+chapters*.
+
+- **Where to start it.** On **Admin → Health**, the row of a failing or switched-off source under *Source health*,
+  and a row under *Series that can no longer update* whose reason is its source, carry **Find other sources (189
+  series)**: every series whose main source it is. In the **Library**, select series and choose **Find other
+  sources** under **More**. On a series page, **Find more sources** in *Sources & translations* does it for that one
+  series. Admins only.
+- **How it runs.** One run at a time on the server, in the background: one series at a time, 1.5 seconds apart,
+  waiting while a chapter sweep, a library repair or the daily source check runs. For each series it searches under
+  the title and up to three other names, in your source order, and never asks the series' main source, a source it
+  already follows, or one that is switched off or cooling down; a series that is not 18+ never asks an 18+ source. A
+  candidate passes the same check as any second source, its title and then its chapter numbers, and is followed as
+  you would follow it. A series follows at most two other sources, the search stops once three sources carry it,
+  and each series gets at most 90 seconds. A series numbered by posting order is skipped: it follows no other source.
+- **Afterwards** each series that gained a source has its chapter list read again, 1.5 seconds apart, so the next
+  scheduled check fetches its chapters without a burst, and Health checks itself again.
+- **Watching and stopping.** *Server tasks* in Library → Downloads shows an *Other-source search* card: how many
+  series of how many, how many sources it has followed, the series it is on or what it is waiting for, and **Stop**,
+  which stops it at once. Health's row and a card under the checks show the same. It never turns the Library ring:
+  it downloads nothing itself.
+- **The results**, from **Show results**: *New sources* (which series got which source, and how many chapters it
+  lists), *Nothing found* and why (no other source lists it under its title or other names; one did, but its title
+  or chapter numbers did not match; no other source answered; no other source lists it besides the one it already
+  follows), *Skipped* (numbered by posting order, already following as many sources as a series may, fewer than 3
+  chapters to compare, no other source that could be asked), and *Not tried*: a stop, the 90-second limit or a
+  restart cut it short (or the series was removed meanwhile), never "not found", with **Search the {n} series not
+  tried**. A restart stops a run the way Stop does, and what it followed stays followed.
+
+### Other names
+
+- **A series keeps the other names it goes by**: its English title, a romanisation, the name another site files it
+  under. They are read from its main source's description (an *Alternative Titles:* line, in Latin letters, at most
+  twenty) when it is added and whenever that source's details are read, kept from a tracker import's synonyms when
+  an import adds the series, and typed by an admin under **Other names** in *Sources & translations*, which says
+  where each came from. A name you remove stays removed: reading the description again does not bring it back, and
+  typing it again does.
+- **Every search for another source uses them**: Find other sources, *Find missing chapters* (the title, up to three
+  other names, then what you typed), the add dialog's check of the other sources, the nightly search for failed
+  chapters and borrowed chapter names. An other name must match a candidate's title exactly, never by one
+  containing the other, since a sequel's page can list its parent's name; the chapter numbers must still line up.
+
+### "The site says it is offline"
+
+- A site that answers with its own maintenance page (small, its title or first heading saying *temporarily
+  offline*, *maintenance* or *be back soon*, with none of the site's own markup) used to parse as an empty list: the
+  sweep took it for a listing with nothing new, and Health guessed *markup may not match this engine*. The built-in
+  Madara and Manganato engines now recognise such a page and report it as a failure of its own. The series keep
+  their chapter lists, no empty streak builds up, the step reads *the site says it is offline* on Test and in the
+  source's step lines, and Health says *The site says it is offline (its own page)*, with *Wait for the site to come
+  back, or find other sources for its series.* and the row's **Find other sources**.
+- Discover and search put such a site in the usual cooldown (5 to 30 minutes), so the first check after it comes
+  back can wait that long.
+
+### Health and Library → Downloads in your language
+
+- **The server's sentences are translated.** Health's summaries, notes and rows, the header's warning, a source's
+  diagnosis and its fix, why a download stopped or a run ended, and a refused renumbering or extension setting were
+  English in every language. The server now sends each with a code beside its English, and the page says it in your
+  language: counts with their singulars, and dates and times in your own time zone, where the
+  English prints UTC with no zone. A code the page does not know, from a newer server, leaves that whole line in
+  English, never half of it. That is about 400 new sentences in each of the eight languages, machine-translated and
+  then read by a native-level reviewer per language: corrections are still welcome.
+- The pointer to removed series said *Admin → Removed*, a tab that does not exist. It says *Admin → Library*.
+
+### Fixes
+
+- **Last tried** on the extension engine's card is the last attempt of any kind, with how it went (*· no answer*);
+  it named the last registration, which could be hours old.
+- **The engine and solver rows agree.** Health's *Extension engine* row said *it can get past Cloudflare* beside the
+  solver's own *Not answering*. Both read one ping now, and an engine connected to a solver that does not answer
+  says so.
+- **Healed chapters.** *Came in today* kept *1 chapter saved with pages missing* after the repair had filled the
+  missing pages. The entry now reads as landed, after a restart too.
+- **The slow archive's first chapter** of a series with nothing in the library yet is scanned in at once, and
+  listed in Library → Downloads once the library holds it; such a series read *0 chapters* under a band saying *1
+  of 14*.
+- **The slow archive's count keeps its total.** While a chapter it had fetched was being scanned into the library,
+  the cover and the series sheet could say *1 of 13* for a series of 14, until the next refresh.
+- **A renumbering being applied** read *interrupted* under Health's *Chapter numbering* until it finished. It says
+  it is being applied now.
+- **A paused archive.** The series page no longer says a paused archive's chapters are *being archived slowly*,
+  whoever is looking.
+- **No lingering "running" downloads.** The 10-minute *running* line v0.49.0 removed from ordinary downloads was
+  still left by a switch to your preferred group's copy, by the completion pass and by the repair's short-chapter
+  step.
+- Health's solver row named a newer FlareSolverr *vv3.5.2*. It has one *v* now.
+- **In Arabic**, a series title in Library → Downloads (a server task's *Now:* line, a stopped download, a card under
+  *Needs attention*) is cut at its own end, so its beginning shows; the ellipsis used to take its start.
+
+### The English that was left, translated
+
+- Admin → Extensions → Languages, the Offline page, the Library's series count, the series page's saved pages and
+  notes, Discover's source count and the names the server gives devices were English in every language. They are
+  translated, with their singulars, and three English sentences that read badly are reworded.
+
+### The Library's select bar
+
+- **Move to library**, **Remove from library** and the new **Find other sources** are rows under **More** at every
+  width. As keys they took the bar to two rows at 1024 and 1280 px; it is one row from a laptop up again, in German
+  too.
+
+### CodeQL and dependencies
+
+- The code-scanning alerts that were open are closed: six in test code, the desktop solver's debug routes answering
+  only their own names, and the folder browser trimming a path's trailing slashes in one pass instead of a pattern
+  that slowed down on a long run of slashes.
+- framer-motion 13.4.4, Next.js 16.3.6 and Puppeteer 25.12 ([#122](https://github.com/YUnauuu/hbook/pull/122)).
+
+### Upgrading
+
+- **The database** gets one migration on first start, and it only adds two tables: `series_alt_titles` (the other
+  names) and `source_find_runs` (the newest 20 runs). v0.49.0 still starts on a migrated database and never reads
+  them, so going back is safe.
+- Nothing to change in compose files or settings, and no new environment variables.
+- **For scripts** ([api.md](docs/api.md)):
+  - The English fields that Health, the downloads and the refusals send are as before, but for five sentences the
+    translation review corrected: the Extension engine's summary *Turned off* is *Switched off*; `too_slow`'s reason
+    reads *This source answers, but takes longer than the time it is given.*; the *Impossible chapter numbers* note
+    quotes *Delete chapters* and says a bookmarked chapter is *skipped*; the *Chapter numbering* note quotes the
+    Webtoons switch as *Use sequential chapter numbering*; and a source that cannot be named is *its source* inside
+    a sentence. Beside each field, a `…Said` field carries its code: `summarySaid`, `noteSaid`, `detailSaid`,
+    `titleSaid`, `fixSaid`, `reasonSaid`, `messageSaid` and `errorSaid` (the `Said` schema in openapi.yaml), and
+    `noteCode` on the public source list.
+  - New routes: `GET` and `POST /api/admin/series/{id}/alt-titles`, `DELETE /api/admin/series/{id}/alt-titles/{norm}`,
+    `GET` and `POST /api/admin/sources/find` and `POST /api/admin/sources/find/stop`. A run's `results[].why` is one
+    of `posting_order`, `full`, `too_few`, `no_source`, `refused`, `no_answer`, `followed_already`, `no_match` and
+    `not_tried`.
+  - `GET /api/sources/jobs` carries admins a `find_sources` run card, with `followed` and `waiting`. Health's
+    `sources` and `frozen-series` rows can carry the action `find_sources` with `findSeries`. A stage's `kind`, a
+    Test check's `kind` and a diagnosis `code` can be `site_offline`, whose fix has the code `fix.siteOffline`.
+  - `GET /api/admin/extensions/status` adds `lastTry` and `lastTryOk`, and the `archive` of
+    `GET /api/series/{id}/listing` adds `pausedForAll`.
+
+## v0.49.0 — 2026-09-28
+
+**Server downloads get a home of their own, Health says what every fix does and whether it worked, a failing
+source shows as failing, a whole series can come in slowly over nights or days, a source that gives many
+different posts one chapter number is numbered in posting order, and the extension engine is easy to add and
+remove.** Plus Health's keys, the status marks and the messages lose their capsule shapes: messages are cards at
+the bottom that never cover a dialog's title.
+[#115](https://github.com/YUnauuu/hbook/issues/115) was reported by **@TIGamingTV**, with the screenshots
+that showed it; [#116](https://github.com/YUnauuu/hbook/issues/116) and
+[#117](https://github.com/YUnauuu/hbook/issues/117) by **@Jamie96ITS**; and the engine work answers
+**@TIGamingTV**'s reply on Discussion [#72](https://github.com/YUnauuu/hbook/discussions/72).
+
+### Library → Downloads: everything the server fetches, in one place
+
+The downloads pill in the bottom corner is gone, and so is the *On the server* section v0.48.1 put on the
+Offline tab. Everything the server fetches, whoever started it, is under **Library → Downloads**:
+
+- **A ring on the Library tab.** While chapters come in, the Library tab's icon on a phone wears a thin ring
+  that fills as they land, with a small count of the series being fetched; on a computer the same ring is the
+  cloud button just before the Updates bell. An amber dot on it means a download failed — one of yours, or any,
+  for an admin.
+- **Series | Downloads**, a switch under the Library page's title. The address remembers which
+  (`/library/?view=downloads`), so Back and a shared link land on the same one.
+- **Each series as its cover with a ring**, like an app being installed, in up to five sections: **Running now**,
+  **Queued** (waiting their turn at a busy source, and the slow archive below), **Needs attention** (a failed
+  download, with **Try again**, which fetches exactly the chapters it did not land, **Dismiss** and **Open**),
+  **Server tasks** (the scheduled check, the library repair with the step it is on, a bulk *Fetch newest*) and
+  **Came in today**, which now survives a restart of the server.
+- **Each series page** shows its own downloads in a slim band above the chapter list, whoever started them, with
+  a Cancel when it is yours to stop. Grey chapters turn into chapters as they land.
+- Discover's strip, the add dialog's *Open in library*, the command palette (*Server downloads*) and the desktop
+  app's old `/downloads` link all lead there.
+
+**The Offline tab is this device's again**: only the copies saved here for reading with no connection, and one
+line pointing to Library → Downloads. The reader's button to it says *Offline*, and the profile's section is
+*Offline downloads*.
+
+**Who sees which download.** Everyone sees the downloads of the series they can open: library access, age cap and
+the 18+ hide, the rule the series themselves follow. Before, downloads were filtered only while the 18+ hide was
+on, so a member shut out of a library still received the titles of what it was downloading. A failed download is
+shown only to whoever started it and to admins, and only they can dismiss it; before, any member could clear
+anyone's. Members who may not add series see none of it: no ring, no switch.
+
+### Messages are cards at the bottom, and statuses and Health's keys are no longer capsules
+
+- **Messages** (*Marked read*, *Fetching 3 chapters…*, *Could not save*) were capsules at the top of the screen for
+  3.2 seconds whatever they said. On a phone that is where every dialog keeps its title, and a long error was gone
+  before it was read. They are now small cards at the bottom: just above the bottom bar on a phone (above the
+  select bar in select mode; in the bar's own place while a dialog is open, so the dialog is never covered), above
+  the reader's chapter list and settings sheet, and in the bottom-right corner on a laptop (bottom-left in
+  Arabic). A message stays as long as it takes to read — longer for longer ones, at least six seconds for an
+  error — and waits while you hover over it, touch it or tab to it. ✕ dismisses it, and so does a swipe down; the
+  same message twice shows once with *×2*, and at most three show at once.
+- **Statuses are a mark and words.** The capsules on Health (*All good*, *Worth a look*), the source cards'
+  `ok` / `rate-limited` and the engine's `ready` are a shaped glyph with words: *Healthy*, *Rate-limited*, *Not
+  answering*, *Answers empty*, *Turned off*, *Blocked by the site*, *Failing*, *Engine ready*. The shapes differ,
+  so a status reads without its colour; the source capsule used to print the server's own word, in English, in
+  every language.
+- **Buttons are keys.** Health's action chips and the buttons on Providers and Extensions are rectangular keys.
+  Filter and sort chips stay as they are. The Updates bell's count is a small squared tag.
+- **Motion.** Progress rings stop turning under **Reduce effects** or the system's reduce-motion setting and show a
+  still dashed circle instead; messages then neither slide in nor show the line that drains as their time runs out.
+- **Translations.** Thirty strings that had shipped in English in every language are translated (the reader's
+  repeated-page controls, removing a Moment, the offline banner, *Saved for offline*, among others), times such
+  as *3 days ago* are said in your language, and Health and Tasks are translated too: titles, actions, schedules
+  and results (a finding's own sentence from the server is still in English).
+
+### Health: what each fix does, how long it takes, and whether it worked
+
+You could not tell from **Admin → Health** what a button would do, how, how long it would take, or whether it had
+worked. The answers were in the code and nowhere on the page.
+
+- **Before you press.** Each card opens with what you can do there: one line per action saying what it does,
+  *How it works* for the detail, and how long it takes — *Usually 40 sec · At most about 3 min of searching and
+  waiting · plus at most 20 chapter downloads*. "Usually" is the middle of the last five runs of the same kind;
+  "at most" adds up only the waits the code limits, and downloads are a count, never turned into a time.
+- **While it runs.** The finding you pressed shows the step, what it is on and a ticking clock, and its card's
+  header a small working mark. A strip at the top of Health follows any repair — yours, another admin's, the
+  nightly: the step, the series or chapter it is on, how long it has been going, how long it usually takes and the
+  searches it has left, with **Stop**. A key that would start a repair waits while a chapter sweep or another
+  repair runs, and says why, instead of being refused after the press.
+- **Afterwards.** The row keeps what the run did and *Took m:ss*, or why it was refused or failed, and it is still
+  there after a reload. The page checks itself again when the run **ends**; the v0.48 buttons re-checked the
+  moment they were pressed, when the repair had only just begun. **Recent repairs**, at the bottom, keeps the
+  runs, nightly and pressed alike: who, what, how long, what it did and what it passed over, and why (*Skipped:
+  its folder is busy with another download*).
+- **Fix all issues** is a row at the top. Its plan, with each step's limits, is under *How it works* before you
+  press **Start**, where the old confirmation showed it only afterwards, and it now says what it does: its solver
+  step ends the cooldowns of the sources that blame the solver, and the gap and short-chapter steps share one
+  budget of searches.
+- **A fix on one row no longer replaces the nightly's line.** A *Fix* on one chapter used to overwrite **Admin →
+  Tasks → Repair library** and, after a restart, move the nightly's schedule. That line is now always the last full
+  run, marked *(nightly)* or *(run by hand)*, followed by when the next one is due, the running step with its clock,
+  and the latest one-off fix, which links to Recent repairs.
+- **Keys that do what they say.** *Fill now* works on a series whose automatic updates are off, and fetches the
+  missing chapters a source it already follows lists (up to 20) instead of leaving them to the next sweep. *Fix*
+  is no longer offered for a chapter saved with placeholder pages, where it did nothing. The *Chapters that would
+  not download* card's Fix all gives every failed chapter another try now and re-checks up to ten series at once,
+  from the sources that can be asked; it used to reset only week-old ones and re-check nothing.
+  The solver reset is one action on its card that says how many sources it reaches (*Reset the solver (3
+  sources)*) and that it cannot restart the solver; while the solver is not answering, the card says to restart it
+  instead. A row says before the press what an action cannot do (*Updates are paused for this series: Fill now
+  fetches the missing chapters once*, *This source is cooling down…*), and *Failing since* survives a Retry now.
+- **Scans say what they found.** **Scan the library now**, on the *Library scan* and *Downloads missing from the
+  library* cards, and the admin home's *Scan library now* answer *Scan done: 38 series, 912 chapters* (or that a
+  scan ran less than a minute ago) and check Health again. The warning in the header clears by itself once a
+  repair, a test or a scan has fixed what it was about.
+
+### A failing source shows as failing (#115)
+
+"Manga Ball (EN)" failed its **Test** while its Providers card said `ok` and Health said *All good*. The Test wrote
+nothing down, the daily check wrote a code that nothing read, and Health read only the status that any finished
+download puts back to `ok`. The diagnosis also blamed the extension engine (*The extension server did not
+answer*), though the engine had answered, with the extension's own error.
+
+- **What each step did is kept.** A source is checked in four steps — search, chapter list, page list and images
+  (the Test and the daily check try the first three; images are seen when chapters download) — and hbook now
+  keeps what each was last seen doing, and who saw it: the Test button, the daily check, or ordinary use. A failed
+  Test or daily check marks that step failing at once; ordinary use does after three failures in a row at the same
+  step. Only a later success at that **same** step clears it, so a downloaded chapter no longer vouches for a
+  broken search. Testing still never changes a cooldown.
+- **Providers and Health say which step broke.** The source's card reads **Failing** — a step failed its last Test
+  or daily check, or three times in a row in normal use, within the last week and while nothing has put the source
+  in a cooldown — with a line per step (✗ Search, when, and whether the Test button, the daily check or normal use
+  saw it) and the engine's own error, and it keeps them after a reload. Health's *Source health* names each source
+  and leads with the step (*Search failing since …*). A source no series uses counts as soon as its failure is
+  confirmed; turn it off or *Ignore* it, and it comes back only if another step starts failing. *All sources
+  responding normally* is never said over a failing source, or one whose test could not finish.
+- **The engine is told apart from the extension.** *The extension server did not answer* now means only that the
+  engine could not be reached, timed out or refused hbook's login (that one now says to set
+  `SUWAYOMI_USERNAME` / `SUWAYOMI_PASSWORD`). When the engine answers with the extension's own error, it reads
+  *This source's extension reported an error*, with what to try; a source that lists chapters without numbers
+  says that. *Working normally.* is never shown under a failed check.
+- **A fairer test.** It tries up to three search results before blaming a chapter list, asks for the pages of the
+  newest chapter first, and keeps every call inside its own time limit (`SOURCE_TEST_TIMEOUT_MS`): running out of
+  time reads *could not finish in time — not proof it is broken*, never *failing*. The Test key counts against that
+  limit (*Testing… 0:12 of up to 0:53*).
+- **Check all now runs in the background**, with its progress on the button (*Checking 7 of 40 · …*), and picks up
+  a check that was already running when you open Providers.
+- **One push per new failure.** The daily check notifies admins of every failure it confirms (a rate limit
+  aside), not only a short list of known causes, and once per new or changed failure rather than every morning;
+  the notification opens Health.
+
+### The extension engine: easy to add, remove and wire up (#72)
+
+It stays what it was, an optional second container beside the one image; what changes is that adding it, removing
+it and pointing it at the Cloudflare solver are no longer chores, on any platform.
+
+- **One switch on Docker Compose.** `EXTENSION_ENGINE=0` in `.env`, then `docker compose up -d`: the engine's
+  container goes, its data stays in its volume, and hbook knows extensions are off instead of reporting an
+  engine that isn't answering. Delete the line and run the same command to bring it back where it left off. It
+  needs the v0.49.0 compose files (see Upgrading).
+- **Unraid and CasaOS.** Unraid gets a template for the engine, **hbook-suwayomi** in Apps (pinned,
+  memory-capped, and its Cloudflare helper ready once you enter your FlareSolverr's address, or press
+  **Connect**); CasaOS gets an add-on,
+  [`deploy/casaos/hbook-suwayomi.yml`](deploy/casaos/hbook-suwayomi.yml), that joins the listing's network
+  and uses its solver. On Umbrel it is not available: an Umbrel app cannot offer an optional second container.
+- **Setup steps where you need them.** With no engine — switched off, not set up, or not answering —
+  **Admin → Extensions** says which, and shows the steps for your platform (Docker Compose, Unraid, CasaOS, Umbrel
+  or somewhere else) with each command ready to copy. **Check again** asks at once, and the card turns into the
+  extension catalogue by itself when the engine answers. It warns you never to delete the engine's data, and says
+  how many series depend on it.
+- **hbook keeps trying.** It stopped asking about four minutes after a failed start, so an engine that came up
+  later — a slow NAS, a template installed after hbook, a container restarted by hand — stayed missing until
+  someone reloaded. It now asks every 5 minutes for as long as it takes, quietly, and registers the engine's
+  sources the moment it answers; a *Reload sources* during an outage heals the same way.
+- **Health has one *Extension engine* row**: off (a greyed line while series depend on it), not answering (and how
+  often it has asked), or ready, and whether the engine's own Cloudflare helper is in use. Series from extensions
+  that cannot update say *…can't be reached because the extension engine isn't answering* (or *is off*) instead of
+  "over the source limit".
+- **The engine's Cloudflare helper, connected with one press.** When the engine's own helper is off, or points at
+  `localhost` where no helper runs, **Admin → Extensions** says so under the catalogue, and Health's row says the
+  same, amber while an extension source is seen behind Cloudflare. Both offer **Connect**, which sets the engine to
+  the solver hbook uses (`FLARESOLVERR_URL`), with nothing restarted. When the engine cannot say what its helper
+  is set to while a source fails with the engine's own *Cloudflare bypass currently disabled*, the row reads *It
+  cannot use its Cloudflare helper*, with the same key wherever there is a setting to change.
+- **The engine's page cache is kept empty.** The engine keeps a copy of every page it serves, with no limit,
+  inside its container, which on the host means the system disk: on one server it had grown to 17 GB and filled
+  it. hbook already has those pages in the chapter files it wrote, so it asks the engine to delete them after
+  each extension download job and every half hour while nothing downloads through it, never while an extension
+  download is running. Covers are left alone, and no compose change is needed.
+- **The engine's data is not in hbook's backup**, on purpose: it belongs to another container, and a copy taken
+  while it runs may not be consistent. [extensions.md](docs/extensions.md#your-engines-data) has a three-line recipe
+  for backing it up, and [MIGRATING.md](docs/MIGRATING.md#adding-or-removing-the-extension-engine) how to move it
+  between setups.
+
+### The slow archive: a whole series over nights or days (#117, @Jamie96ITS)
+
+A back catalogue came down in one go — *All* in the add dialog, *Fetch all 900* on a series — and a burst like that
+is how a site learns to refuse you. It can now come in the way a person reads: a chapter at a time, with pauses no
+script would take, over nights or days, and a restart never loses its place.
+
+- **Where you start it.** **Archive the rest slowly**, a switch in the add dialog under *Chapters to fetch now*
+  (with *First N*, *Latest N* or *Nothing yet*; *All* leaves no rest), says how many chapters come in, in which
+  order and about how long that takes at the current pace; the dialog's warning about grabbing many chapters at
+  once now suggests it. On a series page, **Archive slowly** sits in its actions and beside *Fetch all* on the line
+  of older chapters. It is in a cover's menu too, and in the Library's select bar for many series at once (a key on
+  a laptop, under **More** on a phone). Admins and members who may download can queue a series they can open, as
+  long as every source it follows is inside their age limit.
+- **How slowly.** By default four chapters an hour from each site: one page at a time, a random 1.5 to 4 s between
+  pages, a break drawn at random after each chapter, and now and then a long one of 20 to 45 minutes. That comes to
+  about 96 chapters a day from one site, so 1,000 take about ten days. Several sites are archived side by side (at
+  most three at once), and the series queued on one site take turns.
+- **It stands aside** for the scheduled check, the library repair, the daily source check and *Check all now*, for
+  anybody else's download from the same site or of the same series, and for a site's own cooldown. A site that
+  refuses a chapter (403 or 429) is left alone for an hour, then three, then twelve, then a day at a time, and the
+  series stays queued; a chapter list that cannot be read is asked for again on the same ladder, never every minute.
+- **A restart keeps its place and its breaks.** What is still missing is worked out afresh at every turn, from the
+  series' chapter list and what the library holds, so there is nothing to reconcile; and the next start on a site
+  is written down before each chapter begins, so neither a restart nor a crash loop can shorten a break. The first
+  look waits ten minutes after the server starts.
+- **It never goes looking.** It fetches only from the sources a series already follows, and never searches other
+  sites or follows new ones. Its chapters are not news either: they do not count under Updates, send no push
+  notification and stay out of the digests.
+- **Where you watch it.** Library → Downloads, under **Queued**: each archived series is its cover under a still
+  amber ring with an hourglass, *120 of 900* and about how long is left. Tap it for what it is doing (*Next chapter
+  in 12 minutes*, *A chapter failed on its site; trying again in 2 hours*), which way it fills, the space it will
+  still take and what failed so far, with **Pause**, **Resume** and **Stop archiving** for whoever queued it and for
+  admins, and **Open series**; admins also get **Pause all** / **Resume all**. The Library ring never turns for it:
+  while an archive is the only thing working, the ring is the same still, amber mark. **Needs attention** lists an
+  archive whose site keeps refusing, whose source has been missing or switched off for a day, that waits for disk
+  space, that has been paused for a week or has had its turns for three days with nothing coming in, and one that
+  finished with chapters it could not fetch, with why (*3 chapters failed too many times*). *Came in today* sums up
+  its chapters per series (*Slow archive: 12 chapters today*). On the series page the band above the chapter list
+  shows the archive with the same keys, and the grey rows it is about to fetch fold into one line, *Ch. 121–900 ·
+  780 chapters being archived slowly*. Health does not report the gaps an archive is filling as problems, and **Fill
+  now** there still fetches them at once, at the usual pace.
+- **How it shares the work with the scheduled check.** The archive owns the chapters listed when it was queued (on
+  a *Latest N* series, those below its floor); the check keeps taking everything newer. A series' own *Latest N*
+  floor is never changed while it runs, and finishing lifts it only if nobody has changed it meanwhile. **Stop
+  archiving** keeps what came in and leaves the rest where it was before: under a *Latest N* or *Nothing yet* floor
+  it waits for you, otherwise the scheduled check fetches it at its own pace.
+- **Admin → Settings → Downloads** holds the pace: *Slow archive* (off pauses every archive and keeps the queue),
+  *Chapters an hour, per source* (1–30, with what that comes to a day), *Only during set hours* (in the server's
+  local time; 22 until 6 runs overnight) and *Stop when free space is below (GB)* (20 by default, with the space free
+  now; chapters you fetch yourself are not held to it). Every change applies at once.
+- **On the desktop app** it runs only while hbook is open, the tray included, and never keeps the computer awake;
+  its first look waits three minutes after the app starts.
+
+### Chapters numbered in the order they were posted (#116, @Jamie96ITS)
+
+The Webtoons extension gives a post the number of the first *ep* or *ch* in its title, and a post with neither the
+previous number plus 0.01. A series posted in parts therefore gives many different posts one number: Istrevelia's
+226 posts land on 13 numbers, 73 of them on 7, and Apocalyptic Horseplay's 211 on 19, because the number it finds
+is the arc's. hbook knows a chapter by its number, so every post after the first on a number became a *version*
+of it: 226 posts read as 13 chapters, with dozens of versions under some of them.
+
+- **Such a source is noticed**, for each series and each source on its own: at least 12 posts, at least half of
+  them beyond the first on their number within one group, and one number carrying five or more posts under at
+  least three different names. Several groups' copies of one chapter (MangaDex), a mirror posted twice the same
+  day, and an unnamed *Chapter 5* beside *Chapter 5: The Return* do not count. A listing that looks like this but
+  cannot say in which order its posts came only gets a warning.
+- **It is then numbered by posting order**: 1 to 226, oldest first — what the extension's own *Use sequential
+  chapter numbering* switch gives — and the numbers are kept. A post the creator deletes leaves a hole instead of
+  renaming every chapter after it, and one inserted later takes a number between its neighbours (41.5). Everything
+  reads the same numbers: the files (`Chapter 20.cbz`), the grey rows, versions, *Find missing chapters*, floors,
+  read marks and trackers.
+- **New series are numbered as they are added.** The add dialog says so — *Numbered by posting order*, with *226
+  chapters by posting order · 13 by the source's own numbers* — and **Keep the source's numbers** adds it the old
+  way (*Keeping the source's own numbers*). On a weaker sign (*Some posts share a chapter number*) it offers
+  **Number by posting order** instead.
+- **A series already in your library is never renamed without you.** Its page says *Chapter numbers need a review*,
+  and nothing new downloads for it until an admin opens **Review renumbering**: every file on disk, the number it
+  has, the number it gets and the post it was matched to, anything that could not be matched (kept, at a free
+  number just after the chapter before it), and whether a tracker is linked. **Rename the files** renames them in
+  place and keeps each chapter's row, so reading progress, bookmarks and notes stay where they were; **Keep the
+  source's numbers** leaves everything as it is and lets the series update again. The renaming is written down
+  before the first file moves and done in two passes, so a crash half-way is finished by the next check.
+- **Going back.** **Use the source's numbers** on the series page undoes it the same way, after the same review,
+  and keeps every file: posts that share a number again become `Chapter 7.cbz`, `Chapter 7 (2).cbz` and so on. A
+  choice an admin makes is never undone by the detector.
+- **While a series is numbered by posting order** it takes its chapters from that source alone. Another site
+  numbers the same posts its own way, so following another source, searching other sites for its gaps, borrowing
+  chapter names and filling from elsewhere are refused, with that reason.
+- **An extension's own settings**, from **Settings** beside an installed extension in **Admin → Extensions**: the
+  screen Mihon shows for it, one language at a time, the Webtoons extension's *Use sequential chapter numbering*
+  among them. A setting that changes the chapter numbers a source gives says so in its own row, asks again when
+  series in your library use those numbers, and then holds each of those series for a review on its page — nothing
+  is renamed until an admin confirms. Series numbered by posting order are not affected.
+- **Versions** show each copy's own title — twenty identical `—` rows under one number were how #116 looked — and
+  say when copies look like different posts that share a number rather than versions of one chapter.
+- **Health** has a *Chapter numbering* check: the series waiting for a renumbering review, with the same review and
+  **Keep the source's numbers**, and a renumbering still being finished; greyed, the series hbook numbered by
+  posting order on its own in the last two weeks.
+- **Trackers** are told the highest chapter you finished rounded down, so a finished 12.6 no longer reports 13.
+- The built-in **Madara** and **Manganato** engines keep one post per number and drop the rest before anything can
+  see them, so this cannot help there; that is unchanged.
+
+### Upgrading
+
+- **The database** gets one migration on first start, and it only adds: new tables (`download_log`,
+  `repair_runs`, `series_post_numbers`, `archive_queue`, `archive_pace`) and new columns that are nullable or have
+  a default. v0.48.4 still starts on a migrated database, so going back to it is safe — with the one exception
+  under chapter numbering below.
+- **Docker Compose: download your compose file again to get the engine switch.** Updating the image does not change
+  your compose file. Fetch the one for your layout —
+  `https://raw.githubusercontent.com/YUnauuu/hbook/main/deploy/docker-compose.yml`, or
+  `docker-compose.external-db.yml` or `docker-compose.split.yml` from the same folder; each has the switch — or add
+  its two lines to yours ([MIGRATING.md](docs/MIGRATING.md#adding-or-removing-the-extension-engine)). ⚠️ Check
+  which one you run first: an install made before v0.18.0 may run the external-database layout (with a
+  `hbook-db` container) under the name `docker-compose.yml`, and the one-container file in its place starts on a
+  new, empty database. `EXTENSION_ENGINE` only takes `0` or `1`: it is the engine's replica count, and any other
+  value stops `docker compose up` for the whole stack.
+- ⚠️ **An empty `SUWAYOMI_URL=` now turns extensions off.** The old compose files wrote `${SUWAYOMI_URL:-…}`,
+  which puts the default back for an empty value, so the documented off switch never worked, and a `SUWAYOMI_URL=`
+  line in `.env` did nothing. The v0.49.0 files take it at its word. If your `.env` has such a line and you use
+  extensions, delete it before switching files.
+- **The Offline tab** lists only the chapters saved on that device; what the server fetches is under
+  **Library → Downloads**.
+- **Chapter numbering applies by itself only to series you add from now on.** A series already in your library
+  that a source numbers this way is held — nothing new downloads for it — until an admin reviews its plan on the
+  series page (or under Health's *Chapter numbering*) and applies it, or keeps the source's numbers. The one
+  exception is a series with no chapters on the server yet (a *Nothing yet* add, say): there is nothing to rename,
+  so its next check numbers it by posting order without asking. Applying a plan renames the files and keeps every
+  chapter's row: ids, reading progress, bookmarks and notes. **Use the source's numbers** renames them back; going
+  back to v0.48.4 does not. v0.48.4 does not know the new numbers: it reads that source's own numbers again, so most
+  new posts look like chapters it already has, and the few the source numbers N.01 may be fetched a second time.
+  Before going back, press **Use the source's numbers** on every series numbered by posting order, whether it was
+  added that way or renumbered.
+- **Chapter names filled in before v0.49.0 count as a match.** Since v0.46.0 hbook has filled in a chapter's
+  missing name from the source's chapter list. From v0.49.0 on, such a name is marked as copied, so the renumbering
+  never takes it as proof of which post a file is. A name filled in before then carries no mark: for those chapters
+  a match by name counts, as a name the file came with does. Their plan does not point them out as matched only by
+  the old chapter list, and an extension setting that changes the source's numbers without moving any file settles
+  by itself. Look at those chapters' matches in the plan before you confirm.
+- **Extension settings**: changing one that renumbers a source (the Webtoons extension's *Use sequential chapter
+  numbering*) holds every series from that source that uses its numbers until an admin reviews each on its page.
+- **The slow archive starts with nothing queued.** Its defaults: 4 chapters an hour per source, no time window, and
+  it waits while less than 20 GB is free under the download folder (the downloader's own floor stays at
+  `MIN_FREE_GB`, 10 GB). On the desktop app it runs only while the app is open. `ARCHIVE_PAGE_GAP_MS` and
+  `ARCHIVE_MAX_SOURCES` shape its pace underneath ([CONFIGURATION.md](docs/CONFIGURATION.md#the-slow-archive)).
+- **Sources on the built-in Madara and Manganato engines** drop the posts that share a number before hbook sees
+  them, so posting-order numbering cannot help there. That is not changed in this release.
+- **For scripts** ([api.md](docs/api.md)):
+  - `GET /api/admin/tasks`: the repair's `lastRun` and `lastResult` are now the last **full** run (the nightly, or
+    Tasks → Run now). A fix pressed on one Health row is in `GET /api/admin/tasks/repair/runs` and the row's new
+    `latestOther`.
+  - `GET /api/sources/jobs` hands each viewer only the downloads of series they can browse, and a failed one only
+    to whoever started it and to admins. `DELETE /api/sources/jobs/<folder>` answers **403** to anyone else, and
+    **404**, as Cancel does, for a download the caller is not shown.
+  - `POST /api/admin/sources/check` answers **202** at once and runs in the background: the verdicts are in
+    `GET /api/admin/sources/check` once `running` is false.
+  - `POST /api/admin/update` runs as the scheduled sweep does: **409** `busy` while a sweep or a library repair
+    runs, and **500** when the sweep itself fails.
+  - `POST /api/sources/fetch` and `POST /api/sources/fill` answer **409** `renumber_pending` while a series waits
+    for its renumbering; a fill from another source into a series numbered by posting order, and following one for
+    it (`POST /api/admin/series/:id/sources`), answer **409** `posting_order`.
+  - Everything else only adds fields and routes (api.md has them), among them: the repair run's id in its answer,
+    `GET /api/admin/tasks/repair/status` and `/runs`, Health's `outcome`, `caveats`, source evidence and `numbering`
+    check (with its `renumber` and `keep_numbers` actions), the Test's `state` and `stage`, `live`, `failing`,
+    `evidence` and `testMs` on `GET /api/admin/sources`, the `progress` on the source check's 409, the scan's counts
+    on `POST /api/refresh` (to an admin), the job cards' `left`, `origin` and `cover`,
+    `POST /api/admin/extensions/solver`, the slow archive's routes and its `archive` objects, `archive` and
+    `numbering` on `POST /api/sources/add`, the numbering and extension-settings routes, and `numbering` on the
+    detail and the listing.
+
+## v0.48.4 — 2026-09-26
+
+**Find missing chapters no longer fails on slow sources.**
+
+### Find missing chapters shows each source as it answers
+
+Find missing chapters asked every source and waited for the slowest before showing anything. A source behind
+Cloudflare can take a minute and a half to answer, so on a library that comes mostly from such sources a scan
+took up to three minutes. A reverse proxy in front of hbook usually ends it first (nginx gives up after 60
+seconds unless told otherwise), and the dialog said *The scan failed.* The ☁ on a ghost chapter, which asks only
+the series' own sources, kept working, which made it look like the scan was broken rather than slow.
+
+Now the dialog shows each source as soon as it answers, the series' own source first, and says which ones it is
+still waiting for. Nothing waits on the slowest source any more, so no proxy's timeout applies, and a source's
+chapters can be downloaded from the moment its card appears.
+
+### Upgrading
+
+Nothing to do. If you raised a proxy timeout to get the scan through, you can put it back.
+
+## v0.48.3 — 2026-09-26
+
+**The Health page does what it says, and Find missing chapters downloads what it finds.**
+
+### Health findings you can open, fix all at once, or ignore
+
+- **Open takes you to the chapter.** It went to the home screen for every finding (fixed in v0.48.2), and even
+  pointed right it only named the series. A short chapter now opens in the reader; a gap or an impossible chapter
+  number opens the series with the chapter list turned to that page and the row lit up for a moment — for a gap,
+  the chapter just before it, where it begins. A duplicate gets an Open for each copy.
+- **Fix all issues**, once, for the whole page. It runs the repair with every step that has something to do —
+  looking for longer copies of short chapters, filling gaps, and trying every source's failed chapters again
+  now — after a confirmation that says how much one run takes on and that it never deletes, merges, unblocks or
+  switches anything off. The page checks itself again when the run ends, not when you press the button.
+- **Ignore** a finding and it stops warning you: the row stays on its card, greyed, with *Stop ignoring*, and
+  leaves the check (and the warning in the header) alone. It stays quiet while nothing new is part of it — a gap
+  that gets smaller stays ignored, a newly missing chapter brings it back — and an ignore whose finding has been
+  gone for a week is forgotten, so a problem that comes back later is news again. Short chapters keep their own
+  *It's fine*, which does the same.
+- **A header warning you dismissed stays dismissed** when a check goes quiet — fixed, or its last finding
+  ignored. It came back whenever the set of checks with findings changed at all; now only a new problem, or one
+  getting worse, brings it back.
+- **That warning no longer covers dialogs.** It was drawn over every open dialog; on a phone it hid the title
+  and close button of a tall one, such as Find missing chapters.
+- The admin console's header says "1 chapter behind" rather than "1 chapters behind across 1 series", and says
+  it in your language; that line was English in every language.
+
+### Find missing chapters downloads what it finds
+
+It only offered to follow a source for the chapters after your last one, and following downloads nothing until
+the next scheduled check — then five at a time. Now every source that has chapters you lack, gaps and newer ones
+alike, shows them as a picker: runs of chapters as chips, all selected, *⋯* to choose one by one. One press
+downloads the selection now — from the series' own source or one it follows, taking the best copy of each chapter
+across them, or, for a source it does not follow yet, *Follow and download* (admins). Following on its own lists
+the source's chapters on the series page at once, and says that new ones come with the checks.
+
+One chapter now reads as one chapter: the ☁ on a single ghost chapter said *Fetching 1 chapters…*, and so did
+the dialog's buttons and counts.
+
+### Upgrading
+
+Nothing to do. One new table (`health_ignored`) is created on start.
+
+## v0.48.2 — 2026-09-26
+
+**Downloads that never reached the library, found for real this time (#109), and automatic checks on Unraid.**
+
+### Downloads that never reached the library
+
+v0.48.0 fixed one way a download could stay out of the library — a folder the database refused, which stopped
+the whole scan — and reported it. On Unraid it kept happening, with the Health page saying all was well.
+Reported by @ZukiFen and @Maaster.
+
+- **The scan skipped folders it thought it had already seen.** To guard against loops it remembered every
+  folder's disk id, and passed over any folder whose id it had met before, with everything inside it. On
+  Unraid's user shares (`/mnt/user`) folders on different disks can report the same id, so some series — always
+  the same ones — never reached the library however often it was scanned, and moving the folder into the library
+  folder "fixed" it. A folder is now passed over only when it really is one of the folders above it again, which
+  is the only way the scan can loop; everything else is scanned. *Health → Library scan* says how many folders
+  share an id, so a screenshot shows whether an install was hit.
+- **One entry could hide a whole folder.** On a filesystem that does not say what each entry is (many network
+  and FUSE mounts), one entry the scan could not check — a name that is not valid text, a file renamed mid-scan —
+  made it read the whole folder as empty. Now only that entry is left out, and it is named.
+- **A folder the scan cannot read is named** on *Health → Library scan*, instead of being passed over in silence.
+- **A title that starts with a dot** (`.hack//Link`) was downloaded into a folder the scan treats as hidden. New
+  downloads no longer start with one.
+
+### Nothing goes missing quietly any more
+
+- **Health → Downloads missing from the library** compares every chapter file in the downloads folder with the
+  library and lists each one that is not in it, per folder, with the reason when it can tell, and which kind of
+  filesystem the folder is on. It does not depend on the scan having noticed, which is exactly what failed twice.
+  The six-hourly check includes it, so the admin warning comes up by itself. A file of your own that the scan never
+  reads as a chapter (straight in the downloads folder, say) is listed but never turns it red.
+- **An add or a Fetch whose chapters land on disk but not in the library ends as an error that says so**, not
+  "done". v0.48.0 only checked the chapters that were already on disk.
+- **Scans no longer overlap.** A scan asked for while one is running waits for one more after it, so a chapter
+  that just landed is always included. *Refresh* started one full scan per library, all at the same time.
+
+### Unraid and all-in-one installs: the automatic checks now run
+
+The scheduled check for new chapters and the nightly repair only started when `LIBRARY_BACKEND=owned` was set.
+The compose files set it; the all-in-one image and the Unraid template don't, so on those installs a followed
+series was only ever checked when someone pressed *Run now*. Both now start on every install. **After updating,
+the first check runs within about ten minutes of the server starting** (or six hours after one you ran by hand)
+and fetches what your followed series are missing, within the usual limits: up to 5 new chapters per series and
+150 downloads per check. The nightly repair runs within half an hour (or a day after one you ran by hand).
+
+### Also
+
+- **Open on the Health page opens the series** it names. It went to the home screen.
+
+### Upgrading
+
+Nothing to do: no database changes.
+
+## v0.48.1 — 2026-09-26
+
+**See everything the server downloads, and a way out of a previewed chapter on a phone.**
+
+### Everything the server downloads, in one place
+
+The downloads pill only ever showed what a button started — in practice, an add from Discover. Chapters from a
+source you followed through *Find missing chapters* arrive at the series' next check; the scheduled check
+downloads for every series; so do *Check for new chapters*, the library repair and *Fetch newest*. None of that
+showed anywhere.
+
+Now every chapter the server downloads is recorded with what started it, and:
+
+- **the pill** comes up for all of it and lists what is downloading right now — the series, the chapter, what
+  started it, and whether it is still waiting its turn at the source — plus what came in today;
+- **the Offline tab** (the download icon) has an **On the server** section: what is downloading, and what came
+  in today, one line per series — *Walk Tale · Ch. 1–7 · Check for new chapters · 2 h ago* — with any chapter
+  that could not be saved and why. It is there when nothing is running too, so this morning's chapters from the
+  night are one tap away.
+
+Each person sees the series they can open; a brand-new add's first chapter is shown to whoever added it and to
+admins. The list is a day deep; new chapters in your favourites also stay on the Updates page until you have seen
+them.
+
+### "Read a chapter first" on a phone
+
+In the installed app on a phone, the preview's top bar sat under the status bar, so its ✕ and *Chapters* could
+not be pressed and the only way out was *Add to library*. The bar now clears the status bar, both controls are
+full-size, and the phone's back gesture steps out the way Escape does: from the chapter to the list, then back to
+the add dialog, staying on Discover. The v0.48.0 admin banner had the same status-bar problem, also fixed.
+
+### Upgrading
+
+Nothing to do: no database changes.
+
+## v0.48.0 — 2026-09-26
+
+**Every open issue and pull request, in one release.** Downloads that never reached the library (#109), right to
+left that finally works on "Series default" (#102), right-click menus (#100), an admin who is told when the
+library needs attention (#101), a device that no longer signs itself out after a flaky refresh (#108), and the
+undici update that was held back last time. Three of these started as [@Squeaks72](https://github.com/Squeaks72)'s
+proposals and reports; #109 was reported by ZukiFen and Maaster.
+
+### Downloaded chapters that never appeared in the library
+
+On two Unraid installs, chapters downloaded but never showed up ([#109](https://github.com/YUnauuu/hbook/issues/109)):
+a *Fetch* said "Fetching 1 chapters" for a second and added nothing, a series added from Discover never
+appeared, a manual *Library Scan* changed nothing, and nothing was logged — while the same files moved into the
+library folder were picked up at once.
+
+The library scan went through every folder in one pass, and one folder it could not index stopped the whole pass
+— silently, on every run, because nothing that started a scan reported its failure. The download folder is
+scanned second, so everything this server fetched stayed out of the library. Now a folder the scan cannot index
+is stepped over, logged, and named under **Admin → Health → Library scan** with the scanner's reason, and
+everything else is indexed. A *Fetch* whose chapter is on disk but still not in the library says so on its card
+instead of ending quietly.
+
+One real way to get there is fixed outright: a control character (a NUL) in a source's description was copied
+into the chapter's ComicInfo, which Postgres refuses. Those are now stripped both when a chapter is written and
+when it is read. And a folder with a deleted twin in another library is now matched to the live series.
+
+If you were affected: update, then run **Admin → Tasks → Library scan**. Your chapters should appear; if
+**Admin → Health → Library scan** still names a folder, its reason is what to fix — and we would like to hear it.
+
+### "Series default" can read right to left
+
+Every series used to say it read like a webtoon, so the reader's *Series default* direction could never turn a
+page right to left ([#102](https://github.com/YUnauuu/hbook/issues/102), reported by @Squeaks72). A series
+now has a reading direction, taken from its chapter files (ComicInfo's `Manga` field), then its source
+(MangaDex's original language), then AniList's country of origin — a weaker signal never overrides a stronger
+one — and an admin can set it under **Edit details → Reading direction**. Series already in the library are
+asked about by a new nightly repair step. The Komga-compatible API reports it too.
+
+The other half of #102 was ours: since v0.46.0, changing a series' theme or layout in the reader also pinned its
+direction, so the profile's *Reading direction* never reached that series again. Only a direction you choose for
+a series is pinned now, and the accidental pins are ignored. Found on the way: turning pages on a right-to-left
+track while the next chapter was loading jumped fourteen pages into it; it moves one.
+
+### Right-click menus
+
+Right-click a series anywhere it appears — the library grid, Home, Up next — or press and hold it on a
+touchscreen, or press Shift+F10, for a short menu: **Open in a new tab**, **Copy link**, **Favourite**, **Mark all
+read** / **unread**, and for an admin **Check for new chapters** ([#100](https://github.com/YUnauuu/hbook/issues/100),
+@Squeaks72's proposal). A chapter row's right-click opens the same menu as its ⋯ button, which now works from
+the keyboard and no longer clips at the edge of the screen. The browser's own menu is left alone on selected
+text, in text fields and with Shift held, and **Profile → Settings → Appearance → Right-click menus** turns
+them off on a device.
+
+### The admin is told when the library needs attention
+
+**Admin → Health** only spoke to someone who went to look. Now, while its last report found something, an
+admin's top bar shows a warning mark beside the Updates bell whose tooltip is the worst finding, and a one-line
+banner says it once, with **Take a look** and **Not now**
+([#101](https://github.com/YUnauuu/hbook/issues/101), @Squeaks72's proposal). *Not now* holds until a
+different check finds something. The server runs the checks every six hours for this; the top bar only reads the
+stored result, so it costs nothing on every page load. Other accounts see none of it.
+
+### Staying signed in on a flaky connection
+
+When the answer to a session refresh was lost — a page reloaded mid-refresh, a mobile connection dropped the
+response — the server had moved on and the browser had not, and the device was signed out a minute later
+([#108](https://github.com/YUnauuu/hbook/pull/108)). Reproduced on a 200 ms connection with two reloads in
+a row; invisible on a LAN. The server now recognises a lost answer and hands the device its session back —
+within a day of the loss; after that it signs in again, as before. Signing out, signing out everywhere and a
+password change still end a session at once, and two devices holding one session now end it rather than share
+it.
+
+### Also
+
+- **undici 8.11.2.** The 8.11.0 update was held back from v0.47.1 because it left every built-in source empty;
+  8.11.2 fixes that upstream, and the test that caught it stays.
+- The flaky browser check behind a red CI run and several local failures this week was a signed-out tab, not the
+  feature it was checking ([#107](https://github.com/YUnauuu/hbook/pull/107)).
+
+### Upgrading
+
+The database gains columns and nothing is rewritten; the upgrade runs by itself on start. An older version still
+starts on an upgraded database.
+
+## v0.47.1 — 2026-09-25
+
+**A double-click in the reader zooms, and only zooms — and every panel that scrolls can be scrolled with a
+mouse wheel again.** Both from [@Squeaks72](https://github.com/Squeaks72)
+([#99](https://github.com/YUnauuu/hbook/pull/99), [#103](https://github.com/YUnauuu/hbook/pull/103)),
+each with a fix on top.
+
+### Double-click to zoom no longer turns the page
+
+A mouse double-click on a page used to zoom *and* turn the page. Repeated to get a closer look, it walked you
+several pages into the chapter. The reader acted on a single click after 260 ms, but a second click still
+counted as a double for 300 ms, so every double-click with its clicks 260–300 ms apart did both. A slower
+double-click (Windows allows up to 900 ms) turned the page twice and never zoomed.
+
+For a mouse the reader now leaves the question to the browser, which knows your operating system's
+double-click setting. If the first click has already turned the page by the time the browser says it was a
+double-click, the turn is taken back. On a touchscreen one window governs both halves: a tap acts only once a
+second tap can no longer arrive. A single click still turns the page, 40 ms later than before.
+
+The fix on top: taking a turn back put the page back but not the progress. A chapter's last page reports the
+chapter finished the moment it shows, so a slow double-click whose first click landed there had already marked
+the chapter read — Continue moved on, and read-chapter cleanup could remove the file. A page turn from a click
+is now not reported as reading until it can no longer be undone. Found in a real browser: at a 650 ms
+double-click the pull request as opened sent "completed"; with the fix nothing is sent until the turn is final.
+
+### Panels a mouse wheel could not scroll
+
+On a short window, the reader's settings sheet ended at *Pages per view*: the rows below it (reading direction,
+repeated pages, the per-source default) were there, but the wheel would not bring them up
+([#103](https://github.com/YUnauuu/hbook/pull/103)). The app's smooth scrolling takes every wheel event
+and scrolls the page, unless the element under the pointer is marked as scrolling on its own, and four overlays
+never were: the reader settings, confirmation dialogs, the console's group sheet and the downloads panel.
+
+The same gap was in v0.47.0's **Read a chapter first**: on a computer the wheel scrolled the page behind the
+preview, so a previewed chapter could not be scrolled at all. Smaller lists inside pages had it too — *Edit
+series*, *Add to collection*, the admin's folder picker, row dialogs and import review. All of them scroll now,
+and a test reads every page and component in the app, so a new panel that forgets cannot ship.
+
+### Dependencies
+
+- Web: `@tanstack/react-query` 5.103.2, `@types/node` 24.13.6, `tsx` 4.23.15
+  ([#97](https://github.com/YUnauuu/hbook/pull/97)).
+- Desktop app: TypeScript 7.0.2 for its build checks ([#79](https://github.com/YUnauuu/hbook/pull/79)).
+- **Held back:** `undici` 8.11.0 ([#96](https://github.com/YUnauuu/hbook/pull/96)). With it installed,
+  Node's built-in `fetch` speaks HTTP/2 to MangaDex and hands back the compressed body without decompressing
+  it, so every built-in source would have returned nothing. v0.47.0 added a test that catches this.
+
+### Upgrading
+
+Nothing to do: no database changes.
+
+## v0.47.0 — 2026-09-25
+
+**The four pull requests that could not be merged, rebuilt — and the two issues behind them answered.**
+[@Squeaks72](https://github.com/Squeaks72) opened twelve pull requests in one day. Eight went into
+[v0.46.0](https://github.com/YUnauuu/hbook/releases/tag/v0.46.0); these four could not go in as they were, because each had a problem that needed the feature
+restructured rather than patched — one of them a security hole. Every one is here, built the way it had to be,
+and credited in its commit. Nothing below is on by default except the preview button and the compact list's
+switch: the three that write or replace anything are off until you ask for them.
+
+### Read a chapter before you add the series
+
+Under **Add to library** there is now **Read a chapter first** ([#91](https://github.com/YUnauuu/hbook/pull/91)):
+it opens the title straight from the source, you pick a chapter, scroll it, step to the next, and add it when
+you have decided. Nothing is written — no series, no files, no reading progress.
+
+The original passed the chapter id from the browser to the source, and for a site added by URL that means a
+request from the bundled Cloudflare solver's browser, which sits on your Docker network beside the database —
+the same shape of hole [v0.45.1](https://github.com/YUnauuu/hbook/releases/tag/v0.45.1) closed in the cover proxy. Here a chapter is named by its **number**
+in a listing the server fetched itself, and a page by its **index**: no address from the browser ever reaches
+a source. The server fetches each page through the same guard your covers go through and serves it without
+storing it. Not offered to an account with an age limit — a preview reads a site before any library's rating
+applies.
+
+### Which source a new chapter comes from
+
+**Admin → Settings → Source order** ([#93](https://github.com/YUnauuu/hbook/pull/93), first half) ranks
+your sources, and a series can have its own order on its *Sources & translations* sheet. When two followed
+sources both have a chapter and your scanlation-group preferences do not decide between them, the higher-ranked
+source wins — the choice that used to go to whichever source the series was added from. It only decides where
+chapters you do not have yet come from; nothing already downloaded is replaced because of it.
+
+An order keeps every source you put in it, including one that is not loaded at the moment: the original built
+its list from the sources registered right now, and the extension engine restarting is enough to make that
+list empty, so one press of an arrow saved an order with every extension silently gone from it.
+
+### Your preferred group's version, once it exists
+
+This is what issue [#81](https://github.com/YUnauuu/hbook/issues/81) was really asking for. A new chapter
+waits for a group you rank only as long as its patience; after that it is taken from whoever has it, and the
+preferred group's copy turning up a day later was never looked at again. **Admin → Settings → Scanlators →
+Upgrade chapters to a preferred group** (off by default) gives the nightly repair a step that takes that second
+look, and swaps the chapter for the better group's copy.
+
+It replaces files on disk, so it is careful, and the rules are the reason the original half of #93 was not
+merged: only files hbook downloaded itself, **never** a copy with fewer pages than the one you have (a
+one-page "chapter removed" notice from the right group does not win), never one that arrives incomplete, never
+a chapter somebody picked a version for by hand, at most ten a night, and a failed swap waits a week. Reading
+progress and bookmarks are kept — the file is written over the same row.
+
+### Chapter names from a source that has them
+
+Some sources publish no chapter titles at all; every row reads *Ch. 12*, while another source has had *Romance
+Dawn* all along. **Borrow chapter names from other sources** ([#85](https://github.com/YUnauuu/hbook/pull/85),
+off by default, per server and per series) lets the nightly repair take the names from that other source.
+
+The hazard is numbering, not names: past the point where two sources number a work differently every borrowed
+name would be wrong, and a plausible wrong title is exactly what you pick the next chapter by. So a donor has
+to pass the same check a source must pass before hbook will *follow* it, names are matched by exact number,
+and only a source in the same language is asked. The original searched through the machinery that reports
+slow sources to the health page, so a lookup only for names could put your main source into a cooldown and
+stop real downloads; nothing here reports. A borrowed name never touches the file, the chapter's own source
+naming it later always wins, and switching it off takes back exactly what was borrowed.
+
+### What the server is downloading, and stopping it
+
+Issue [#82](https://github.com/YUnauuu/hbook/issues/82) asked where to see what is downloading. The pill in
+the corner only knew the jobs you started from a button; everything the server did by itself was invisible and
+could not be stopped. Now every running download has a **Cancel** — it stops after the chapter in flight, so a
+file is never left half-written, and what already arrived stays — and an admin also sees the server's own runs:
+*Checking for new chapters*, *Library repair* and a bulk *Fetch newest*, each with how far it has got, which
+series it is on, and a Cancel of its own. Downloads that finished in the last day are listed under the rest;
+Discover's strip still shows only the last few minutes.
+
+### A leaner chapter list, if you want one
+
+**Profile → Settings → Compact chapter list** ([#88](https://github.com/YUnauuu/hbook/pull/88)) drops the
+thumbnail and the status dot and shows the row's buttons on hover, on a computer. It is a per-device choice:
+the original made it everyone's default, and the thumbnail is each chapter's own first page — it carries the
+read dimming, the progress bar and a deleted chapter's dashed box.
+
+### Upgrading
+
+The database gains columns and nothing is rewritten; the upgrade runs by itself on start. An older version
+still starts on an upgraded database, so rolling back stays possible.
+
+## v0.46.0 — 2026-09-25
+
+**Eight pull requests from [@Squeaks72](https://github.com/Squeaks72) -- seven merged with fixes on top, one as it
+was -- and a memory cap on the extension engine.** Most of this release is theirs: right-to-left paging, one key
+per page, settings pinned to a source, type-to-search, chapter names, a chapter list that pages past chapter 1000,
+a Discover search that keeps its source, and an 18+ filter an admin can widen. Every one of them was reviewed line by line, and the fixes are separate
+commits on their branches, so the history says who did what.
+
+### The extension engine can no longer eat the machine
+
+The extension engine is [Suwayomi-Server](https://github.com/Suwayomi/Suwayomi-Server), run headless: it is what
+runs Mihon and Tachiyomi extensions, and you never open it. Discussion
+[#72](https://github.com/YUnauuu/hbook/discussions/72) came from someone who had left Suwayomi and found it
+running underneath, "eating my ram and cpu". It ran with no memory limit at all, and a JVM without one sizes its
+heap from the host: a quarter of its memory, 15.7 GiB on a 62 GB server. Every compose file now gives it the
+desktop app's own numbers for the same engine, a 768 MB heap and the serial collector under a 1.5 GB ceiling.
+`SUWAYOMI_MEM_LIMIT` and `SUWAYOMI_JAVA_OPTS` raise both for a very long extension list.
+
+⚠️ **Updating the image does not update your compose file.** An install set up before v0.46.0 gets the cap by
+downloading [`deploy/docker-compose.yml`](deploy/docker-compose.yml) again, or by adding two lines under
+`hbook-suwayomi`:
+
+```yaml
+    mem_limit: 1536m
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx768m -XX:+UseSerialGC"
+```
+
+The README and the install files now say what the engine is, that it ships on, and that MangaDex and sites added
+by URL work without it. The split layout's Cloudflare solver also gets the `/dev/shm` headroom, memory cap and
+healthcheck the other layouts already had.
+
+### Reading
+
+- **Paged mode can read right to left** ([#90](https://github.com/YUnauuu/hbook/pull/90)): *Reading
+  direction* in the reader's settings, for one series or pinned to a source, and as your default under
+  Profile → Settings. *Series default* follows a series that says it reads right to left, which today means a
+  Komga library that records it; hbook's own library does not record a direction yet, so nothing turns
+  around by itself on update. Under the Arabic interface the paged track used to inherit right-to-left, and
+  the page counter stuck on page 1; it no longer does. Fixed on top: resume and `?page=` links
+  on a right-to-left series opened page 1, the bottom bar ran opposite to its pages under Arabic, text inside the
+  track took the track's direction, and a double-tap zoom in paged mode jumped to mid-chapter.
+- **One key is one page** in paged mode ([#92](https://github.com/YUnauuu/hbook/pull/92)). Fixed on top:
+  quick presses could land two pages on, Alt+← turned a page instead of going Back, Ctrl+F opened Find *and*
+  toggled fullscreen (already on main), keys acted under an open sheet, Escape left the reader instead of closing
+  the sheet, and Space on a focused button turned the page.
+- **Reader settings can be pinned to a source** ([#95](https://github.com/YUnauuu/hbook/pull/95)): a webtoon
+  site continuous, a manga site paged right to left. Fixed on top: the reader's look used to be saved as the
+  global default whenever you changed it with a title open, the pin never applied to downloaded chapters, and a
+  raw 19-digit extension id could appear instead of a name. ⚠️ **Behaviour change:** changing mode, theme, spread
+  or direction inside the reader now applies to that series only; the global default lives under
+  Profile → Settings.
+- In paged mode with *Collapse*, a repeated page showed as a blank slide with a faint number. It is shown like any
+  other page there now. The reader settings sheet was in English in every language; it is translated.
+
+### The library
+
+- **Chapter names** ([#84](https://github.com/YUnauuu/hbook/pull/84)): "Ch. 12 · The Return" on the series
+  page, and Continue says which chapter it opens. Names come from the source, in their own column: "Vol.3
+  Chapter 12: The Return" is named "The Return", and "Chapter 12" or "第12話" is the number again, so no name.
+  A library built by hand never shows a filename as a name. Chapters already downloaded are named the next time
+  their series is checked.
+- **Chapters past 1000** ([#89](https://github.com/YUnauuu/hbook/pull/89)): Continue opened chapter 1 for
+  anyone reading past chapter 1000, and the reader's chapter list stopped there. Long lists page 100 at a time,
+  named by the chapter numbers each page shows, and opening on the page that holds Continue.
+- **Discover keeps your chosen source through a search** ([#87](https://github.com/YUnauuu/hbook/pull/87)).
+- **Type anywhere to search** ([#94](https://github.com/YUnauuu/hbook/pull/94)): start typing a title on any
+  page. Under Japanese or Chinese it opens empty so the input method composes properly, and Profile → Settings →
+  *Type anywhere to search* switches it and "/" off on that device.
+
+### 18+
+
+**An admin can mark genres and sources as 18+** ([#86](https://github.com/YUnauuu/hbook/pull/86)), Admin →
+Settings → 18+ filter, with a per-series *Always show*. They widen what "Show 18+" hides everywhere, including
+OPDS, the Komga-compatible API, notification digests and the automatic source hunt. They never widen what anyone
+may open: the age cap is still the only permission. Fixed on top: the genre list is read in SQL rather than
+pasted into it, "Find missing chapters" and Fetch no longer answer 404 for a series the switch hides (already true
+of 18+ libraries on main), and source ids keep their `_`.
+
+### Housekeeping
+
+- Desktop builds on a pull request are signed the way pushes to main are, so macOS CI stopped failing on every
+  pull request. Desktop type-checks under TypeScript 7.
+- Node majors and `@types/node` majors are taken deliberately, onto the next LTS, not from weekly Dependabot pull
+  requests; `bff` is back on Node 24's types.
+
+## v0.45.1 — 2026-09-25
+
+**A security fix. If anyone other than you has an account on your server, update.**
+
+### The cover proxy no longer lets an account steer the Cloudflare solver
+
+Covers from sites behind Cloudflare are fetched with the help of the bundled solver, FlareSolverr: a real
+browser, running on the same Docker network as the extension engine and the database. The cover proxy takes the
+image's address from the request, and for a Cloudflare-protected source it handed that address to the solver
+*before* checking that it was a public address. The check that did run first knew private IP addresses, but not
+bare container names like the ones in the install file. So any signed-in account could make the solver open
+addresses inside your network. Nothing it found came back to them, but the requests were made, and a browser
+does more than fetch: it follows redirects and runs the scripts of the page it opens.
+
+It needs a signed-in account. Nobody without one could reach it.
+
+Three changes, each with a test that fails without it:
+
+- **The public-address check runs before anything touches the network**, the solver included.
+- **A host name with no dot is refused outright.** No public host is a single word; container names are.
+- **For an address that came from a request, the solver only opens hosts the source vouched for**: the site an
+  admin added, or a host that source has actually served covers from. Library covers come from your own database
+  and are fetched as before, which matters: some sites keep their covers on a separate Cloudflare-protected CDN
+  that answers 403 without the solver.
+
+Readers see no difference. Covers load as they did.
+
+Found while reviewing [#91](https://github.com/YUnauuu/hbook/pull/91), a chapter preview from
+[@Squeaks72](https://github.com/Squeaks72) that had the same shape of problem in a new route; it is being rebuilt
+around this fix.
+
+## v0.45.0 — 2026-09-24
+
+**The desktop app can also be a window onto your own server; adding an extension repository is spelled out,
+in the app and in the docs; and the desktop app has a real guide.** The owner asked for three things the day
+v0.44.0 shipped: that the Windows and Mac app should also work with "our usual self-hosted version by putting in
+the website url", asked on first launch; better documentation of the desktop app; and a clearer way to learn how
+to add the extensions repository. This release is those three.
+
+### hbook Desktop: "On this computer" or "Connect to my server"
+
+The first launch now asks **"How do you want to use hbook?"**:
+
+* **On this computer** is v0.44.0's app, unchanged: the library folder question (now with a **Back** button),
+  then the whole app on the PC — its own server, database, downloads and extension engine.
+* **Connect to my server** asks for the address you open hbook at in a browser — `https://manga.example.com`,
+  `http://192.168.1.10:8080` — checks that an hbook server answers there, says *Connected to* and its name,
+  and opens it in the window. **Nothing runs on the computer in this mode**: no database, no server, no engine,
+  no sign-in secret. You sign in on your server's own page, and every tab is your server's.
+
+An install that already chose a library folder in v0.44.0 is never asked: it opens standalone, as before. You
+can switch at any time from the tray or menu-bar icon — **Connect to my server instead…** in one mode; **Switch
+server…**, **Use on this computer instead** and **Forget this server…** in the other — and switching never
+touches the library on the computer.
+
+* **Checked before it is saved.** The address is reduced to its origin (a path is dropped and said so, since
+  hbook must be at the root of its address; with no scheme typed, `https://` is tried and the message says to
+  type `http://` in full if that is what the server uses), redirects are followed hop by hop and the final
+  origin stored (one that leads to another host name is shown and waits for **Continue**), and `/auth/config`
+  must answer like an hbook server. Each refusal names its cause: unreachable, not an
+  hbook server, an HTTP error, a user name in the address, another copy of the desktop app, or a proxy's
+  password prompt (HTTP Basic Auth is not supported yet, and says so). A sign-in portal in front of the server
+  (Authelia-style forward auth — one that sends you on to its sign-in page, or one that answers 401/403 itself)
+  is recognised and offered as **Continue**; the window follows it, and single sign-on round trips stay in the
+  window.
+* **Self-signed certificates: asked once, remembered, loud when they change** (the owner's decision). A
+  certificate the computer does not trust shows *Trust this server's certificate?* with the server, its SHA-256
+  fingerprint (the value `openssl x509 -noout -fingerprint -sha256` prints), the issuer and the expiry; **Trust
+  this server** remembers exactly that certificate for that host name. A pinned host presenting any other
+  certificate gets a red *This server's certificate has changed*, with both fingerprints and no one-click way
+  past it — **Trust the new certificate…** only arms a second button, and a double-click does not confirm it.
+  There is no accept-all path: Chromium's own refusal stays the answer to anything that is neither trusted by
+  the system nor the pinned certificate. A server saved while the computer trusted its certificate is
+  remembered as such, so a self-signed certificate there later gets the same red warning with no way to trust
+  it (**Forget this server…** starts again). Only the server's own certificate is ever asked about, never one
+  that a page's other requests or another host present.
+* **The window onto a server gets no desktop bridge at all.** The page is the server's, so it is given only an
+  inert `window.hbookShell = { mode: 'server', version }` and never `window.hbookDesktop` — even for a
+  server on the same PC at `http://127.0.0.1:8080`, which the old address-only check would have treated as the
+  app's own and left unable to sign in. A v0.45.0 server reads the marker to hide its *Install hbook* row;
+  older servers ignore it.
+* **Server mode behaves like a window, not a service.** Closing it quits (nothing local to keep running, so no
+  tray keep-alive; on Windows that also installs a downloaded update, as Quit does). A server that does not
+  answer shows *Can't reach {name}* with **Try again**, **Change server…** and **Use on this computer
+  instead**; over https the server's own service worker still serves what was saved offline. The window title
+  and the tray tooltip are the server's name. **Forget this server…** signs out and removes what the app kept
+  for it (offline chapters, settings, the trusted certificate), then asks the first question again — where **On
+  this computer** reopens the library already on the computer, in its folder. **Use on this computer instead**
+  with no library there yet shows the folder page first, with **Back** to the server, and switches only once a
+  folder is chosen. The server's *New-chapter alerts* switch is not offered inside the window (Electron has no
+  push service); a line points to the server's notification targets instead.
+* `--server-url=<address>` is the non-interactive "Connect to my server" for scripts and CI, as `--library-dir`
+  is for the other mode; a mode already saved wins over both. The mode, server and pins live in `state.json`
+  (`mode`, `serverOrigin`, `serverName`, `certPins`).
+* Every new sentence in the shell — 57 of them — is in all nine languages.
+
+Four things only the real Electron app showed, all fixed here: a page's own `window.close()` destroys the window
+without Electron's `close` event (server mode was left running with no window); Chromium caches a refused
+certificate per session even after the verify procedure changes, so a certificate the person had just trusted
+kept failing (the check now probes in a fresh session and relaunches after a trust); the server's service worker
+answered navigations from its cache, so a changed certificate showed no warning at all (the prompt now comes
+from the refusal itself, not from a failed page load); and the chooser's cards did not wrap.
+
+### Adding an extension repository, made obvious
+
+**In the app** (**Admin → Extensions**):
+
+* With no repository yet, the repository row is **open by itself** — the address field was hidden behind a
+  collapsed *Manage* while the empty list below said "add a repository above".
+* The field asks for `https://…/index.min.json` (the shape Mihon users have), and the help text says what a
+  repository is, that it is *the same address you added in Mihon (More → Settings → Browse → Extension repos)*,
+  and that a repository's *Add to Mihon* link works too. While it checks, a line says *this can take up to a
+  minute*.
+* **What you paste is understood.** An *Add to Mihon* link (`mihon://add-repo?url=…`, `tachiyomi://…`, or a web
+  `…/add-repo?url=…`) is unwrapped, a missing `https://` is added, a GitHub `…/blob/<branch>/index.min.json`
+  link becomes the raw file, and a GitHub repository *page* is refused with advice rather than saved. An
+  `index.json` or a bare folder that gives nothing is tried once as the `index.min.json` there, the only file the
+  extension engine reads a list from (the old retry went the other way, `index.min.json` → `index.json`, which
+  the engine never accepts).
+* **Success is what this repository brought.** *Added — {n} extensions from this repository*, never the size of
+  the whole catalogue: before, adding a broken second repository reported *Added — 1396 extensions available*.
+  A repository that yields nothing is **removed again** and answered *That address gave no extensions, so it was
+  not kept…*, with the engine's reason when it gives one. A duplicate is
+  recognised whatever its case, scheme, trailing slash or index file name. An engine that refuses the address,
+  or cannot be read, answers with its reason and leaves the list exactly as it was (a failed read used to be
+  taken as "no repositories", so the next add would have dropped every other one).
+* Refusals stay in red under the field until the address is edited, because a toast is gone in three seconds.
+  After a success, a next-step line says to choose extensions and to hide unused languages first — only 25
+  sources can be on at once — with a **Choose languages** button. Every string in the flow is translated.
+* **A removed repository stays removed.** The scheduled extension check restores the repository list from its own
+  copy, and that copy was only ever written the first time the check ran: a repository removed in the app came
+  back at the next check, and one added in the app was never protected. Adding and removing now keep it in step.
+  The check also compares repositories the way a duplicate is recognised, not letter for letter: the engine
+  lists a pasted `index.min.json` as its `repo.json` once it restarts, and a check that had saved the pasted form
+  wrote the repository back a second time and sent *Extension repositories restored*, after every restart.
+* The Docker *engine off* card names the container the shipped compose files actually use, `hbook-suwayomi`
+  (it said the development stack's `hbook-suwayomi`). On the desktop app, before the engine is downloaded, the
+  Providers tab's Extensions card says *Not installed yet — download it under Extensions* instead of *The
+  extension engine isn't running*, which read as a fault on a first visit.
+
+**API** (`POST /api/admin/extensions/repos`): 200 `{ ok, url, corrected, added, total }` with `added` counted for
+this repository; refusals carry a stable `error` — 400 `bad_url` / `github_page`, 409 `exists`, 422 `empty`
+(removed again), 502 `unreachable` / `engine_refused` with `reason`. `DELETE` answers `{ ok, removed }`. Both are in
+`openapi.yaml` and [api.md](docs/api.md).
+
+### Documentation
+
+* **[docs/DESKTOP.md](docs/DESKTOP.md)**, the desktop guide, written for someone who has never run a server:
+  which file (and how to tell an Apple silicon Mac from an Intel one), which release files to ignore, the browser
+  download warning, the Windows SmartScreen and Smart App Control situation and the macOS 15 *Open Anyway*
+  sequence (and macOS 14's Control-click → Open) — each OS step cited to Microsoft's or Apple's own pages — the
+  two modes and when to pick which, the first sources (MangaDex, a site, the extension engine and a repository),
+  server mode's address rules, certificates and error page, updates per OS (including the Mac's quit, drag,
+  replace), backups, where files live, uninstalling, and troubleshooting with the user-level steps first. The
+  desktop chapter of the user guide (§14) is now a pointer to it, and the README keeps one short section.
+* **[docs/extensions.md](docs/extensions.md)** starts with *Add an extension repository — step by step*: what a
+  repository is, what its address looks like and where to find yours, the *Add to Mihon* link, what each message
+  means, removing one, and languages and the 25-source limit; then where the engine comes from on each kind of
+  install (Docker, the desktop download, CasaOS, Unraid and Umbrel without one, server mode using the server's).
+* One memory figure for the engine everywhere: about 750 MB once running (731 MiB measured on a server with 22
+  extensions installed). The docs had said half a gigabyte, 800 MB and 1 GB.
+* The user guide's table of contents links for §7 and §10 work again, and §1, §2 and the FAQ point desktop
+  readers to the right place.
+* **No third-party names.** The docs no longer name a third-party extension repository or real scanlation
+  groups, and every screenshot of the extension flow and the sources list is taken on made-up data — *Example
+  Manga (EN)*, generated icons, `https://example.org/repo/index.min.json` — by a fixture in the screenshot rig
+  that applies to every run. The old extension shots showed real site names, some of them 18+; the icon strips
+  on hbook.com were real sites' logos. The desktop app's own pages are photographed from the real Electron
+  app.
+
+### Permanent download links
+
+Every release now also carries the installers under names without a version — `hbook-Setup.exe`,
+`hbook-mac-arm64.dmg`, `hbook-mac-x64.dmg` — so
+`https://github.com/YUnauuu/hbook/releases/latest/download/hbook-Setup.exe` always serves the newest
+one. The README, the desktop guide and hbook.com link to those. The update feeds keep naming the versioned
+files, which are unchanged. A test holds every such link in the docs to a name the release actually uploads.
+
+### For server installs
+
+The server changes are the repository route above (and the scheduled extension check's copy of the list, which
+it now keeps in step) and two web-app details: the Extensions tab's repository flow, and the *Install hbook*
+row hidden inside the desktop app's window. Nothing else in the server or the web app changed.
+
+## v0.44.0 — 2026-09-24
+
+**hbook Desktop (beta).** The owner asked, a day before this release, whether hbook could be something you
+*download as an app* — "empty of manga, you add the extensions repo and the manga sites in admin, everything
+exactly same as now, the only difference it won't be on your server and all the manga will be on your own pc".
+It can: this release is that app, for Windows and both kinds of Mac, attached to this GitHub Release beside the
+unchanged Docker images.
+
+**Nothing changes for a server.** Every server-side difference sits behind one switch, `HBOOK_DESKTOP`, read
+in one file; with it off — every Docker install — the server has the same routes, the same responses, the same
+listen address and the same defaults as v0.43.0, and the tests that say so are listed under *For server
+installs* below, together with the few places where code a server also runs was touched, and why that is
+identical on Linux.
+
+### hbook Desktop (beta): the whole app on your own Windows PC or Mac
+
+It is the same app, screen for screen — the same server and the same web app, inside an Electron shell — with
+the library in a folder on your computer. No Docker, no server to keep running, no account to create: it opens
+signed in, on an empty library, and sources, sites and extensions are added in Admin exactly as on a server.
+
+| Your computer | Download |
+|---|---|
+| Windows (x64) | `hbook-Setup-0.44.0.exe` — installs for your account only, no administrator prompt |
+| Mac with Apple silicon | `hbook-0.44.0-arm64.dmg` |
+| Mac with an Intel processor | `hbook-0.44.0-x64.dmg` |
+
+**Unsigned, for now** (the owner's call; signing is a drop-in later). Windows SmartScreen asks once — **More
+info → Run anyway** — and a PC with **Smart App Control** on blocks it outright, so the Docker install is the
+answer there. macOS refuses the first launch until **System Settings → Privacy & Security → Open Anyway**.
+Windows then updates itself in the background and installs on quit; a Mac cannot update an unsigned app, so it
+says *New version X — download* in the menu-bar menu and on the Version card in Admin → Health instead.
+
+What is in it:
+
+* **First run** asks one question, *"Where should hbook keep your manga?"*, defaulting to `hbook
+  Library` in your home folder — not inside Documents, which OneDrive and iCloud like to sync. A synced folder
+  gets a warning, and the app's own data folder, a drive root or the home folder itself are refused.
+* **No sign-in, ever.** The first start creates one local admin named after your computer account. The shell
+  signs its window in through a private handshake: a fresh 256-bit secret per launch, added by the shell below
+  the page to one loopback-only request, compared as a digest, and removed from the server's environment so no
+  child process inherits it. A browser pointed at the same port gets *"This library opens in the hbook app
+  on this computer."*
+* **Its own PostgreSQL 16**, the same major version as the Docker image, with `pg_dump` and `psql`, on
+  loopback with a password that never appears on a command line (macOS shows every user's).
+* **Its own Cloudflare helper** instead of FlareSolverr: a FlareSolverr-compatible endpoint the shell serves from
+  hidden browser windows, so neither the server nor the extension engine changed to use it. It reuses a site's
+  clearance cookie instead of solving again, and when a site insists on a human, a window *"hbook needs you
+  to verify <site>"* opens if you are at the computer.
+* **The extension engine on first use.** Admin → Extensions offers *Download the extension engine (about 200
+  MB)*: a slim pack of Suwayomi-Server and its own Java runtime, published on its own `engine-v2.3.2243`
+  prerelease and checked against a SHA-256 pinned in the app. Once downloaded it installs and starts in
+  seconds, and starts with the app from then on; the repository list ships empty, as on a server. ⚠️ **Extensions that need an
+  in-app web view do not work** in the desktop app: the engine's own Chromium download (KCEF) is off, because on
+  macOS the engine died on every start with it on.
+* **The tray / menu bar.** Closing the window keeps hbook running, so checks and downloads carry on: *Open*,
+  *Check for new chapters*, *Restore a backup…*, the update item, *Start when I log in* (off by default) and
+  *Quit*, which stops everything in order — the server finishes the chapter it is writing first.
+* **Backups** every night as on a server (`db.sql.gz` + `config.zip`), plus what a computer needs: a backup
+  runs about five minutes after start when the last one is more than a day old, and re-aims within a minute
+  after the machine wakes from sleep. **Restore a backup…** (Admin → Tasks, or the tray) saves a safety copy
+  first, replaces the database in one transaction, and restarts; the manga files are never touched.
+* **Left out, because they exist for other people or other devices:** the sign-in screen, passwords, 2FA,
+  sessions and sign-out, single sign-on and registration; members and per-library access; OPDS, the
+  Komga-compatible API (and its Mihon setting) and API tokens; web push (the window has no push service —
+  notification targets still work); *Save offline* and the Offline tab (the chapters are already on this disk);
+  and the install count, which the desktop app never sends. The server answers *not found* for every one of
+  them, and listens on `127.0.0.1` only, so nothing on your network can reach it.
+* **Sooner schedules**, because a computer is switched off far more than a server: the first new-chapter and
+  extension checks after 2 minutes, the Cloudflare helper check after 1, repair and the clean-ups after 5, the
+  daily source check a day after its last run. Downloads keep **5 GB** free (10 on a server) and the image
+  cache is capped at **4 GiB** (16).
+* **Windows-safe files:** folder names lose trailing dots and spaces and control characters, reserved names get
+  a `_` (`CON` → `CON_`), stored paths always use `/`, a rename that antivirus briefly blocks is retried, and on
+  case-insensitive disks (NTFS, APFS) a series whose folder exists in another case reuses it, and a case-only
+  rename works.
+* **Messages that talked about Docker** — containers, `PUID`, `chown`, `shm_size`, `SUWAYOMI_MAX_SOURCES` —
+  say what to do on a computer instead, in the server's Health and diagnosis text and in 25 new sentences in
+  the app, each translated into the other eight languages. The shell's own tray, first-run and dialog
+  sentences follow the system language, in the same nine.
+
+Where the files live, the hidden settings for troubleshooting, and uninstalling are in the new chapter
+[14. hbook Desktop](docs/USAGE.md#14-hbook-desktop) of the guide; the downloads and first-launch steps
+are in the [README](README.md#download-the-desktop-app).
+
+**How it was proven.** A spike ran first, on GitHub's Windows and macOS runners: the server unchanged inside
+Electron (its full test suite identical under Electron's Node), the bundled PostgreSQL (including a Windows user
+name that is not ASCII), an update installed over a running app, the web app's service worker and storage inside
+the window, the extension engine pack on all three platforms, and the Cloudflare helper side by side with
+FlareSolverr on real sites.
+Every release now builds the three installers on those runners and, on each, runs a product smoke on a fresh
+profile — first run, signed in with no password form, a real MangaDex chapter downloaded into the chosen folder
+and read in the window, the extension engine installed through the app, Quit leaving no process behind, and a
+relaunch signed in — plus the Windows update and the macOS unsigned-update checks. It has not yet been tried on
+many real PCs, which is why it is a beta.
+
+**What was verified before tagging.** On Windows x64, macOS arm64 and macOS x64 (GitHub runners, the installers
+built from this commit): 31 product checks, none failing — the product smoke above with the *published* extension
+engine pack, the sign-in handshake's refusals (no secret, a wrong one, a foreign origin, a password login), the
+app's own backup, Postgres recovering from a power cut and from an orphaned server, a standard (non-administrator)
+Windows user, a Windows profile named `Jösé 名前` (database and extension engine both on the private ASCII
+fallback), the Windows installer run over a running app and a vN → vN+1 update keeping the data, and on both Macs
+a rebuilt unsigned app opening straight into the library, signed in, with nothing in the Keychain. The shell's
+own suite (88 tests, the solver's contract against the bff's real client and Suwayomi's DTOs, the solver in real
+hidden Electron windows). And the server, with the switch off: the whole bff suite on a fresh database (172 files,
+1837 tests, none failing), the web app's 421 tests, the production build, the browser end-to-end suite and walks
+v0.40–v0.43 each on its own instance, the layout at 1440 and 390 px and all nine languages.
+
+Real machines caught three things the Linux tests could not, all fixed here: an unsigned Mac kept the cookie key
+in the Keychain under the build's own signature, so an update hung behind a hidden password prompt and even a
+restart lost the session (cookie encryption stays off until the builds are signed); the window refused its own
+extension-engine progress while the server restarted after the install; and the review found that another account
+on the same PC could bind the app's port in the seconds before the server did and receive the sign-in secret — the
+shell now trusts the port only after its own server process reports holding it, and loads nothing from it before.
+
+### For server installs: nothing changes
+
+The switch is read in `bff/src/lib/desktop.ts` alone, and every place that behaves differently asks it, with
+the server's own value as the other answer. With the switch off, `desktopOff.test.ts` checks that importing it
+changes nothing in the environment and that every server arm hands back the server value;
+`desktopSwitchHygiene.test.ts` checks that the flag is read nowhere else, that the server keeps its literals
+(`0.0.0.0`, `trustProxy`, the first-run delays, the backup and custom-sites paths), and that new routes exist
+only behind the switch; `openapiCoverage.test.ts` still pins the route table (`POST /auth/desktop` is not in it:
+it is registered only on desktop and is deliberately not a documented API). **No change unless running as the
+desktop app** in:
+
+* `env.ts`, `server.ts`, `routes/auth.ts`, `lib/auth.ts` — the switch, the local sign-in, the listen address,
+  the route guard, and the schedulers' first-run delays;
+* `backup.ts`, `fsGuard.ts`, `health.ts`, `sourceDiagnosis.ts` — the desktop wording and the desktop backup
+  (bundled `pg_dump`, `config.zip`); every server string is byte-for-byte what it was;
+* `libraryAdmin.ts`, `routes/sources.ts`, `routes/admin.ts`, `sources/customSites.ts` — the case-insensitive
+  and Windows-path branches;
+* the web app: every hidden surface is gated on the desktop shell or on the server saying `desktop: true`,
+  which a server never says, so a Docker install renders exactly as before.
+
+**Code a server also runs, changed for Windows and identical on Linux** — said plainly, because these are not
+behind the switch:
+
+* `chapterFileRel` builds the stored chapter path with `path.posix.join`. On Linux that is `path.join`; on
+  Windows `path.join` wrote `\`, so the nightly repair, the Health *Fix* chip and *Fetch again* never matched a
+  downloaded chapter there.
+* A restored refetch file is recorded with `/`; partial-chapter completion takes the folder with the POSIX
+  `dirname`; the web root normalises `\` before choosing its cache headers — all the same bytes on Linux.
+* The library scanner's symlink-loop guard keys folders by device and inode on Linux, as before, and by real path
+  on Windows only; the rename retry for antivirus and the extra `sanitize` rules run on Windows only.
+* Paths typed in Admin → Library go through a `\`-to-`/` conversion that does nothing on Linux (a `\` is a legal
+  character in a Linux file name, so it is left alone there).
+* The backup scheduler now also reads `backup_last_run`, and ignores it unless it is the desktop app.
+* Two web changes with no visible effect: the sign-in screen waits for `/auth/config` when the first-run check
+  answers *not found*, which a server never does; and the five "am I offline" checks go through one helper that
+  reads `navigator.onLine` the same way.
+
+### Release pipeline
+
+* `release.yml` gains a `desktop` job — `.github/workflows/desktop.yml` on the three runners — with no `needs`,
+  so the images never wait for it, and `desktop-publish`, which needs both the Release and every desktop leg,
+  checks each installer against its update feed (size and SHA-512), merges the two macOS feeds, uploads the
+  installers first and `latest.yml` / `latest-mac.yml` last, and adds a download section to the Release notes.
+  A red desktop build leaves the Release as the images alone until its jobs are re-run.
+* New `engine-pack.yml` builds the engine pack on each OS, boots it there, and publishes all three on the
+  `engine-v*` **prerelease** (never "latest", so no updater mistakes it for the app); a pack the app already
+  pins is never replaced. `desktop/scripts/release/pin-engine.mjs` pins the hashes from what was actually
+  published.
+* Dependabot watches `/desktop`; `.dockerignore` keeps `desktop/` out of every image build; the Phase 0 spike
+  workflows are gone.
+* Versions: `bff`, `web`, `openapi.yaml` and `desktop/package.json` are 0.44.0; `desktopParity.test.ts` now
+  holds the desktop version to the server's.
+
+### Known limits of the beta
+
+* Unsigned: SmartScreen once, Smart App Control blocks it, and macOS updates are a download.
+* No Linux or Windows on Arm build; Docker covers both.
+* The library folder is chosen once; moving it later is not in this version. Neither is moving a library from a
+  Docker server into the app: *Restore a backup…* refuses a server's backup, whose series point at the server's
+  folders.
+* Extensions that need an in-app web view do not work (KCEF is off).
+* After the computer sleeps, the scheduled jobs other than the backup can run one interval late.
+* On a Mac, *Start when I log in* may open the window at login instead of starting in the menu bar.
+* Very deep library folders can pass Windows Explorer's 260-character path limit; hbook itself copes, but
+  Explorer may not open them.
+* Found on the way and left for changes of their own: on a server, *Delete files*' check that a folder is
+  inside the library cuts the folder's real path at the library path's length, which misreads a library reached
+  through a symlink (fixed on desktop only, to keep the server byte-identical in this release); and on desktop
+  the audit log's own IP helper still reads a forwarded-for header (sessions use the fixed one, so only another
+  program on the same computer could put a false address in the audit log).
+
+### Notes
+
+New tests: `desktopOff`, `desktopSwitchHygiene`, `desktopAuth` (and its database twin), `desktopRoutes`,
+`relPath`, `backupSchedule`, `desktopCopy`, `desktopPaths`, `desktopBackup`, `libBooksRoot` and `desktopParity`
+on the server; `desktopSession` and `desktopSurfaces` in the web app; the shell's own suite in `desktop/test`
+(unit, contract and the solver in real Electron windows); and `releasePipeline` now pins the desktop jobs, the
+engine prerelease, the feed checks and the upload order. Every guard added carries, as a comment, the exact edit
+that puts its bug back, and was run that way. There is no new server environment variable for a Docker install
+and no migration.
+
+## v0.43.0 — 2026-09-23
+
+Three issues, all from people using this: a performance mode for a modest PC, asked for by **@nealhead**
+(#71), and two from **@TIGamingTV** — progress on chapters the server never downloaded (#69), and
+notifications that reach something other than a browser (#70), which he filed while saying he would not
+build it himself because the security was too complicated. It was, a little; the rules are below.
+
+The defaults stay where they were: Reduce effects is off, a mark exists only once a reader makes one, and no
+notification goes anywhere until an admin adds a target. The one change to the default look is a fix: the
+unprefixed `backdrop-filter` now survives the build, so every browser that supports it blurs the glass panels
+as Safari always did.
+
+### Reduce effects: the performance mode (#71, @nealhead)
+
+**Profile → Settings → Appearance → Reduce effects**, off by default. The report was "laggy, stutters when
+scrolling or moving between areas", on Firefox 156 and Windows 11, with a request for a performance mode —
+and this is that mode. It turns off, at once and without a reload:
+
+* the animated background, the film grain and the vignette (not dimmed: not rendered at all);
+* every backdrop blur, with the glass panels turning solid;
+* smooth (Lenis) scrolling, leaving the browser's native scrolling;
+* the cover blur-in and the loading shimmer;
+* card tilt;
+* the page and settings-panel transitions;
+* the accent rim on cards (each keeps its own plain border underneath).
+
+It is one switch per **account**, stored with your other settings, so it follows you to another device; a
+copy on the device covers an offline launch and is cleared at sign-out, so the next person on a shared tablet
+gets their own setting. The system's *reduce motion* setting is separate and unchanged, and does not turn this
+on: someone who asked their OS for less motion did not ask for the grain or the glass to go.
+
+**The look is unchanged by design.** That was the owner's call: the app does not get plainer for everyone
+because one machine is slow, so the default keeps every effect exactly as v0.42.0 drew it, and Reduce effects
+is the performance mode. Frozen screenshots of home, the library and a series page at 1440 and 390 px render
+pixel-identical to v0.42.0, apart from the glass fix below. The rule left room for optimisations nobody can
+see, if they bought frames; four were measured — `contain: strict` on the three layers, `translateZ(0)`,
+`isolation: isolate` on the page, `will-change` on the background — and none bought one (`will-change` on the
+animated background made the library five times *slower*), so none shipped.
+
+What it measured, on the same instance and data with the v0.42.0 web build swapped for this one, median of
+three runs (two for the v0.42.0 Firefox rows). The library in these rows is 200 series, every fourth a
+favourite.
+
+**Scrolling — headless Chrome 152, CPU throttled 4×/6×, 1440×900 / 390×844** (fps, then the share of frames
+over 33 ms)
+
+| | v0.42.0 | v0.43.0 default | v0.43.0 Reduce effects |
+|---|---|---|---|
+| library 1440, 4× | 38.8 (49 %) | 40.7 (44 %) | **60 (0 %)** |
+| home 1440, 4× | 51.2 (16 %) | 53.3 (11 %) | **60 (0 %)** |
+| library 1440, 6× | 40.5 (45 %) | 41.3 (43 %) | **60 (0 %)** |
+| library 390, 4× | 60 | 60 | 60 |
+| home 390, 4× | 59.6 | 60 | 60 |
+
+**Scrolling — headless Firefox 155, unthrottled** (it composites in software, which puts on the CPU what a
+weak GPU pays for, so it is the closer stand-in for the reporter's machine)
+
+| | v0.42.0 | v0.43.0 default | v0.43.0 Reduce effects |
+|---|---|---|---|
+| library 1440 | 7.7 | 7.6 | **57.9** |
+| home 1440 | 12.3 | 8.9 | **55.1** |
+| library 390 | n/a (the rig crashed; fixed since) | 19.3 | **60** |
+
+The two default columns are the same CSS; home's 12.3 against 8.9 is Firefox's run-to-run spread.
+
+**Everything else — headless Chrome 152**
+
+| | v0.42.0 | v0.43.0 default | v0.43.0 Reduce effects |
+|---|---|---|---|
+| composited layers, library 1440 | 184 (66.1 Mpx) | 184 | **24 (22.1 Mpx)** |
+| composited layers, home 1440 | 62 (20.5 Mpx) | 62 | **6 (5 Mpx)** |
+| page transition home → library, 4× | 39.6 fps | 42.8–50.3 | **58.1–58.7** |
+| page transition home → library, 6× | 49.8 fps | 40.6–43.9 | **58.7–59.4** |
+| card tilt sweep, home rail, 4× | not measured | 56.5 (53 tilts) | 60 (0 tilts) |
+| phone nav pill, 390, 4× | 60 | 60 | 60 |
+
+Those default columns were measured before the glass fix below, so the scrolling rows were measured again on
+the release build with the same rig: in Chrome, default 40.6 / 54.4 / 41.5 / 59.2 / 60 fps down the first
+table's rows and 60 on every row with the switch on; in Firefox, default 8.3 / 11.5 / 19.1 and 57.8 / 57 / 60 with the
+switch on. The same within run-to-run spread — so the restored blur costs nothing measurable **in Chrome**
+(1440 and 390, 4× and 6×). The Firefox rows cannot price it: headless Firefox accepts `backdrop-filter` into
+the computed style and then composites it away, so forcing the phone nav to `blur(40px)` or to `none` there
+produces screenshots identical to the pixel, while a plain `filter: blur(6px)` on the same element moves 6 %
+of them. If the nav, the dialogs or the command palette feel slower on a real Firefox after this release,
+that is the one thing in it that could do it, and Reduce effects turns the blur off.
+
+In short: with the switch on, the library goes from 38.8 to 60 fps in Chrome at 4× and from 7.6 to 57.9 in
+Firefox, and from 184 composited layers to 24. Where the frames went, taking one effect away at a time on
+the library at 1440 (Chrome at 4×, the pre-release audit): removing the grain alone took it from 37.7 to 55.2
+fps, removing all three background layers to 60. In Firefox nothing alone came close — the mesh was worth
+the most (7.7 → 13.4) — and with everything else already off, the accent rims were the last big cost (32.1
+→ 59.5), which is why the switch hides them too.
+
+These are headless browsers standing in for a modest PC, not the PC: Chrome's throttle slows only the main
+thread, and a weak GPU pays for blends and blurs in a compositor that throttle cannot see. The rig that
+produced every number here is committed as `web/test/perf/` (not in CI — frame timings on a shared runner are
+noise), with a README on how to run it, what it can and cannot say, and the traps it has already fallen into,
+so the next report like this one is measured rather than guessed.
+
+**The glass panels blur again (the one change to the default).** `.glass` and `.glass-strong` were written
+unprefixed first and `-webkit-` second, and the build's CSS minifier read the second as overriding the first
+and kept only it — a property Chrome and Firefox ignore. So outside Safari the phone nav, dialogs, the
+command palette and the sign-in card were plain see-through panels. The unprefixed property now survives the
+build, so every browser that supports `backdrop-filter` applies it; the owner asked for that fix in this
+release, and a test runs the stylesheet through the same minifier so it cannot come back unnoticed. Verified
+rendering in Chrome 152 — headless Firefox reports the blur in the computed style but composites it away, so
+it could only be verified there at declaration level.
+
+### Marking chapters you never downloaded (#69, @TIGamingTV)
+
+The series page's grey rows — chapters the sources list that this server does not hold — can now be marked
+read and unread: from the row's own **⋯** menu, or by picking them in **Select** mode, whose *Mark read* and
+*Mark unread* now act on grey rows as well as chapters. A marked grey row shows a ✓ in its empty thumbnail
+and the read dot, and stays grey, because the server still does not have it. It is for the reader who reads
+elsewhere, or read long ago, and wants the page — and Mihon — to agree.
+
+* **Mark all read** and **Mark previous as read** still mark only the chapters on the server: one tap must
+  not tick eight hundred listed chapters, and a run of ticks is exactly what the trackers are told.
+* A mark needs a connection but no download permission (it costs no bytes); offline it says *Could not
+  mark — try again when online* rather than queueing.
+* Marks write **no reading events**, so stats, streaks, the leaderboard and Wrapped do not move.
+* When a marked chapter is later downloaded, the mark becomes ordinary read progress on it, keeping the time
+  you marked it — stamped just before the file's own time, so the read-chapter cleanup never deletes a chapter
+  the sweep has just fetched, or one you had started reading.
+* Merging series carries marks to the survivor (the earlier of two marks on one number wins); **Forget**
+  deletes them and counts a member whose only history was a mark among those who lose history; the library's
+  bulk *Mark unread* clears them, and its bulk *Mark read* never creates them.
+
+**What the trackers are told, and what they are not.** A mark reaches AniList, MyAnimeList or Kitsu only
+with **Admin → Settings → Library housekeeping → Show missing chapters in Mihon** switched on, and only as
+part of an unbroken run of read chapters from the start — never as a lone tick, because a number sent to a
+tracker cannot be taken back there:
+
+* chapters read here to 12, plus a mark on 1000: the tracker is told **12**;
+* chapters read to 12, plus marks on 13–200: it is told **200**;
+* a gap in what the sources list stops the run: a source listing only 951–1000, plus a mark on 951, still
+  sends 12;
+* a run ending on a fractional chapter is rounded down (12.6 sends 12);
+* marking a chapter unread sends nothing, so the tracker stays ahead — the safe direction;
+* hbook's own tracker sync still decides *finished* from chapters on the server alone; Mihon, reading the
+  Komga API, counts the listed chapters as soon as you have marked one of them **on the series page**, and
+  reaches *Completed* when you have marked the rest.
+
+With the switch **off**, marks never reach a tracker, marking alone sends nothing, and the Komga API answers
+exactly as it did in v0.42.0. With it on, Mihon's last-read number is the higher of v0.42.0's (missing
+chapters skipped) and the run through your marks — never lower than before — and a sync from the phone up to
+chapter N also marks every listed missing chapter at or below N here, so the phone and the series page agree.
+Those phone-written marks are treated as the echo they are: Mihon sends that sync on every bind and refresh,
+so they never switch your counts to the listed chapters (a series you had finished would have gone from
+*Completed* to *Reading* on its own), and they reach a tracker only when the phone marked something above
+everything you have finished here — a refresh repeating the server's own answer sends nothing at all.
+
+Also fixed on the way: the listing matched a chapter by its file's number rather than an admin's correction,
+so a chapter renumbered from 0 to 105 was also shown as a grey row at 105. It uses the corrected number now.
+
+### Notifications beyond this browser (#70, @TIGamingTV)
+
+**Admin → Settings → Notifications** (a new, last section) sends new chapters and server problems somewhere
+other than this browser's own notifications. Four kinds ship:
+
+* **Webhook** — a JSON `POST` (`event`, `title`, `message`, `count`, `series`), with an optional token sent as
+  `Authorization: Bearer`;
+* **Home Assistant** — its address, a long-lived access token and a `notify.<service>` name;
+* **ntfy** — a server (ntfy.sh when left blank), a topic and an optional token;
+* **Discord** — a channel's webhook address, with `@everyone` and every other mention switched off.
+
+**Telegram and email do not ship, on purpose.** Telegram needs a chat id obtained by hand through its API and
+puts the bot token in the URL path; email means a new dependency, server/port/TLS/login settings, and the
+biggest support burden in self-hosting. The webhook reaches both through a bridge (n8n, Node-RED, Apprise).
+
+**One message per update, not one per chapter.** After each library sweep — the scheduled one, or **Run now**
+on it under Admin → Tasks — every target that wants new chapters gets **one** digest: *3 new chapters in Walk
+Tale*, or *12 new chapters in 4 series*. The message is a template you can change, with `{count}`, `{series}`
+and `{list}` (up to ten titles, then *…and N more*), and a live preview. Nothing is sent when nothing landed,
+and a series' own *Check now* sends nothing (its result is already on your screen). A target can be aimed at
+one person, who then hears only about their own favourites. **Include 18+ series** is off by default, like an
+OPDS link's and an API token's *Include 18+ libraries*: a digest leaves titles from 18+ libraries out unless
+the target asked for them. A person's target is bounded by that person's own libraries and age limit as well —
+permissions the checkbox cannot widen — so it never names a series they could not open. **Server problems** — a source refusing this server, the
+Cloudflare solver, extensions — go to the targets that ask for them, the same notices admins get as web
+push, and they arrive even on an install without push configured.
+
+**What keeps it safe.**
+
+* Addresses on your own network are **allowed on purpose** — a Home Assistant lives at
+  `homeassistant.local` or `192.168.x.x`, exactly what the cover proxy's address rule refuses, so that rule
+  is deliberately not used here.
+* `http` and `https` only, and no `user:password@` in an address.
+* Cloud-metadata addresses (169.254.0.0/16, `fe80::/10`, `fd00:ec2::254`, 100.100.100.200,
+  `metadata.google.internal`, `metadata.goog`) are refused when a target is saved **and** at every send, on
+  every address the name resolves to, inside the connection's own lookup — so a name cannot resolve public
+  when checked and to the metadata service when connected.
+* **A redirect is never followed.** A target that answers 302 has failed, and the address it pointed at is
+  never asked; that one rule is what stops a public host bouncing a Home Assistant token somewhere else.
+* This server's own port on loopback, or its own public address, is refused.
+* A ten-second timeout, and one retry thirty seconds later on a network error, a 429 or a 5xx — never on
+  another 4xx.
+* Every address and token is **encrypted at rest** under a key of its own (derived from `JWT_SECRET` with a
+  salt used for nothing else), and is never logged, never in the audit feed and never sent back to the
+  browser: the panel shows scheme and host only, and changing one means typing it again. **A stored token
+  never follows an address to another host** — re-point a target and it asks for the token, and an ntfy
+  topic, again, so a re-point plus a test cannot be used to read back a secret the panel never shows; the
+  audit row for an accepted re-point records the new host. If `JWT_SECRET`
+  changes, a target sends nothing and says *The stored address and token could not be read — enter them
+  again*, rather than sending without its token.
+* **Send a test** works only on a saved target — an address in the request is ignored — at most five a minute
+  per admin, and it answers with a short reason, never the target's own response. (An admin can still save a
+  target anywhere on the network and test it, which is why all of this is admin-only.)
+* After ten failed deliveries in a row a target switches itself off and the admins are told once; switching
+  it back on gives it ten fresh tries.
+
+### Notes
+
+New in the API, all described in `docs/api.md` and `bff/openapi.yaml`: `POST` / `DELETE
+/api/series/:id/listing-progress` (1–500 numbers, each 0–1,000,000), `read: true` on a listing ghost the
+caller marked, the ghost-inclusive `booksCount` on the Komga v1 series for a reader who has marked one, and
+the admin-only `/api/admin/notify-targets` routes with their `NotifyTarget` shape. `reduceEffects` is one
+more key in the free-form `/api/settings` object. Two tables are created on start (`listing_progress`,
+`notify_targets`), with no data migration; there is no new environment variable. Existing clients may ignore
+every new field.
+
+What was verified: the web suite at 394 tests, the web and server type-checks and a production build, all
+clean. Every guard added here carries, as a comment, the exact edit that puts its bug back, and was run that
+way. The release image itself was built and driven in a browser: the main browser suite (72 checks) on seven
+fresh instances, and a new walk for this release, 73 checks at 1440 px and again at 390 px on an instance of its own
+each — the default look's three background layers computing exactly v0.42.0's styles and the glass computing
+its blur, the switch removing every layer and every blur and surviving a reload from the account alone, the
+library scrolling at 60 fps at a 4× throttle with the switch on (the walk's floor is 50), a grey row marked
+from its menu and from select mode and the Mihon answer moving with the ghost switch on and not with it off, a
+mark becoming read progress when its chapter lands, and a webhook target receiving exactly one digest for a
+sweep while a target that answered 302 had its redirect ignored and the token turned up nowhere in the page,
+the API, the audit feed or the server's log. The v0.40.0, v0.41.0 and v0.42.0 walks are unchanged at 41, 54
+and 64 checks, each on its own instance; the layout rig found no overflow at four widths, and the language rig
+rendered all nine languages and reported every file complete.
+
+## v0.42.0 — 2026-09-23
+
+Four bugs, reported by **@Squeaks72** with diagnoses accurate down to the line number (#64, #65, #66, #67),
+and one feature contributed by **@TIGamingTV** (#58). Three of the four were live on the maintainer's own
+library. The only default that moves is the first one, and it moves to what the setting had always said it
+did; the contributed feature is off until you turn it on.
+
+### Discover honours *Show 18+* (#64)
+
+The 18+ reveal hid adult libraries and then let Discover list adult **providers** anyway — their names, their
+newest covers, their popular walls, and a cross-source search that queried them. On the maintainer's own
+server that is twelve of the fourteen sources switched on, painted on the one screen where things appear
+without being asked for.
+
+With the reveal off, an adult source is now left out of the provider list and its sheet, its *Newest* and
+*Popular* walls answer nothing, and **the search across all your sources does not even ask it** — no request
+leaves the server for that site. **Show 18+** now sits on Discover as well, beside *Newest from your
+sources*, and stays there while you search; it appears whenever something is being hidden, so an install
+with adult providers and no 18+ shelf still has the switch. Three things are deliberately untouched, because
+you named them yourself: opening a provider's page for one title, adding it, and *Find missing chapters* on
+a series whose own source is adult — hiding those would stop a series you already own from being filled.
+An age limit below 18 is a different thing and is unchanged: those sources are refused by name, with or
+without the reveal.
+
+### Adding a series back no longer downloads it again (#65)
+
+*Remove from library* keeps every file, so adding the series back should cost nothing — and instead it
+fetched the entire back catalogue and then listed every chapter twice, because the only "do we have it"
+check was a filename in hbook's own download folder. A read-only library the server never downloaded was
+invisible to it: 33,854 chapters here, 18,064 of them (53 %) under names that check could not have matched
+anyway, and 30 series that exist **only** there — 654 chapters for the largest of them.
+
+An add now reads what the library actually holds, on every root and whatever the files are called, and
+fetches only what is missing. With nothing left to fetch the dialog says *All {n} chapters are already in
+your library* instead of starting a download, and the series still gets its source, its chapter floor, its
+chapter list and its cover. A chapter you removed with **Delete from server** or **Delete files** is
+deliberately fetched again: the nightly sweep treats that tombstone as kept so it does not undo a deliberate
+deletion, but an add is somebody asking for the chapter now. A partial re-add fetches exactly the
+complement, and the floor still records what you asked for rather than what was left to do.
+
+### *Open in library* opens the series you just added (#67)
+
+The add now answers with the id of the series it landed on — the one it found, minted, revived or stamped —
+and a download's id appears on its progress card as soon as the first chapter is scanned in. *Open in
+library* uses that. It used to search for the title and open the first result, which on a library with two
+similarly normalised titles is a confident wrong answer; the search is now a last resort, needs an exact
+match, and otherwise lands on Downloads rather than guessing. The duplicate prompt gains an **Open it**
+button for the copy you already have. An id is never handed to somebody who may not open that series.
+
+### A title you can actually type (#66)
+
+*Remove from library*, *Delete files* and *Forget* ask you to type the title, and compared it byte for byte —
+so any title carrying a character a keyboard does not produce could not be confirmed at all. That is 38 of
+241 series here (16 %): curly apostrophes, en and em dashes, an `&amp;` the source never decoded, a
+non-breaking space.
+
+Both sides now go through one fold: one layer of HTML entities, NFKC, curly quotes and dashes folded to
+ASCII, invisible characters and emoji dropped, every kind of space collapsed to one, ends trimmed. **Case is
+not folded** — it is visible, and the same dialog confirms deleting a member. The server applies the same
+function as the button, so the fix cannot turn a dead button into a refused request. A **Copy title** button
+now sits beside the box wherever the browser offers a clipboard (over plain `http` on a LAN it does not, and
+the button is hidden rather than broken).
+
+### Missing chapters in Mihon, if you want them (#58, @TIGamingTV)
+
+**Admin → Settings → Library housekeeping → Show missing chapters in Mihon**, off by default. Mihon works
+out how many chapters a series has from the list hbook hands its Komga extension, so it counts what is on
+disk. With this on, the chapters this server does not hold — the tombstones the read cleanup emptied, and
+the numbers the sources listed that were never fetched — are listed beside the ones it has, in number order,
+marked *not downloaded*, and their numbers count towards the chapter total Mihon reports to AniList and MAL.
+They cannot be opened: tapping one gets Mihon's own empty-chapter message rather than a placeholder page,
+because viewing a page would mark the chapter read.
+
+It is for libraries that deliberately hold less than the sources list — the read cleanup, series you follow
+without fetching, a chapter floor. It is **not** a fix for a bug on an ordinary install: the tracker's read
+counts were always right, and what was short was the chapter list on the phone and the total beside it. A
+series you have finished still reports *Completed*: a chapter that can never be read is listed, never
+counted. Nothing outside the Mihon surface moves — the app, OPDS and offline reading list what is on disk
+exactly as before — and turning the switch off puts every answer back at once.
+
+The feature, the design and its tests are TIGamingTV's, merged with five review fixes on top: the chapter
+counts stay over real chapters (counting a ghost would have made *Completed* unreachable for good, since
+Mihon derives the status from those counts), a chapter an admin renumbered is listed once rather than twice,
+a tombstone reports no pages like a ghost does instead of advertising the pages of a deleted file, the
+documented id format now matches the one the code emits, and the setting is read only on the requests that
+can use it.
+
+### Notes
+
+`hiddenAdult` on `GET /api/sources`, `seriesId` and `alreadyHere` on the add's answer, `id` in its 409
+`existing`, `seriesId` on a job card, and the folded `confirm` on *delete-files* and *forget* are all in
+`docs/api.md` and `bff/openapi.yaml`. Existing clients may ignore every new field. `FAKE_SOURCE_NSFW` is a
+test-harness knob and does nothing on a real server.
+
+What was verified: the whole bff suite on a fresh database — 157 files, 1,668 tests, none failing — the web
+suite at 371 tests, the web type-check and a production build, all clean. Every guard added here carries, as
+a comment, the exact edit that puts its bug back, and was run that way against the unmodified code before
+the fix was taken. Three browser walks, each on its own throwaway instance: v0.40.0's, unchanged at 41
+checks; v0.41.0's, unchanged at 54; and a new one for this release, 64 checks, run at 1280 px and at 390 px,
+that drives all five items end to end — the reveal hiding a provider, with the test source's own request log
+proving it was never even asked; a capped account still refused that source by id; a series removed and
+added back with not one page fetched and the dialog saying so; a chapter deleted from the server fetched
+again; *Open in library* landing on the id the server gave; a curly-apostrophe title confirmed with a
+straight one, through both the button and the route; and the ghost switch on and off against Mihon's own
+status arithmetic. The eight translations were merged, the language rig rendered all nine and reported every
+file complete, and the layout rig found no overflow at four widths.
+
+## v0.41.0 — 2026-09-22
+
+The Health page has always been honest about what is wrong with a library and useless about fixing it:
+fourteen chapters that downloaded as a two-page notice, forty gaps, a hundred and eighty-three chapters that
+would not download, four sources blaming the Cloudflare solver — every one of them a sentence, and nothing to
+press. This release gives every finding the button that fixes it, and does most of them overnight without
+being asked. Nothing that cannot be undone became automatic.
+
+### A nightly repair, bounded by numbers
+
+**Admin → Settings → Library housekeeping → Repair the library nightly** is on by default and listed as
+**Admin → Tasks → Repair library** with a *Run now*. Every 24 hours, counted from the end of the last
+completed run, it does five things and nothing else, in this order:
+
+* **Resets stale Cloudflare state** when sources are blaming the solver: the remembered sessions, the "could
+  not be solved" marks, and cooldowns that lapsed more than 24 hours ago. While the solver itself is down
+  nothing is cleared, because those cookies could only be re-earned by a solve that cannot happen. No site
+  is contacted.
+* **Counts pages** in up to **2,000** chapter files nobody has opened. A page count used to be stamped only
+  when somebody first opened a chapter, so on a real install 30,625 of 43,253 chapters had no count at all
+  and the short-chapter check could not see them. A file that turns out to be unreadable keeps a count of
+  zero and is never opened again.
+* **Gives failed chapters a second chance**: up to **100** ledger rows that hit the retry cap more than
+  **7 days** ago have their attempt count cleared, so the chapter sweep tries them again now the site has
+  had time to calm down.
+* **Replaces a one- or two-page chapter when another source has a longer copy** — up to **20** a night, one
+  copy from each of at most **3** sources the series follows plus one search, and only ever a file hbook
+  downloaded itself. The decision is made from the page lists *before* anything is downloaded, so a shorter
+  copy can never overwrite a longer one. When nothing longer exists the chapter is **marked confirmed
+  short** instead, and only when every copy really answered *two pages*: a source that was silent, in a
+  cooldown, left unasked by that cap of three, or that handed back an empty page list ends the proof and the
+  chapter is looked at again another night. Silence is never agreement.
+* **Searches for a source that can fill a gap**, for the **5** series with the largest holes, at most once a
+  day each, fetching up to **20** chapters. A hole a followed source already lists is left to the chapter
+  sweep instead. A source is followed only under the same title-and-90%-numbering rule as every other
+  automatic follow.
+
+One run may start **5** searches in total, shared between the steps that need one, of which the short step
+may spend at most **2** — a library full of short chapters can no longer leave the gap step with nothing.
+The repair and the chapter sweep never run at the same time — both download into the same folders — so
+whichever starts second waits ten minutes. Turning the nightly off stops the schedule only: *Run now* and
+the Health page's buttons keep working, because nothing it does is destructive.
+
+**The nightly never deletes a chapter, never marks one as gone, never merges two series and never renumbers
+anything.** Duplicate series and impossible chapter numbers stay one-click actions you confirm: *Merge* per
+pair (and *Merge all* for the check) behind a dialog that lists each pair and marks the copy that is kept,
+and *Delete chapter(s)* behind its own, with a bookmarked chapter refused. There is deliberately no
+*Fix all* for either.
+
+### Every finding has a button
+
+*Fix* looks at one short chapter now. *It's fine* records that it really is that short, and a greyed row's
+chip reads *Not fine* so you can take it back. *Fill now* searches for one missing run of chapters. *Retry
+now* clears a source's attempt counts whatever their age and re-checks up to ten of its series. *Test*,
+*Clear block* and *Turn off* act on a source. *Reset solver sessions* clears the Cloudflare state this
+server is holding — it does not restart the solver, because hbook has no access to other containers, by
+design. A check whose step the nightly can run also gets *Fix all* in its header.
+
+**A chapter that gets replaced keeps everyone's reading position and bookmarks.** If you had finished the
+two-page version it stays finished; open it again to read the rest.
+
+### The checks themselves got more careful
+
+Gaps and impossible chapter numbers now honour renumbering and deletions: a chapter you renumbered is read at
+the number you gave it, and a deliberate deletion is no longer reported as a hole — while a chapter whose
+file went missing still is. A gap the nightly has already searched for is shown greyed with what it found
+(*no other source lists them, checked 2026-09-21*) and becomes a finding again after a week or as soon as
+the series changes. A finding greys only when the answer was no — nobody else lists them, the series already
+follows as many sources as it may, or searching other sources is switched off — never because a run did not
+get round to it: a series the nightly had no search left for keeps its place in the queue instead. A failing
+source **no series uses** is listed for reference rather than as a fault; ten of the twelve not-ok sources on
+a real install are Discover-only noise nobody can act on.
+
+### Chapters a source keeps refusing
+
+A chapter the same source has refused on **two separate sweeps** — a 403 or a 429 both times — is searched
+for on another source on the third try. A single refusal is still answered by waiting, because a busy site
+is not a reason to put load on someone else, and a refused chapter is still never saved with pages missing.
+
+`REPAIR_HOURS`, `REPAIR_COUNT_MAX`, `REPAIR_SHORT_MAX`, `REPAIR_GAPS_MAX` and `REPAIR_PACE_MS` are in
+`docs/CONFIGURATION.md`; the task route, its body, its result and the new Health item fields are in
+`docs/api.md`. Existing clients may ignore all new fields.
+
+What was verified: the whole bff suite — 156 files, 1,620 tests, none failing — including new integration
+tests for the repair (count, short, gaps, failures, solver, concurrency and a static guard that the
+nightly's own code contains no delete, rename, merge or tombstone), its routes and the Health items; the web
+suite at 358 tests, the web type-check and a production build, all clean; and four browser-walk legs, each
+on its own throwaway instance — v0.40.0's walk, unchanged and still green at 1280 px and 390 px (41 checks
+a leg), and a new one that drives this release end to end at both widths (53 checks a leg): a two-page
+chapter found, fixed from a second source with its reader's completed mark intact, a second one confirmed
+short by both sources and un-confirmed when its file changed, a gap searched for and filled, a chapter
+refused across two sweeps and hunted on the third, and the task's schedule, result line and switch. The
+eight translations were merged and checked against the components that render them. The language rig itself,
+and the live run on the owner's own library, are the last steps and are not claimed here.
+
+## v0.40.0 — 2026-09-22
+
+This is a reliability release for finding and fetching chapters from real-world sources: some are slow,
+some rate-limit bursts, and an otherwise good chapter can have one broken image. Discover now shows useful
+results as soon as they arrive instead of waiting on the slowest provider, and the downloader preserves as
+much of a chapter as it safely can instead of treating every imperfect fetch as all-or-nothing.
+
+### Discover answers progressively
+
+**Search all sources** now returns within six seconds at most, or 1.5 seconds after the first useful answer,
+and keeps filling the same result set in the background. The source rows say which providers answered,
+failed, timed out, were disabled, are cooling down, or are still pending. Repeating the request polls that
+work instead of starting it again; normalised terms are cached for five minutes (up to fifty searches), with
+at most twelve cards from each source. Every response is filtered again for the viewer, so a shared cache
+never shows or starts an adult source for an account that cannot reach it. Source detail is cached for ten
+minutes and duplicate lookups collapse into one request, which lets the add dialog pre-warm its first two
+providers without doubling their traffic.
+
+### Downloads slow down, switch sources, and keep repairable chapters
+
+A valid image smaller than 256 bytes is accepted when Sharp can decode it. When a source answers 429, its
+download pace rises through four levels, uses one page worker, doubles the gaps up to four seconds, and only
+decays one level after ten quiet minutes. The current chapter resumes after 5, 10 and 20 seconds, always
+honouring a longer `Retry-After`. If an ordinary fetch fails, hbook tries at most two copies from sources
+the series already follows. It never overrides a copy somebody explicitly picked. A 403 or 429 never
+becomes a partial chapter or starts a hunt; the refusing source cools down, while a copy on an already
+followed source can keep the queue moving. Download job cards report every switch and distinguish a
+rate-limited switch from an ordinary failure.
+
+When at least 80% of a chapter arrives, hbook can save it with indexed placeholder pages and an internal
+repair manifest. The chapter row shows how many pages are missing; the reader leaves the placeholder visible
+with a caption, including when that page was also marked repeated, and offline copies keep the same evidence.
+The nightly completion pass repairs only the missing indices, at most ten partial chapters per run, then
+removes the partial mark when the chapter is whole.
+
+### A bounded source hunt
+
+**Admin → Settings → Updates & schedules → Finish downloads on their own** (since v0.81.0; its own switch before, named
+*Look for failed chapters on other sources* and then *Use other sources on their own*) is on by default.
+After an ordinary failure, the scheduled sweep may search up to six eligible sources and follow one that
+matches the title and at least 90% of the known chapter numbering. A series is hunted at most once per day,
+only five hunts start in one sweep, and at most two extra sources are followed. Adult sources are eligible
+only for an adult series. A refusal never starts a hunt. The source-health and job surfaces preserve the
+reason for every switch or refusal instead of reducing the whole sweep to a generic failure.
+
+The tuning knobs and additive API fields for progressive search, pacing, partial chapters, source switches,
+and the hunt switch are documented in `docs/CONFIGURATION.md` and `docs/api.md`. Existing clients may ignore
+all new fields.
+
+## v0.39.0 — 2026-09-20
+
+The profile page and the admin Settings tab, reorganised. The profile had grown by accretion: identity shown
+three times, *Sign out* twice, a *Reading* tab that was mostly device settings plus one chart, an *Account*
+tab of eight cards with two-factor, API tokens and the OPDS link each hidden behind an identical *Manage*
+chip, and the reader's own defaults nowhere on it at all. The admin Settings tab mixed three ways of saving
+— full-width *Save name* / *Save interval* buttons, switches that saved on their own with a toast, a tiny
+*Save* chip and a dirty-tracked Save — under three-hundred-word paragraphs. Neither console remembered which
+tab you were on across a refresh, and changing the language dropped you back on the first one. This release
+is that cleanup, and nothing else: no new setting was invented, every endpoint and body is what it was, and
+the reader, the library and the admin's other tabs are untouched.
+
+### The profile: You · Settings · Connections · Account
+
+Four tabs, each with an address. **You** is the hero, the badges, the lists and the reading studio (heatmap,
+pace, by weekday — moved here from the old Reading tab, next to the things a reader looks at first).
+**Settings** is four sections on one grid: **Appearance** (avatar, accent, language), **Reading** (the weekly
+goal, then the reader's defaults — mode, theme, pages per view, repeated pages, fit, page gap, auto-scroll and
+brightness — which until now could only be changed from inside the reader), **Downloads** (*Keep favorites
+offline* with its per-series count, storage used, *Protect downloads*, and the way to the offline list) and
+**This device** (new-chapter alerts and *Install hbook*, only where they apply). The reader defaults write
+the same store the reader's sheet writes, so the two never disagree: the sheet still changes them for the
+session you are in, and a series you have adjusted keeps its own memory, which wins. **Connections** is
+everything that lets something other than this app read or write on your account: **Progress tracking**
+(one row per service; *Connect* opens the token field under the row), **External readers** (the OPDS link,
+its status, *Include 18+ libraries in this reader*, and a fresh link's URL, username and password shown once,
+never behind a fold) and **API tokens** (*New token* opens the form inline, right under the heading; the text
+now says that Mihon's Komga extension and the hbook extension use these). **Account** is who you are and
+how you are signed in: **Signed in as** with *Change password*, **Two-factor authentication**, **Active
+sessions** and **Sign out**. The *Admin and server settings* card and the second sign-out card are gone; the
+rail keeps *Admin*, *Support hbook* and *Sign out*, and on a phone those sit as pills above the board.
+
+### Settings save themselves and say so
+
+One rule on both consoles now. A switch, a pill group, a colour or a slider saves the moment it changes; a
+text or number field saves when you leave it or press Enter, and only if it changed (Escape puts it back; a
+number outside its range is clamped and shows the clamped value; an empty number field reverts rather than
+saving 0). The row says *Saving…* then *✓ Saved* beside the control, announced to a screen reader, and a
+failed save shows the server's message in the same spot until the next change. There is no toast for a
+setting any more — toasts stay for actions with side effects: revoking, generating, connecting, signing
+other devices out, and the two admin switches that destroy or send something (the read-chapter cleanup and
+the install count). On the settings tabs a *Save* button remains in exactly three kinds of place, on purpose: secrets (*Update
+password*, *Verify and enable* for 2FA, *Create* for a token, *Generate OPDS link*), the scanlator lists on
+the admin tab (*Save scanlator defaults*, one button for the two lists and the patience — a half-typed list
+is not something to save on every keystroke), and the confirmation the read-chapter cleanup asks for.
+
+### The admin Settings tab
+
+Four sections in a fixed order. **Server**: the server name, *Open registration*, *Check for updates* and
+the anonymous install count — each of the last two with a fold (*How this works*; *What is sent, once a day*
+or *What would be sent, once a day*) holding the full explanation and, for the count, the exact request that
+would be sent and the three promises about it. The fold is open while you are counted and opens when you
+switch the count on, so the consent is on screen at the moment of consent. **Updates & schedules**: the
+library update interval, the **backup time** — the nightly backup's hour was shown under Tasks and editable
+nowhere; it is a field now (0–23, local time), and changing it re-arms the pending timer at once, so a change
+at ten in the morning from 3 to 22 fires tonight at 22:00 rather than tomorrow at 03:00 — and, when an
+extension engine is configured, *Update extensions automatically* with its check interval. **Library
+housekeeping**: *Delete read chapters* and its *Wait (days)*; switching the deletion on still asks first,
+with the count of chapters that would go, and a day count you have just typed is carried into that
+confirmation so the job never runs at a number the row no longer shows. **Scanlators**: the blocked list,
+the default priority and the patience, with the one Save.
+
+### Both consoles remember the tab
+
+`/admin/?tab=Settings`, `/profile/?tab=Connections` and so on: a tab tap rewrites the address in place (no
+history entry, so Back still leaves the page), a refresh or a bookmark opens that tab, and a language change
+— which rebuilds the whole page — lands you back on the tab you changed it from, which is the Settings tab
+where the language lives, instead of the first one. The first tab is plain `/admin/` and `/profile/`.
+`/profile/?tab=Connections&card=tracking` still scrolls Progress tracking into view, and the import page's
+"connect a tracker" line points there. The Providers tab no longer renders the whole Extensions catalogue a
+second time under its own cards; it has a link card that says how many sources the engine has enabled (or
+that the engine is not running) and opens the Extensions tab.
+
+### Paths that moved, for anyone following older instructions
+
+**Profile → Connections → API tokens → New token** (was *Profile → Account → API tokens*, then *Manage*),
+**Profile → Connections → Progress tracking** (was under Reading),
+**Profile → Connections → External readers** (was under Account), **Profile → Settings → Language** and
+**Profile → Settings → Reading** for the reader defaults, **Admin → Settings → Server** for the update check
+and the install count, **Admin → Settings → Updates & schedules** for the extension update switch. The docs, the API reference, the OpenAPI
+description, the import page and the health note that names the update check all say the new places, and
+the test that checks every documented path against the console's own strings covers them. The eight
+translations gained the new strings and lost thirteen that nothing renders any more.
+
+What was verified: source guards for every rule above (the primitives' accessibility, the save-once-on-blur
+rule, the one-Save-button rule, the tab hook writing `replaceState` and never re-reading in an effect, the
+confirmation carrying the day count, the consent fold's labels, the reader defaults going through the
+reader's own store, every new string present in all eight locale files), the backup hour end to end against
+a database (PATCH 4, GET reads it back, the tasks list says *daily at 04:00*, 24 and −1 are refused), and
+type-checking plus the static build. The release chain drives every row of both consoles in a browser at
+1280 and 390 px before the tag; the screenshots in the docs still show the old screens and are listed as
+stale in `docs/SCREENSHOTS.md` until they are re-captured.
+
+## v0.38.0 — 2026-09-20
+
+Two things TIGamingTV asked for. [PR #51](https://github.com/YUnauuu/hbook/pull/51) proposed a
+Komga-compatible API so that Mihon's built-in Komga tracker could sync reading progress back to hbook —
+the one thing the hbook extension cannot do, because Mihon lets only a tracker report reads. The PR was
+not merged as written (its layer never set the cookie the tracker's credential-less requests ride on, so
+Mihon could browse but never bind, and its username-and-password fallback reached an account with the
+password alone, past two-factor and the lockout), but it was the spec for what is here, and the credit for
+the idea and the endpoint list is his. And [#55](https://github.com/YUnauuu/hbook/issues/55), answered
+in v0.37.0 with the question "should erasing a series for good become a button?", got its answer: yes, with
+a typed confirmation and a dialog that says what it costs. Both ship.
+
+### Read hbook in Mihon, and have what you read come back
+
+Point the keiyoushi **Komga** extension at your hbook address with an API token as its API key, switch
+Mihon's **Komga tracker** on under Settings → Tracking, and from then on a chapter read on the phone is
+marked read here for that account, and a chapter read here is marked read in Mihon on its next refresh.
+hbook answers exactly the Komga endpoints that extension and that tracker call — libraries, the series
+list with its filters and sorts, a series, its chapters, pages numbered from one, covers and thumbnails, the
+filter sheet's genres and authors, the account, and the tracker's two progress calls — with every field the
+Kotlin client requires present, every date in the one format its strict parser accepts, and Spring's page
+envelope complete, because one missing key or one `null` fails the decode of the whole list it sits in.
+Collections and read lists are always empty there, on purpose: a personal collection can name a series the
+token's account cannot open, and an id is a disclosure.
+
+The sync is what the Komga protocol can carry and no more, and the docs say so plainly instead of promising
+two-way sync: one number per series, the highest chapter in the unbroken run of read chapters from the
+start — chapters 1, 2 and 4 read reads as *2* — moving forward only; there is no "unread" in the protocol,
+so un-marking on either side does not travel. Mihon sends that number on every bind and every refresh, not
+only after reading, so the server side is one set-based statement that skips chapters already complete,
+writes no reading event (a sync from the phone is not reading in the app, and does not count towards
+streaks, the leaderboard or Wrapped, like the app's own bulk mark-read) and pushes to AniList, MyAnimeList
+or Kitsu once, only when something actually changed — otherwise a library update of two hundred bound series
+was two hundred remote mutations. A fresh bind sends *0*, and in this library chapter 0 is not rare
+(*Extra*, *Oneshot*, any file without a digit), so *0* is a no-op rather than a mark; nothing is lost, since
+Mihon never reports a chapter it read as 0. Chapters deleted from the server stay out of the phone's chapter
+list but keep counting for progress, because members' history refers to them.
+
+The tracker itself sends no credential at all — only a User-Agent — and relies on whatever cookie the
+extension's traffic left in the phone's cookie jar. So every request the extension authenticates leaves an
+`HBOOK-SESSION` cookie behind, and the tracker's requests are honoured on it. That cookie is built with
+care, because the naive version was a hole: signed with the app's own JWT secret it would have verified as
+a Bearer token for the whole API and as an image cookie, turning a read-only token into a seven-day write
+session that survived revoking the token — and the phone replays the cookie to every port on the host. It
+is instead a keyed MAC under its own derived key that nothing else on the server can verify, honoured only
+by the Komga routes, naming the token row rather than the account, and the row is re-read on every use, so
+revoking the token, letting it expire or disabling the account ends the phone's session on its next request.
+It is not called `KOMGA-SESSION`: the phone's jar is keyed by host and name and ignores the port, so a real
+Komga on the same machine — the migration case — would have overwritten ours and we theirs, both trackers
+silently broken. With the API key field the cookie is re-minted whenever a request authenticates as a
+different token, so switching the key moves the tracker with it instead of leaving the credential-less sync
+writing the old account's progress; with username/password the extension only presents the password after
+a 401, so a changed password is not noticed while the previous cookie is valid (up to 7 days) — revoke the
+old token, or use the API key field, which is sent on every request. One hbook account per phone is the
+inherent limit, shared with real Komga, and the docs say so, along with the other things a person should
+know before relying on it: the token needs the **write** scope (a read-only token browses and reads, but
+nothing syncs in either direction — Mihon retries a failed push a few times with backoff, then gives up
+quietly until the next chapter read), the tracker must be on *before* a series is added, changing the
+address later orphans every entry, the phone should not be pointed at a host where an untrusted service
+also answers (the jar is shared per hostname, port ignored), and Tachimanga's *enhanced tracking* is
+reported by a contributor to work against this API but was not tested here.
+
+Only API tokens are accepted — as `X-API-Key`, as a `Bearer` token or as the Basic password, username
+ignored — never an account password, never an OPDS token, never a session JWT; any presented credential
+outranks a remembered cookie, no credential is a 401 with `WWW-Authenticate: Basic`, because that is the
+one answer the extension's authenticator reacts to, and ten failed credentials from one address in five
+minutes are answered 429 with `Retry-After` from then on, the budget the login form has. What the phone
+sees is what the token's account may see: the library grants, the age limit and hidden series apply,
+anything it may not see is a 404 rather than a 403, and an 18+ library is listed only to a token minted
+with the new **Include 18+ libraries** checkbox (the extension has no reveal button of its own; the age
+limit applies regardless, and the web app is unaffected). The sync was verified with a scripted client replaying the exact request
+sequence the keiyoushi extension and Mihon's tracker make — cookie-jar semantics, strict Kotlin-style
+decoding, the tracker's credential-less GET and PUT, a second account's key, a read-only token — against a
+real instance; a report from a real device is welcome.
+
+### Forget a series
+
+**Content → Library**'s Removed list gains a third step after *Remove* and *Delete files*: **Forget**,
+offered once no chapter row claims a file any more, behind the typed title, in rose. It is the one action in
+hbook that erases a series from the database for good, and the dialog says exactly what that means:
+*This erases the series and everyone's reading history on it — progress, bookmarks, notes, ratings,
+favourites, tracker links. Stats and Wrapped change. If the files ever reappear it comes back as a new series
+with no history. This cannot be undone.* The toast afterwards says how many members lost history on it.
+
+It refuses, and says why and what to do, in every case where it would do harm: while the series is still in
+the library; while any chapter row still claims a file (*Delete files* first); while a root cannot be read
+at all (mount it first: nothing in hbook marks a chapter row whose file it cannot see — the verify task
+refuses a root with no present file and *Delete files* reconciles only under the same proof — so an
+unmounted share leaves every row live, and the live-row refusal is what stops a forget that would only have
+the next scan bring the folder back as a new series, next to the history that was just erased); and while
+the folder still holds chapters under any root. A chapter the verify task marked *missing* does not refuse:
+that mark means verify proved the root was mounted and the file was not on it. A series that had absorbed
+others by merge takes those rows with it in the same transaction, because leaving them would have flipped them live with no
+chapters and a folder the next scan repopulates. History on chapters that moved to a merge survivor is never
+erased: every per-member table is re-pointed to the chapter's current series first, deletes are keyed on the
+chapters this series actually owns, and if a progress row or bookmark on someone else's chapter is still
+filed here after that, the whole transaction rolls back and says so. Reading that code found that a merge
+had been leaving **bookmarks** behind under the absorbed id since merge shipped (they still resolved, through
+the chapter row, but were filed under a dead series) and dropping one side's tracker floor: a merge now
+carries bookmarks to the survivor and keeps the higher of the two floors, so it never rewinds someone's real
+AniList entry on the next push.
+
+The review of this release found the step that made #55's own scenario impossible: a series whose folder
+was removed by hand on the NAS had live chapter rows and no files, *Delete files* touched nothing, the
+Removed row never offered *Forget*, and the route said the files were still on disk while nothing was. So
+*Delete files* now reconciles a removed series' rows with the disk when the root is provably mounted — at
+least one chapter file of any series is present under it, a present folder is not proof, and no more than
+90 % of what was looked at is absent, the verify task's own rule — marking a live row with no file
+*deleted from the server* and turning a *missing* mark into *deleted*; on a root that cannot be proven every
+row is left exactly as it was. A hand-deleted folder can finally be forgotten. A merge survivor's *Delete
+files* also removes the folders of the series merged into it, which used to stand empty and refuse
+*Forget* forever with the *Delete files* chip already gone. The *users* count in the toast names members who
+actually lose history, not someone who only opened the series page or whose tracker floor was carried to a
+survivor. Typed confirmations compare trimmed and Unicode-normalised, so a title written on a Mac confirms
+from any keyboard. And the typed-confirmation label is one translated sentence — it read *TYPGONE FOR GOOD
+TO CONFIRM* in German — the Removed row is fully translated, and a long title wraps to two lines on a phone
+instead of being cut.
+
+### Security
+
+Three findings from reading the token code for the cookie, all fixed. An access token, or any other JWT this
+server signs, pasted into the `hbook_img` image cookie was an image session for that account, and the image
+cookie pasted into an `Authorization` header was a full API session for seven days: every JWT verified under
+the same secret with no check of what it was minted for. `authenticate()` now refuses a verified token that
+carries a `typ` claim (access tokens have none; the image cookie and the OIDC ticket do), and the image
+guard honours only a cookie whose `typ` is `img`. A disabled account's API tokens kept working — disabling
+revoked the browser sessions and nothing else — and now stop with the account. And the image cache served
+every image with `Cache-Control: public`, telling any shared cache in front that bytes authorised per viewer
+were the same for everyone; it is `private` now, with every max-age exactly as before. While there, a
+chapter thumbnail already warm in the cache was handed to a member whose age limit or library grants should
+have hidden it, because the visibility check ran inside the producer the cache had already skipped; the
+check now runs first. The review of the release added six more, all small: a disabled account's OPDS token
+kept opening the feed and every page under `/img/*`, and now stops with the account like its API tokens; a
+`Bearer` token on the Komga-compatible routes was ignored, so a remembered cookie for another token silently
+answered in its place — it is now a credential there, and any `Authorization` header that does not resolve
+is refused rather than outranked by a cookie; failed API keys on those routes are rate-limited per address
+(ten in five minutes, then 429 with `Retry-After`; valid keys, cookie-only requests and requests with no
+credential are never counted); signing out of the web app clears the `HBOOK-SESSION` cookie too; the
+session cookie accepts exactly one encoding of its expiry (a leading zero used to verify under the same
+MAC); and the tracker's PUT refuses a number above 1 000 000 000 with a 400 instead of a 500 from Postgres.
+
+### For the API
+
+`/api/v1/*` and `/api/v2/*` are the Komga-compatible surface — twenty-four operations, each in
+[docs/api.md](docs/api.md) and the served spec under the `komga` tag with four security schemes
+(`komgaApiKey`, `komgaBearer`, `komgaBasic`, `komgaSession`), every one answering **429**
+`too_many_requests` with `Retry-After` after ten failed credentials from one address in five minutes.
+`GET /api/v1/series/:id/books?unpaged=true` is one page with no 500 cap (`size` = the chapter count, at
+least 1, `number` 0, `first`/`last` true, `totalPages` 1 or 0), and `KomgaBook.sizeBytes`/`size` are the
+real file size (`lib_books.size`; 0 / `0 B` when never stamped) rather than a padded zero, so the
+extension's default chapter name no longer reads *(0 B)*. `PUT /api/v2/series/:id/read-progress/tachiyomi`
+takes `0 ≤ lastBookNumberSortRead ≤ 1000000000`, else **400** `bad_request`. `POST /auth/logout` also
+clears `HBOOK-SESSION`. `POST /api/tokens` takes `showAdult` (default false) and `GET /api/tokens`
+rows carry it. `POST /api/admin/series/:id/delete-files {confirm}` reconciles absent rows under the mount
+proof and answers `files: 0` for a hand-deleted series; `POST /api/admin/series/:id/forget {confirm}`
+answers `{ok: true, books, absorbed, users}`, **400** `confirm_mismatch`, **404**, or **409** `refused
+{message, fix}` with one of `live`, `live_books`, `missing_files` (a root that cannot be stat'ed),
+`folder_present` (a folder that still holds chapters) or `stranded`; both compare `confirm` trimmed and
+NFC-normalised; it writes one `series.forget` audit row with `{id, title, folder, books, absorbed,
+absorbedIds, users, rowsByTable}`. `api_tokens` gains `show_adult`. Every image under `/img/*` is
+`Cache-Control: private`. The hbook Mihon extension is unaffected; the two can be installed side by
+side.
+
+## v0.37.0 — 2026-09-19
+
+The inbox after v0.36.0, all of it from TIGamingTV: [PR #53](https://github.com/YUnauuu/hbook/pull/53),
+bulk actions for the Library page, rebuilt here under the house rules rather than merged as written;
+[PR #56](https://github.com/YUnauuu/hbook/pull/56), a correct diagnosis of why an extension source kept
+reporting an error it no longer had, merged with fixes on top; [#54](https://github.com/YUnauuu/hbook/issues/54),
+the extension that stayed *unhealthy*, whose real cause turned out to be a compose file; and
+[#55](https://github.com/YUnauuu/hbook/issues/55), which asked for more control over the database and
+over deletion, and gets the honest answer — the control exists, the docs hid it, and one delete was quietly
+wrong. Plus four CodeQL findings and a Dependabot bump, each closed by a change rather than a dismissal where a
+change was possible.
+
+### The Library page can act on many series at once
+
+**Select** on the Library page has a **Select all** chip beside *Done* now — it takes every series loaded so
+far, since the grid loads as you scroll; scroll further and tap it again for more, and the bar's count says how
+many are in hand. Two chips joined the bar. **Fetch newest**, for anyone who may download, grabs for each
+selected series the newest chapter its sources list, if it is not on the shelf yet: one chapter per series,
+whatever the series' *latest N* floor says, and without moving that floor — nothing below it is ever fetched,
+so a caught-up series answers *up to date* instead of quietly back-filling its catalogue one chapter per tap.
+It runs on the server as a job: the bar counts it up, you can leave the page (*Cancel* stays live and only
+stops watching), and the toast at the end says what happened — *Fetched 3 chapters · 8 up to date · 1
+skipped* — with a reason for every series that was skipped (its source disabled or cooling down, the chapter
+held for your preferred group, a download already running for it, or the chapter deleted from this server on
+purpose, where *Fetch again* on the series page is the way back) or failed (the source did not answer, the
+chapter could not be saved). A source the admin disabled is never asked, and only a series whose source was
+actually asked pays the pause between series. While the run is inside a series, that one series' own
+*Fetch* answers *busy*, and no other. If the page loses the run — three status polls in a row unanswered —
+it says *Lost track of the fetch* rather than summing up a run that is still going. A *Nothing yet* series,
+and one that came in from a Mihon backup or a tracker list, are what this is for: the nightly check follows
+them without fetching, and *Fetch newest* is how their latest chapter lands. **Remove from library**, for
+admins (behind **More** on a phone, so the bar stays two rows), is the series page's *Delete* over a
+selection and nothing more: it asks *Remove {n} series from the library?*, says in the dialog that **no files
+are deleted** and everyone's progress, favourites and ratings are kept, hides them, and writes one audit line
+per series with its title; a series already hidden or merged away is skipped and counted, and a selection
+that hid nothing says *Nothing removed · 1 skipped* and keeps the selection so it can be corrected. Deleting
+files stays what it was — one title at a time, only after a remove, against the typed title, on Content →
+Library.
+
+What PR #53 proposed, and what was redone: its *Select all* survives as it was. Its bulk delete hid and deleted
+files in one request behind a typed `DELETE`, walked the read library too, and told the person their progress
+was lost — it is now hide only. Its *download newest* fetched the newest chapter *missing anywhere*, which on
+a caught-up Latest-N series is the highest chapter below the floor — it now takes the newest listed release or
+nothing, honours group holds, disabled sources and age limits, and runs as a detached job with a status route
+instead of holding one HTTP request open across up to five hundred downloads and a full scan. Its
+reconcile-at-boot, which hard-deleted every chapter row whose file it could not see, is the verify task below,
+which marks instead of deleting and never runs by itself. Its import fix landed on a route the app no longer
+calls; the idea in it — a title merged into another series should read *already in your library* — is now in
+the batch importer, mapped to the surviving series so a tracker link lands on the series that holds the
+chapters.
+
+### Verify chapter files, and a delete that told the truth only half the time
+
+A backup holds the database and the config, never the chapter files, and a database restored onto a disk that
+does not have them all came up with every chapter row intact and no bytes behind some of them — the updater
+trusted the rows, so those chapters read *up to date* forever while the reader could not open them.
+**Admin → Tasks → Verify chapter files** is the repair: it looks for every chapter's file and marks the ones
+hbook downloaded that are gone as *deleted from the server* — the row and everyone's history stay — with a reason the updater does not
+count as held, so the next sweep, or *Fetch newest*, downloads them again onto the same rows and nobody's place
+moves. It marks only chapters hbook downloaded (under the download folder), because a re-fetch lands
+there and nowhere else; a file missing from the read library is counted on the Tasks line and left alone,
+for you or the engine to put back. It never runs at start-up or on a schedule, because a volume that is not
+mounted looks exactly like a library with every file missing; for the same reason a folder with no file at
+all behind its chapters, or with more than nine in ten of them missing, is reported as *looked unmounted and
+was left alone*, never marked — an empty folder is not proof of a mount, since the downloader creates
+folders while a share is down. It starts in the background — the toast says so — and the Tasks line shows
+what it found when it is done, the unmounted warning first, and keeps it across restarts; the activity feed
+records the counts.
+
+Reading that code turned up the half-truth in *Delete files*: it removed the bytes and left the chapter rows
+as live rows claiming them, so *Put back* afterwards restored a series whose every chapter 404'd, the updater
+never fetched them again, and a second *Delete files* reported *Deleted N file(s)* for rows it had not touched.
+Each row whose file it actually removes is now marked *deleted from the server*, the same mark the chapter-level
+delete leaves — the Removed list says *files deleted* first on such a row's caption, a second line explains
+that *Put back* lists the chapters as deleted from the server and that *Fetch again* on the series page brings
+back the ones hbook downloaded (a read-library file is yours to put back by hand), the button stays a
+plain **Put back**, and a second *Delete files* is not offered; the dialog counts the files it would actually
+delete, not the chapter rows. A file that is already gone is left alone and not counted.
+
+### The database was never hidden; the docs were
+
+#55 asked for control over which database is used. That control has been one variable since v0.18.0 —
+`DATABASE_URL` unset means the container runs its own Postgres, set means it talks to yours — and
+**Admin → Overview** has said *embedded database* or *external database* in its header line all along. What was true is
+that CONFIGURATION.md never mentioned the variable although it calls `.env.example` the authoritative list,
+`.env.example` did not list it either, and the restore instructions in the user guide still piped into a
+`hbook-db` container that the default install has not had since v0.18.0. All three are fixed: a *Database*
+entry in CONFIGURATION.md and `.env.example` that says where the switch is actually thrown (the compose file,
+not `.env`), and a restore section written for the embedded layout first — over the socket, with a psql shell
+and a scratch-database rehearsal — and the external one second. A new section, *Where your data lives and how
+to delete for good*, states plainly what each delete keeps: *Delete* and *Remove from library* hide and keep
+everything, and re-adding the same title revives the same row; *Delete from server*, the cleanup and *Delete
+files* remove bytes and keep rows; a merge is one-way; and nothing today erases a series' rows from the
+database, on purpose, because reading progress hangs off the chapter row and a delete must never take
+someone's history with it. Whether that last one should become a button is the question back to the issue.
+"How restricted the database should be" is not a knob and does not become one: admin-only, hide first, type
+the title, never half-apply are the safety model, not a preference.
+
+### The extension engine could never get past Cloudflare — and said so
+
+#54 reported an extension stuck *unhealthy*. PR #56 found a real bug in the diagnosis: for an extension
+source the live test result was thrown away before the verdict, so a source that had once stored a
+Cloudflare-flavoured error kept reporting it on every sweep and every *Test* click, `ok: true` next to a
+Cloudflare diagnosis, forever. Merged, with three things fixed on top: the probe no longer invents a status
+of `0` for a homepage it never asked for (it has no `httpStatus` at all, and `0` keeps meaning "asked, no
+answer"); both callers build the probe through one helper, with a test that reads both and fails if either
+stops; and the Health page applies the same rule — a stored error older than the source's last success is
+history, not a fix to go and apply, and no longer hides the live finding.
+
+But the source in #54 was failing live, and the words in its log, `Cloudflare bypass currently disabled`, are
+the engine's own: Suwayomi has no browser and has to be told about a FlareSolverr, and its bypass is off by
+default — no compose file ever pointed it at the solver that was running beside it the whole time. Every
+compose file now sets `FLARESOLVERR_ENABLED` and `FLARESOLVERR_URL` on the engine's container (the split
+layout's engine also joins the app network, where the solver's name resolves), so an upgrade that recreates the
+engine is the fix; the Unraid template's `SUWAYOMI_URL` note, extensions.md and CONFIGURATION.md say to set
+both on any engine you run yourself, and that error string now diagnoses as a Cloudflare challenge whose admin
+fix names the engine's switch rather than hbook's solver — by the names the shipped compose files use
+(`hbook-suwayomi`, `http://hbook-flaresolverr:8191`), not the development stack's, since the admins
+who read it are exactly the ones whose engine was not recreated from those files. The docs used to say the
+engine solved Cloudflare itself. It does not, and they no longer say so. While there: the *Test* button and
+the daily source check never read a source's slow streak, so *This source answers, but more slowly than it
+is given* could only ever be reached from Discover's health view; both read it now, and the fix sentence
+names the configured `SOURCE_LATEST_TIMEOUT_MS` budget.
+
+### Security
+
+The cover proxy's exemption for the extension engine is now one path shape, not one origin. `GET
+/img/sources/cover?u=` fetches every URL through the SSRF guard except the engine's own covers, which live on
+a private address by design — and since v0.26.2 that exemption was the whole engine origin, any path, fetched
+with the engine's credentials, so any signed-in reader could make the server issue an authenticated GET to any
+engine endpoint, and the difference between a 502 and a 500 said whether a path existed (CodeQL #24, critical).
+Only `/api/v1/manga/<id>/thumbnail` is fetched now, rebuilt from the operator's `SUWAYOMI_URL` and the numeric
+id, accepted only if it round-trips to exactly what the caller named; the caller's string itself is never
+what goes on the wire, redirects from it stay refused, and the test that used to assert *anything at all on
+the engine origin* is allowed now asserts the opposite. Extension covers are no longer refused by the cover
+proxy when `SUWAYOMI_URL` ends in `//` or carries a query or fragment; the engine base is normalised once
+for both the stored cover URL and the proxy's check. Two test-only findings were fixed in kind rather than
+dismissed: an exponential regex over the docs' console paths (#26; 9 s at 28 arrows, now linear) and an XML
+comment scan that an HTML rule kept misreading (#28; now a plain walk). #25 was dismissed: a 256-bit random
+API token stored as its sha256 is not a password hash. Dependabot's adm-zip 0.6.1 ([PR #57](https://github.com/YUnauuu/hbook/pull/57),
+CVE-2026-77301) is merged; the advisory was not reachable here — adm-zip is only ever constructed empty to
+*build* archives, and untrusted archives are read by another library — and the guard test now asserts exactly
+that premise, so the next advisory is answered by a test rather than by re-reading the tree. CI installs with
+`npm ci` instead of `npm install`, so a lockfile bump is what CI actually verifies, and every job has a timeout
+(the Tests job's is set from its measured 38–39 minutes, not a guess); a test pins both.
+
+### Also
+
+The v0.36.0 release push went red on one test that passed locally every time: the add-time auto-follow's wall
+and a candidate's remaining budget were measured on two clocks that disagree by a millisecond or two, so a
+source handed a sliver of the wall could finish inside it and be followed past the deadline. A candidate now
+needs at least two seconds of wall left to be tried at all, and reads *not checked* otherwise.
+
+Merging is transitive now. When a series that has itself absorbed others is merged, everything it absorbed
+is re-pointed at the new survivor in the same transaction, so a title folded in two merges ago still counts
+as owned by the final survivor — on the scan, where its folder's chapters keep filing under the survivor,
+and in the batch importer, where a backup or tracker entry with that spelling reads *already in your
+library* instead of being added again through another source. The German and Russian select-bar chips
+are shorter (*Als gelesen*, *Прочитано*, *Новые главы*) so the bar is two rows on a 390 px phone in every
+language.
+
+### Not in this release
+
+A *Forget series* action that would erase a hidden series' rows — its chapters, and every member's progress on
+them — for good. It is the one thing #55 names that is genuinely impossible today, and it is possible to
+build; it is not built until the issue says that is the ask, because the honest dialog has to warn that it
+deletes everyone's reading history on that title. The Komga-compatible API from
+[PR #51](https://github.com/YUnauuu/hbook/pull/51) moves to v0.38.0.
+
+For the API: `POST /api/library/bulk/newest {ids}` (1–500) starts the Fetch newest job — **202** `{ok, total}`,
+**403** `forbidden` without the download permission, **409** `busy` while one runs — and `GET
+/api/library/bulk/newest` answers `{running, done, total, startedAt, results: [{id, title, outcome, reason?}]}`,
+results for the starter and admins only; a newest chapter held only as a cleanup or Delete-files tombstone
+is `skipped` with *Chapter N was deleted from this server on purpose. Fetch again on the series page brings it
+back.*, and *Chapter N is already here.* means a live row holds it. While the run is inside a series,
+`POST /api/sources/fetch`, `/api/sources/fill` and `/api/admin/series/:id/chapters/refetch` answer **409**
+`busy` for that one series only. `POST /api/admin/series/bulk/hide {ids}` answers `{ok, hidden,
+skipped: [{id, reason: merged | already_hidden | not_found}]}` with one `series.delete` audit row per series.
+`POST /api/admin/tasks/verify/run` is detached like `update`: it answers `{ok: true, started: true}`
+(`{ok: false, error: 'busy'}` while one runs) and the counts land on `GET /api/admin/tasks`, which always
+lists `verify` with `lastResult: {ok, checked, missing, readLibraryMissing, unmounted, roots, ms, stopped?}`,
+persisted in `server_settings.verify_last_run` / `verify_last_result` across restarts; the audit row
+`library.verify` carries `{checked, missing, readLibraryMissing, unmounted, ms}`. `GET /api/admin/series/deleted` rows
+carry `live_books` and `pruned_books`. `lib_books` gains `pruned_reason` (`null` = cleanup or pre-v0.37.0,
+`'deleted'` = Delete files, `'missing'` = the verify task; only `'missing'` is not held by the updater), and
+`POST /api/admin/series/:id/delete-files` marks the rows it unlinks. `POST /api/admin/sources/:id/test` always
+carries `probe`, with `httpStatus` absent for a source that has no homepage, and its `diagnosis` can now be
+`too_slow`. The Mihon extension is unaffected.
+
+## v0.36.0 — 2026-09-19
+
+The two things v0.35.0 said were next, both asked for by TIGamingTV: the first half of
+[#48](https://github.com/YUnauuu/hbook/issues/48) — bringing a reading list over from the AniList,
+MyAnimeList or Kitsu account already connected under Profile, through the review that release built — and
+[#49](https://github.com/YUnauuu/hbook/issues/49), letting a freshly added series follow the other
+sources that carry it, which until now meant opening *Find missing chapters* on every series by hand. The
+shared chapter pool #49 describes has existed since v0.31.0; what was missing was the following.
+
+### Bring your tracker list over
+
+hbook pushes reading progress to AniList, MyAnimeList and Kitsu, and had never read anything back — so
+the list that already knew everything you follow was no help in filling a new library. Now it is. On the
+import page (**Admin → Providers** → *Import a list*), above the intake, a box lists every tracker you have
+connected under **Profile → Reading → Progress tracking**, with five boxes for the lists to bring over —
+*Reading* and *Plan to read* on by default, *Finished*, *On hold* and *Dropped* off — and **Load list** reads
+that account's manga list with the token you already gave it and drops the titles into the same review as a
+Mihon backup or a pasted list: matched against your sources in the background, one row per title with its
+pick and how confident the match is, *Change* and *Skip this one*, and nothing added until you press *Import
+selected*. Each entry is searched under the English title the service carries, on every source, and only
+when that misses everywhere under its romaji and synonyms — a row that matched that way says *matched under
+its other name*, so the second name is in view before you commit. Abbreviations the service lists as
+synonyms (*AoT*, *SnK*, *MHA*) are never used as search terms: three letters are contained in almost any
+title, and one such synonym matched a wrong series on the first source that lacked the right one. Light
+novels are left out: all three services keep novels on the "manga" list, and a novel would match its own
+adaptation and then be linked to the wrong work; the done line counts them, *· {n} novels skipped*. The
+review keeps 500 rows, as every intake does, and a longer list says *(first 500 kept)* — the five boxes are
+there so a large account can come over one list at a time. Nothing is written
+to the tracker by the import, and nobody else's connection is read: the intake uses the connection of the
+account that presses the button, and a token the service rejects switches that connection off and says so,
+the same way a failed push does. A token that has merely lapsed is not sent anywhere: the intake says so
+before asking the service, and leaves the connection in place with the same note a push would leave. Open
+imports name the origin, *AniList list*, *MyAnimeList list*, *Kitsu list*, and a batch survives a closed
+tab like any other — the novel count and the *(first 500 kept)* hint are on the batch itself, so a reload or
+an *Open imports* tap shows them too. Batches are shared between admins, and a tracker batch stays its
+owner's whoever presses *Import selected*: the links and the floors below are recorded for the account
+whose list was read, never for the admin who happened to run it.
+
+Every title that comes in is linked to its tracker entry, so the first chapter you finish syncs without a
+visit to the series page — and so are the titles you already had. For anyone with an established library that
+is most of the list, and it would have been the one outcome the import produced nothing for: those rows
+start skipped, as before, but now read *Already in your library — linked for progress sync*, and the link is
+made at intake, before the review, so it holds whether or not you import a single row. A list your library
+already held in full skips the review and closes as done at once, and its done card says what happened
+rather than *0 added*: the headline counts *· {n} linked for progress sync* and each such row reads *{title}
+— linked for progress sync*. A title you had deleted earlier is not "already in your library": it resolves
+like any other, and importing it puts the same series back, as adding it would. Which raised the one
+thing that had to be right before any of it could ship: your list says you are at chapter 150, the first
+chapter you open here is chapter 1, and a tracker accepts a lower number and rewrites the entry, with no
+undo. So the import records what the tracker already says about each series for the account
+whose list was read — a floor — and a chapter finished at or below it is skipped quietly, nothing sent and
+nothing marked as an error, because nothing went wrong: the tracker is simply ahead, or already there. Only
+once you pass it does a push go out. Every *Load list* takes the tracker's current number for each entry,
+whatever stood there before, so a correction made on the tracker — a mis-click fixed from 150 down to 20 —
+is taken by loading the list again, and pushes resume from 21; nothing is ever lowered on the tracker by
+this app on its own. One case the floor cannot see: a *Finished* entry the tracker holds at chapter 0 gets
+no floor, and the first chapter finished here may set it back to Reading. The first chapter you finish here
+never rewinds your tracker's chapter count.
+
+Kitsu links, on the way, became per person. Kitsu's push had always addressed one library entry by its id,
+and a library entry belongs to a single account; no code path had ever created a Kitsu link, so nothing had
+noticed that the first household with two Kitsu users would have had the second one's push land on the first
+one's entry, be refused, and switch their connection off with a message blaming their token. The stored id is
+now the manga's, and a push looks up — or creates — the pushing account's own entry for it. Three environment
+variables, `ANILIST_API_URL`, `MYANIMELIST_API_URL` and `KITSU_API_URL`, point the adapters somewhere else;
+they exist so a test instance can talk to a stub, and are documented as that.
+
+### A new series can follow the other sources
+
+Since v0.31.0 a series can follow more than one source, and the sweep takes each missing chapter from
+whichever source has it first. Getting there was a detour: add the series, open it, run *Find missing
+chapters*, wait for the scan, press *Also follow this source* on each candidate — for a title the add dialog
+had found on four sources thirty seconds earlier. Now the dialog offers to do it at the add. When it already
+holds the list of sources that carry the title — a *Trending* pick, which it searches your sources for; a
+search result; a wall card that several of your sources published, the one with the *{n} sources* chip — the
+options step shows, under the auto-update switch, **Also check the other sources that carry this title**,
+remembered on this device once you set it. The switch is for admins: following a source is an admin act,
+as it is on the series page, and a member's add goes through as if the switch were off — their done step
+says an admin can follow the other sources from *Sources & translations*. A wall card only one source had
+gives the dialog no list, so no switch: one dim line points at *Find missing chapters*, because searching
+every source again behind each add
+is exactly the load on other people's sites this app tries not to be. Nothing new is searched either way; the
+sources the dialog already found are asked for the title's own page and chapter list, and that is all.
+
+The judgement is the server's, not the dialog's, and it starts from the one *Find missing chapters* makes.
+Once the series' own listing is written — right after the add on a *Nothing yet* add, once the
+first chapter has landed on a download — each candidate is checked, at most six, within ninety seconds for
+the lot; what does not fit reads *not checked — it took too long*. Two checks stand in for the human that
+*Find missing chapters* has looking at each candidate. The candidate's own title must be the series' title —
+exact, or one containing the other, other names allowed — or it reads *different title*. Then its numbering
+must line up with the main source's listing, which must carry at least three numbers or there is nothing to
+measure against: with an exact title and a listing of at least ten numbers, the candidate must list at least
+90 % of them, and a copy that runs on past this one still follows; with a containing title, or a listing
+shorter than ten, the numbering must agree both ways — at least 90 % of these numbers listed there, and at
+least 90 % of its numbers listed here — because coverage one way cannot tell a dense sequel from the series
+it continues: *Tokyo Ghoul:re* lists every chapter of *Tokyo Ghoul* and forty more, and a same-named work
+three hundred chapters long covers a five-chapter listing entirely. Both read *numbering differs*, with the
+lower of the two shares as the percentage, while *(Official)* at 22 chapters for 20 still follows. A source
+that passes both is followed, up to two per series, and from then on the sweep takes new chapters from
+whichever of them has them first. The done step shows the check as it runs — *Checking {n} sources — this
+can take a minute. You can close this; anything followed shows under Sources & translations.* — then one
+line per source, *Followed {name} — listed there as “{title}” · {pct} %* or *Not followed: {name} —
+numbering differs* (or *different title*, *could not be reached*, *lists too few chapters*, *already
+following two*), and *Followed {n} of {m}* under them. Closing the dialog loses nothing: the results ride on
+the add's job card, and the *Sources & translations* sheet shows each follower with *followed for you* in
+place of *also checked*, the × to stop following it as before. On Discover's strip of running fetches, a
+*Nothing yet* add that asked for the other sources shows as *Checking other sources…* and then *Checked
+other sources*, never as *Fetched*, and that card cannot be dismissed while the check runs. Should the check
+itself fail before any source was asked, every candidate reads *not checked* rather than the dialog going
+quiet. When the dialog's list held no other source, it says so — *None of the other sources checked lists
+this title.* — never "no other source carries it", which it cannot know.
+
+The user guide and the API reference used to say that a *Find missing chapters* plan was "deliberately the
+only way in" to following. Both now say what is true: two ways in — a plan, or the add's own candidates — and
+one judgement, made on the server either way; never a bare follow.
+
+### Not in this release
+
+A nightly pass that would do the same for every series already in the library is designed and not built, on
+purpose: it would be one search on every source for every series, the exact load the add-time version
+avoids by asking only what the dialog already found, and a wrong follow puts the wrong book's chapters under
+the right name. The second half of [#48](https://github.com/YUnauuu/hbook/issues/48) shipped in
+v0.35.0; the Komga-compatible API from [PR #51](https://github.com/YUnauuu/hbook/pull/51) is still
+being rebuilt on the OPDS catalogue, as that release said.
+
+For the API: `POST /api/admin/import/batches` takes a fourth intake, `{origin: 'tracker', tracker:
+'anilist' | 'myanimelist' | 'kitsu', statuses: [reading | plan_to_read | completed | on_hold | dropped]}`,
+reads the requesting admin's own connection, answers **422** `token_expired` for a lapsed token without
+calling the service, and answers `skippedNovels` and `truncated` besides — both also on the batch row that
+`GET /api/admin/import/batches` and `GET .../batches/:id` return; a candidate row carries `tracker`,
+`external_id`, `alt_titles`, `matched_via` (the other name a match was found under; cleared by a manual pick)
+and `linked`. `POST .../batches/:id/run` links and floors for the batch's owner, not the caller. `POST
+/api/trackers/:provider/resync/:seriesId` now takes every provider (**404** `unknown_provider` otherwise)
+and clears that provider's floor only; a 403 from a tracker is a sync error to retry, never a token verdict.
+`POST /api/sources/add` takes `alsoFollow: [{source, sourceId}]`, at most six, from an admin (a member's is
+ignored), judged after the listing is written; the add's job card on `GET /api/sources/jobs` carries
+`autoFollow: {done, results: [{source, name, theirTitle, followed, coverage, why}]}`, a *Nothing yet* add
+with `alsoFollow` leaves a finished job card so the results have somewhere to live, and `DELETE
+/api/sources/jobs/:folder` answers **409** `running` while that judgement runs. `series.sources[]` gains
+`auto` — true for a source followed at add time, false once a person confirms it. `GET /api/trackers` is
+unchanged. The Mihon extension is unaffected.
+
+## v0.35.0 — 2026-09-18
+
+Two contributions, three days after v0.34.0, both taken through the same pipeline as everything else:
+[PR #52](https://github.com/YUnauuu/hbook/pull/52) by TIGamingTV, the review step that
+[#48](https://github.com/YUnauuu/hbook/issues/48) asked for when a library is brought over from
+another app, and [PR #50](https://github.com/YUnauuu/hbook/pull/50) by hawwwwwk, which found that the
+Unraid template could not be installed by anyone and laid the repository out so Community Applications can
+list it. Both are below, each with what was fixed on top before shipping, plainly.
+
+### Check each match before it lands
+
+From [PR #52](https://github.com/YUnauuu/hbook/pull/52) by TIGamingTV, and the right design. Until
+now *Import a list* read the titles out of a Mihon backup, a MangaDex list or a pasted list, searched your
+sources for each one and added the first good hit — with no chance to see whether it had picked the right
+manga before it was in your library. Mihon's own *Bulk Migration* screen does the obvious thing instead, and
+so does hbook now: *Import a list* on **Admin → Providers** opens its own page, `/admin/import/`, which
+matches every title against your sources in the background — a backup entry on the very source it came
+from, when that source is installed here — and saves what it found in the database, so a closed tab or a
+restarted server does not throw away the work. Then the review: one row per title, its pick and how
+confident the match is, **Change** to open a manual search — one sideways-scrolling rail of results per
+source, so you can see which provider a pick would come from, with the cover, title and chapter count of the
+current pick beside whatever you tap — or **Skip this one**; rows already in your library start skipped,
+visibly. **Needs attention** filters to the rows that want a look. **Select ready to import** and **Import
+selected — {n}** do the adding, and every add is a *Nothing yet* add from v0.34.0: the title lands with its
+listing and no chapter downloaded, so a few hundred titles is a few minutes of look-ups rather than hours of
+fetching, and new chapters arrive through auto-update. Rows already imported are never re-added, so fixing
+the leftovers and pressing *Import selected* again picks up only what is newly ready; once nothing is left —
+every row imported or skipped — the batch is done on its own, and a batch a restart interrupted offers
+**Resume**.
+
+What was fixed on top before shipping. The one thing that could not go out as written was the matching: on the
+same-source path, a title the source did not recognise was given the source's *first search result* — the
+exact "wrong manga" fallback v0.34.0's matcher forbids — and labelled with the highest confidence, *same
+source as before*, which kept it out of *Needs attention*. The backup carries each entry's catalogue address,
+and the extension engine already returns it on every search result, so that is now the proof: only a result at
+the backup's own address counts as the same entry; otherwise the usual title rules decide, and a title none of
+them is confident about stays unmatched rather than becoming somebody else's manga. A batch interrupted while
+importing was stranded for good — no resume, no cancel, nothing that ever cleaned it up — and deleting a batch
+mid-match kept the server searching sources for it: an *importing* batch nobody is running now reads as ready
+for review again, both loops stop when their batch is discarded, there is a **Discard** button at every stage,
+batches left in review are dropped after thirty days, and the intake card lists the **open imports** — every
+admin's, on an install with more than one, an interrupted batch marked as such — so none is orphaned by a
+closed tab. A batch with a row left over, one title no source carries, say, could never finish: it sat in
+that list for the thirty days with *Discard* as the only way out; now it closes on its own once every row is
+imported or skipped. A title the library already held under another spelling was reported as *Failed —
+duplicate*, in red, and counted as a failure: it reads *Already in your library*, and a row that could not be
+added says why in words rather than as an error code. The review row never showed what a title had been
+matched *to*, so a wrong pick was invisible without opening each row: it now carries a second line, *→
+{matched title}*, dimmed when the two are the same, and a match that only *contains* your title, where the
+names differ by more than an edition tag or the longer one looks like a season, part or novel of the other, is
+listed under *Needs attention* too. Sixty-two of the page's seventy-six strings existed in English only; all
+eight languages have them. Two batches could slip through the *one at a time* gate if started together, and
+*Import* could be pressed twice on one batch: the gate now closes before the first thing it waits on, and the
+second press is refused by the database itself. The intake text promised that nothing lands "until you press
+Continue" while the button said *Import selected*, and "seconds of database work" was not true — each add
+still asks the source — so the copy says what the button says and *a few minutes*. And the old one-shot
+import, the textarea that added the first hit with no review, is gone from the page: the reviewed flow is the
+only way in from the UI, and `POST /api/admin/import` stays for scripts.
+
+### An Unraid template that installs, from a repository Community Applications can read
+
+From [PR #50](https://github.com/YUnauuu/hbook/pull/50) by hawwwwwk, who had already sent the report
+behind v0.21.0's *Unraid instructions that work*. Those instructions were right; the file they pointed at was
+not. The comment at the top of the template, rewritten in that same release, said "never read `--`
+downloadTemplates() returns", and two dashes inside an XML comment are illegal — so from v0.21.0 to v0.34.0
+any XML parser, Unraid's included, refused the file at line nine, before the first setting, and nobody who
+copied it onto their server could have installed anything from it. Every check on the template passed the
+whole time, because none of them parsed it. He fixed the comment and laid the repository out the way Community
+Applications expects a template repository to look — the template at `templates/hbook.xml`, a
+`ca_profile.xml` at the root with the description and icon — so the app can be submitted to CA from this
+repository and installed from the **Apps** tab like anything else; until it is listed there, copying the file
+into `/boot/config/plugins/dockerMan/templates-user/` works — with a file that now parses.
+
+On top: the profile's icon now points at the app's own icon, the one the template shows, rather than a
+logo option; the template's `TemplateURL` points at this repository, so Unraid refreshes it from here;
+the install guide and README name the new path; the separate `unraid-templates` repository is kept only
+so old links keep working and says so; and the release test now reads every comment in the template the
+way a parser would, so a `--` can never ship again.
+
+### Not in this release
+
+TIGamingTV's other pull request, [PR #51](https://github.com/YUnauuu/hbook/pull/51), a Komga-compatible
+API so Mihon and Tachimanga can sync read status with a server they know by name, is not merged: its goal
+is the right one and its shape is the spec for the version that will ship, but as written the sync cannot
+work (Mihon's Komga tracker relies on a session cookie the server never set), its password login bypasses
+two-factor, lockout, rate limiting and the audit log, and read-only tokens could write. It is being rebuilt
+on the catalogue the OPDS feed already exposes, with the PR as the specification and his credit on it. The
+first half of [#48](https://github.com/YUnauuu/hbook/issues/48) — importing a reading list straight
+from an AniList, MyAnimeList or Kitsu account into the same review — and the automatic following of extra
+sources asked for in [#49](https://github.com/YUnauuu/hbook/issues/49) (the shared chapter pool it
+describes has existed since v0.31.0; only the following is manual) are the next release.
+
+For the API: `POST /api/admin/import/batches` (intake, starts matching), `GET /api/admin/import/batches`
+(the open-imports list), `GET`/`DELETE /api/admin/import/batches/:id`, `POST .../:id/resume`, `POST
+.../:id/run` and `PATCH /api/admin/import/candidates/:cid` are new, admin-only; a candidate carries
+`match_title`; a non-UUID `:id` or `:cid` is a 404 rather than a 500. `POST /api/admin/import` is unchanged.
+The Mihon extension is unaffected.
+
+## v0.34.0 — 2026-09-15
+
+The owner's verdict on v0.33.0, the evening it went live: the *Who scanlates this* card sitting open by
+default on every manga page — "that's not cool for the UX" — and all the sources-and-extensions business,
+on the series page and on Discover both, "is ruining the UX with too much text and unclear info on how it
+works and what it does". He was right, and the numbers say so: at phone width, as an admin, the card alone
+put about 115 words between *Start reading* and the first chapter, every chapter row carried up to three
+bordered pills plus a *2 versions* pill on a line of its own, the chapter header ran five chips over two
+rows, and the page used the word *download* for two different things. Every established reader — Mihon,
+Kotatsu, Suwayomi, MangaDex, Comick, Paperback — does the opposite: the source is one tappable line in the
+header, the group is a muted caption on the chapter row, and versions, filters and rules live behind a tap.
+So that is what this release does. Nothing that v0.33.0 could tell you has gone; it has all moved one tap
+away, and the page that is left says about half as much (≈235 words → ≈110 as admin on the same series,
+≈174 → ≈105 as a member).
+
+### One line instead of a card
+
+The card is gone. In its place, between the title block and the buttons, one muted line: on a phone
+*MangaDex · (AS)(FC)(JG) Asura Scans +2 · 4 not here yet ›* — the source's favicon and name, a stack of
+three group avatars with the busiest group's name, and how many listed chapters this server lacks; on a
+desktop the same line has room for *Translated by Asura Scans, Flame Comics (+1)* and *checked 2h ago*.
+When a phone is too narrow for all of it — *Mangakakalot (Manganato)* as the source, say — the source's
+name is the first thing cut short and the group's name the second; the count and the chevron never give,
+and when even the busiest group's name will not fit, the avatars and *+n* stand alone. A shortened source
+name is still the truth; a shortened count would not be.
+The line knows its states rather than going blank: *not checked yet* on a series no sweep has seen,
+*auto-update off* in place of the count when the updater is not watching this one, *Source not installed*
+when the source it was added from is no longer on the server (never the raw source id), *Added from disk ·
+no source* for admins on a series that was scanned in rather than added, and *{n} chapters listed · none
+fetched yet* on a series with no chapter on disk at all (see *Nothing yet* below). A series with no source
+and no group named on its files shows members no line at all. Sources that name no groups — the built-in
+engines and sites added by URL — simply have no group segment.
+
+Tapping the line opens **Sources & translations**, a sheet from the bottom of the screen with everything the
+card had and the *Sources* list that used to be inside *Edit details*. Under **Sources**, one row per source
+the series is checked against: favicon, name, *main* or *also checked*, *{n} chapters listed*, *checked
+{ago}*, and *not installed* dimmed when it is. Admins get an × to stop following a source that is not the
+main one, and two chips under the rows: **Check now** — one for the series rather than one per row, since a
+check visits every followed source — and **Add one from Find missing chapters**, which closes the sheet and
+opens that dialog — the only way in stays the only way in. Under **Translated by**, one row per
+group in the order the card used (ranked first, then busiest, blocked last): the group's avatar and name, *{n}
+releases · Ch. {a}–{b} · {n} on server*, its activity strip (next section), and **Show chapters**, which now
+closes the sheet before it scrolls the list to the chip you tapped. **Prefer**, the ▲▼ arrows and **Block**
+are on the rows, and they **apply on the tap**: each one is saved as you press it, with a *Saved* toast, so
+there is no draft to lose by tapping the backdrop — the v0.33.0 card's "toggled Block and left the page"
+trap is closed. Patience is the one thing still typed, so it lives in the sheet's footer, which stays in
+view while the rows scroll, as one compact row: **Patience** and its number of days, the value the series
+currently uses, **Save** for that field alone, and **Use server defaults**. The two sentences that used to
+sit around the field — preferred groups first, blocked ones never; blank means the server default, 0 takes
+the best copy at once — are the input's tooltip and a line of the (i) explainer instead: with them the
+footer ran to 172 px and pushed every *Translated by* row off a small phone. Members see the two sections
+and no controls. *Edit details* keeps only the auto-update switch and a pointer: *Translation groups are
+ranked in Sources & translations*.
+
+Nothing on the series page is open by default any more. The rules themselves — a preferred group's copy is
+taken first, a blocked group's never while another exists, a new chapter waits for a preferred group for the
+patience — have not changed at all.
+
+### Rows say less
+
+A chapter row's second line is now one muted caption instead of a row of pills: *(AS) Asura Scans · via
+MangaPark · 2 versions* — the group as a small avatar and its name, *via {source}* only when the chapter came
+from a source other than the main one, *{n} versions* as plain text when the number exists more than once.
+*Deleted from the server* stays a small chip, because it is a state and not a description. Grey rows say why
+in the same voice, and say more than they did: **not here yet · (AS) Asura Scans** (the group that has it),
+**waiting for Asura Scans · 2 days left** — with the preferred group named and the patience counted down
+from the oldest copy a group you have not blocked posted (a blocked group's older copy never shortens the
+wait: it was never a candidate, and counting from it would read *0 days left* on a row the sweep still
+held), where v0.32.0 said *Waiting for a preferred group* and left both to the imagination; *waiting for a
+preferred group* is kept only for a hold whose group the server cannot name — **failed 3 times** in amber,
+and **only a blocked group has it · Junk Group**. The countdown is judged with today's rules against a hold
+decided at the last check, so after a patience change it can read *0 days left* on a row that stays held
+until the next sweep; the sheet's *checked {ago}* is the caveat. The *{n} versions* pill and the inline
+version list are gone; a grey row, which nothing happened on before, now opens the chapter's sheet when
+tapped, and a chapter on disk reaches the same sheet from its ⋯ menu.
+
+That sheet is titled with the chapter (*Ch. 12*, and its title when it has a real one) and lists every copy
+the last check saw: avatar and group, language, *{n} pages*, release date, the source with its favicon, and
+one state chip — *on server* for the copy the file came from, *server's pick* for the one the rules would take,
+*blocked group*. On a grey row each copy has **Fetch**, for anyone who may download, and it takes exactly
+that copy — a blocked copy included, because you pointed at it with the label in front of you, as *Fetch
+this* did. On a chapter already here it is **Replace…**, for admins, on files hbook downloaded itself,
+disabled on the copy already on disk: the sheet closes, *Replace with this version?* asks, and **Replace**
+does what *Fetch again* does with the copy named. A chapter that failed shows admins *Last error: {reason}* at
+the top — the hover title that a phone could never reach. A book row's ⋯ menu has **Versions** to open the
+same sheet.
+
+The chapter header is four plain chips on one row, at phone width too: **Mark all read · Newest · Filter ·
+Select**. **Filter** carries a small numeral for how many filters are on and opens **Filter chapters**: under
+*Translated by*, *All* and one chip per group, and a switch, **Show chapters not on the server yet**, which is
+the old toggle chip remembered per device. The *All groups* dropdown, the long toggle chip and the line *{n}
+on the sources but not here · as of {ago}* are gone — the supply line carries both facts — and *{n} of {m}
+chapters match* stays when a group is chosen.
+
+### Fetch is the server, Save offline is this device
+
+The page used *download* for bringing a chapter onto the server and for copying it to your phone —
+*Download all* on the one hand, *Downloading {n} chapters* on the other. From now on the server side is
+**Fetch**, with the cloud icon (☁), everywhere: *Fetch* and *Fetch again* in the selection bar carry it, as
+every grey row already did, the downloads pill reads *Fetching {n} chapters*, a stalled one *Fetch stopped.
+Try another source or wait.*, and a finished Discover job *Fetched*. The device side is **Save offline**,
+with the arrow (⬇): *Download all* is **Save all offline**, the row's ⬇ is *Save offline* or *Remove from
+this device*, and the toasts say *Saving {n} chapters offline…*. The explainer below says the same in one
+line. The *Offline* tab keeps its name — it is the device side. Confirmation texts that said *scanlator
+rules* now say *translation rules*; the UI says **Translated by** wherever it named a group, and
+"scanlation group" survives only in the docs.
+
+### Faces for groups
+
+A group is now a small circle with its initials on a colour that never changes — *AS* for Asura Scans —
+in the supply line, the sheets, the chapter rows and the add dialog, so the same group is recognised across
+them without being read. The colour is taken from the name the server normalises groups by, so the *Asura
+Scans* stamped in a file and the *asura-scans* a source lists get one circle, not two. Beside each group in
+the sources sheet and the add dialog is a strip of twelve squares, one per week, filled where the group
+released, and a dot: green for a group still going, amber for one the cadence rule calls quiet, grey for the
+same silence on a series that is completed or ended — quiet is a warning on a running title and a plain fact
+on a finished one — and grey again for a group with no dated release. The strip is drawn only when at least
+one of the twelve weeks has something in it; a group with nothing that recent gets a sentence instead —
+*quiet — no release in {n} days* when the cadence rule calls it quiet, in amber on a running title and grey
+on a finished one, otherwise *last release {ago}* — so a finished series is not a wall of empty squares
+with warning dots. Twelve silent weeks is longer than the quiet threshold for a daily or weekly group, so the
+quiet sentence is the usual one; *last release {ago}* is what a monthly or irregular group reads until its
+own three intervals have passed. *ships weekly · last release 5d ago* is still there, as the strip's hover
+title and its name for a screen reader. Sources get their
+favicons the same way: in the supply line, the sheets, the chapter sheet, the corner of a Discover card and
+the add dialog.
+
+### Older chapters, one tap
+
+The first half of TIGamingTV's follow-up on [#40](https://github.com/YUnauuu/hbook/issues/40). The
+chapters below a *Latest N* floor used to fold into one sentence pointing at *Find missing chapters*. The line
+is still one line — *Ch. 7–301 · 295 older chapters not here yet* — but **Show** expands it into real grey
+rows, each with the ☁ and the chapter sheet like any other, folded past fifty by the same *Show all* as the
+rest, and **Fetch all {n}** on the line takes the whole run for anyone who may download. A run longer than
+300 goes to the server in batches of 300, one after another: the server runs one fetch job per series at a
+time and answers *busy* to a second, so the page waits for each batch's job to finish before it sends the
+next, under one toast for the whole run — *Fetching {n} chapters…* — and stops at the first batch that
+fails, with its message. *Find missing chapters* under the cover is unchanged.
+
+### Nothing yet
+
+The second half. The add dialog's chapter choice, now labelled **Chapters to fetch now**, ends with
+**Nothing yet — pick chapters later**: the series lands with no chapters, its listing written, its cover
+fetched, and a chapter floor set just above the newest number the source lists, so auto-update follows new
+releases only and every chapter that existed at the time of the add sits under the expandable line above —
+*Show* and *Fetch all* are how to take them when you want them. The helper says as much: *Nothing is fetched
+now. New chapters arrive with auto-update; older ones can be fetched from the series page.* A title the source
+lists no chapters for at all can be added the same way (it is the default there, and the only choice); with
+nothing to put a floor above, it gets none, and every chapter that appears is fetched. On such a series the
+primary button reads *Nothing to read yet*, *Save all offline* is hidden, the supply line says *{n} chapters
+listed · none fetched yet*, and the older-chapters run starts open, since it is the page's only content. The
+add counts as the series' first check, because it has just asked the source: the line reads *{n} chapters
+listed · none fetched yet* the moment the page opens, and the *Sources* row in the sheet carries the count
+and the time of that check, rather than *not checked yet* until the next sweep comes round. Adding a title
+this way that you had removed from the library earlier puts the same series back — the same row, with
+everyone's history on it — as re-adding one with chapters always has. The dialog's last step says *Added —
+new chapters will be fetched as they come out* rather than *Already in your library*. The floor is a
+convention worth stating: it sits a thousandth above the newest listed number, so a chapter numbered between
+the two would count as older — no real numbering does that.
+
+### Discover breathes
+
+The wall of source chips under Newest/Popular — up to twelve, with a note line or two under them — is one
+chip: three stacked favicons, **All sources**, *{n} sources*, and *{n} with issues* in amber when any source
+is rate-limited or blocked. The number is every source that can answer the listing you are on — Newest, or
+Popular for the sources that rank one — and is not disabled, not the handful the wall is asking at this
+moment; the sheet says which is which. It opens a **Sources** sheet with one row per source — favicon,
+name, a health dot, the server's note (or *Could not be reached right now.* when it gave none) and *back in
+~{n} min* — with *Asking {n} of {m} · tap a source to browse it alone* in its footer, and tapping a row
+browses that source alone; the chip then shows its favicon and name with an × to go back to all of them.
+A source in a cooldown browsed alone says so in place of the wall — its reason and *back in ~{n} min*, in
+amber — rather than the *Nothing new from these sources right now* that would have been a lie about it.
+The card corners that spelled the source's
+name now show its favicon; a title several sources carry says *{n} sources* instead of a bare number. In
+the add dialog, step one lists sources with their favicons and marks the first *most used* (it was
+*preferred*, which sounded like a setting); step two opens with *From [favicon] MangaDex · Change*, the
+groups sit under **Translated by** with avatars and activity strips, and the progress step reads *Fetching
+{n} chapters*.
+
+### What these words mean
+
+Nobody had ever said, inside the app, what a source, an extension or a translation group is. A small (i)
+now does, in five lines: **Source** (a website hbook reads manga from: MangaDex, or a site an admin
+added), **Extension** (a plug-in from the Mihon catalogue that teaches hbook one site; one extension can
+add several sources, one per language), **Site by URL** (a site added by pasting its address, read with the
+built-in reader, so it cannot say which group translated a chapter), **Translated by** (the fan group that
+translated a chapter; a chapter often has several versions, the server keeps one, taking a preferred group
+first, never a blocked one, and waiting for a preferred group for the patience you set) and **Fetch vs Save
+offline** (☁ brings a chapter onto the server for everyone, ⬇ copies it to this device). The (i) sits
+wherever the words are used: in the header of the *Sources & translations* sheet, in Discover's *Sources*
+sheet, and beside *Add a site* on **Admin → Providers**.
+
+### Also
+
+- Markdown is stripped from descriptions: a MangaDex summary no longer reads `**Year:** 1997 ---` — on
+  Discover's add dialog, on the series that add creates, and, at read time, on every series already in the
+  library that was written before this release, so nothing needs re-adding.
+- Members with no sources were told *Add one in Admin → Providers*, a console they cannot open; they now
+  read *No sources are set up yet. Ask whoever runs this server.*
+- Discover's heading said *Newest from your sources* whichever toggle was on; it says *Popular on your
+  sources* when that is what it is showing.
+- *Popular* on Discover was the one toggle with no translation; it has one now, as do *Updated {ago}*,
+  *Continue*, *Start reading*, *Oldest* and the chapter row's menu items, which had been English in every
+  language.
+- The series page no longer asks the server for the source list on behalf of members who may not download;
+  it was a 403 on every visit that nothing needed.
+
+For the API, all of it additive: `GroupStat` gains `weeks`, twelve booleans oldest first, on
+`GET /api/series/:id/groups`, the admin scanlators route and `GET /api/sources/detail`; a held `Ghost` in
+`GET /api/series/:id/listing` carries `waitingFor` and `waitDaysLeft`; `POST /api/sources/add` accepts
+`chapterFrom: "none"` and answers `nothing: true` for it; `summary` on `/api/sources/detail` and
+`GET /api/series/:id` is plain text, HTML and markdown removed. No route was added or removed, and the
+Mihon extension is unaffected.
+
+## v0.33.0 — 2026-09-14
+
+The rest of [#40](https://github.com/YUnauuu/hbook/issues/40). v0.32.0 answered it as it had been read:
+a per-source screen, so the ghost rows, the selection bar and the picker of known groups. TIGamingTV then
+made the ask plain with a MangaDot screenshot, and it was never about a source — it was about a *series*:
+every version of a chapter, side by side, with who released it, in what language, how many pages and when;
+and a panel that says who scanlates this title and how they are doing. That is what this release is, and
+the extension carries the group along so a reader app can do the same.
+
+### Who scanlates this
+
+The series page now opens with a **Who scanlates this** card, below the description and above the chapter
+list: one row per group, with how many chapters it has released, the range it covers (*Ch. 12–84*), how
+many of its releases are on this server, when it last released, and a cadence line — *ships daily*, *ships
+weekly*, *ships monthly*, *releases irregularly* — or the thing the card exists to say, *quiet — no release
+in 34 days*. The cadence is the median gap between the group's last ten releases — uploads less than half
+a day apart are one release, so a ten-chapter batch counts once, whatever side of midnight it lands — a day and a half
+or less is daily, up to nine days weekly, up to forty monthly, anything longer irregular; *quiet* is a
+group that has been silent for three of its own intervals or two weeks, whichever is longer (or forty-five
+days for a group with no measurable interval). With fewer than two dated releases there is no rhythm
+label, only *last release {ago}* — or *quiet* after forty-five days. **Show
+chapters** lists the group's numbers as chips — solid for chapters on this server, dimmed for ones it has
+not got — and tapping one scrolls to the row.
+
+**Prefer** and **Block** live here now. They were in *Edit details* since v0.31.0, a panel most readers
+never open, and the group they applied to was a line in a list with a count beside it; they now sit on the
+row of the group whose releases you are looking at, with the ranking arrows and the patience setting, and
+*Edit details* keeps a one-line pointer. The rules have not changed, only the address. Members see the
+card too — the stats are for everyone — and only admins get the buttons (`GET /api/series/:id/groups`;
+`GET /api/admin/series/:id/scanlators` answers with the same stats plus the buttons' state).
+
+### Every version, and Fetch this
+
+The listing the sweep keeps (`series_listing`) held one copy per chapter number — the one the scanlator
+rules chose — and the names of the other groups. It now keeps **every copy**: group, language, page count,
+release date and source, with the chosen one first. A chapter row whose number exists more than once
+shows a **{n} versions** pill; tapping it opens the versions inline, one line each, marked *on this server*,
+*chosen* or *blocked* (`GET /api/series/:id/versions`). Beside each is **Fetch this**: on a grey row it
+downloads exactly that copy; on a chapter already here — admins only, after *Replace with this version?* —
+it is the *Fetch again* of v0.32.0 with the copy named, so a chapter can be swapped for the other group's
+version without losing where anyone was in it (`POST /api/sources/fetch` and `…/chapters/refetch` take
+`picks`).
+
+A pick is an explicit choice of one copy, and it is treated as one: unlike a plain *Fetch*, which follows
+the automatic rules and refuses a blocked group, *Fetch this* on a copy marked *blocked* takes it — you
+pointed at it, with the label in front of you. It still ignores patience and resets the retry cap, as every
+manual fetch does, and it still needs the copy to be in the last check's listing; a copy the listing does
+not know is refused as *not listed*, never guessed at.
+
+And a grey row no longer needs *Select* to be fetched on its own: for anyone who may download, each one
+ends in a cloud icon that fetches that chapter — asked for on #40 with a Tachimanga screenshot, where the
+fetch button sits on the row — the same request the bar's *Fetch* makes, minus the selection.
+
+### Filter the chapter list by group
+
+An **All groups** chip beside *Oldest/Newest* narrows the chapter list to one group — on-disk chapters by
+the group written on them, grey rows by the groups that released them — and a line says *{n} of {m}
+chapters match*. Select mode acts on the filtered set, so "everything Fuuscans released that is not here"
+is a filter, *Select*, *Fetch*.
+
+### On Discover, before you add
+
+The add dialog already fetched a title's chapter list to count it; the count now has company. Under it, a
+compact *Who scanlates this* — the five busiest groups with releases and cadence — and *{n} chapters have
+more than one version*, so which group carries a title, whether it is still moving, and whether the
+scanlator rules will have anything to choose between are all known before the first chapter is downloaded.
+Nothing extra is asked of the source: the list was already in hand (`GET /api/sources/detail` gains
+`groups` and `versions`).
+
+### The extension carries the group
+
+Extension **1.6.4** sets the scanlation group on each chapter it hands Mihon or Tachimanga — the field
+hbook has recorded since v0.31.0 and the extension had been dropping — so those apps' own *filter by
+group* and *sort by group* work on an hbook library exactly as they do on MangaDex.
+
+### Extensions with many languages take one card
+
+**Admin → Providers** listed a multi-language extension as one card per language, enabled or not — 3Hentai
+alone was twenty-nine boxes, and the extensions you actually use were somewhere below them. An extension
+now folds into one card: its name, *{n} languages*, how many are on, the worst health among them, and a ▾
+that opens a compact row per language with its own status, series count and Enable/Disable. The header
+counts *{n} sources in {m} providers*. An extension with one source, the built-in engines and sites added
+by URL are the plain cards they were (the source list carries `extension: { pkgName, name }` for `sw:`
+entries).
+
+### The limits, stated
+
+Groups exist where the source names them: MangaDex and the extensions that carry the information. The
+built-in engines and sites added by URL name none, so on those series the card is empty and the chapter
+list has no versions to show. Cadence is measured from the dates the source shows, and a source that shows
+none gives *unknown* rather than a guess. Every number on the card is as old as the last check — the
+nightly sweep or *Check now* — and the card says so, like the grey rows do; a title added from Discover
+gets its listing written by the add itself, so the card is there before the first sweep. On a series never
+checked whose files name no group, members see no card and admins an empty one, so patience stays settable. And a version list is the sources' word, not a promise: a copy that vanished upstream since
+the last check is refused at fetch time, not silently swapped for another.
+
+## v0.32.0 — 2026-09-14
+
+What one reader asked for after v0.31.0 shipped ([#40](https://github.com/YUnauuu/hbook/issues/40):
+the scanlator rules and the second source were real but invisible from the series page), and the first
+outside contribution to the code — [PR #41](https://github.com/YUnauuu/hbook/pull/41) by TIGamingTV,
+a job that deletes chapters once everyone has read them — taken through the same pipeline as everything
+else and fixed where it needed fixing before it could be trusted with a `rm`.
+
+### Chapters the sources have that you don't
+
+Until now the series page listed what was on disk and nothing else. "3 behind" was a number with nothing
+under it; a chapter being held for a preferred group looked exactly like one the source had never released;
+a chapter that had failed three times and been given up on looked like nothing at all. The page now also
+shows, greyed, every chapter the followed sources list that this server does not hold, and says why: *not
+downloaded yet*, *waiting for a preferred group*, *failed 3 times*, *only blocked groups released it*, or
+below the "Latest N" floor — those last ones collapse into a single line that leads to *Find missing
+chapters*, which is where they were always meant to be taken from. Nothing is asked of a source when the
+page opens: the sweep and *Check now* now keep a per-series listing (`series_listing`) of every number a
+source offers and which copy the scanlator rules chose, and the page reads that. So a listing is exactly as
+old as the last check, and the page says so ("as of 2 hours ago"). Members see the grey rows too; only
+people who may download can act on them.
+
+Acting on them is the other half. **Select**, beside *Mark all read*, turns the chapter list into a pick
+list, and the bar at the bottom does the same job the Library's does: mark read or unread, save offline,
+and **Fetch** — download the ghosts you picked, now. A manual fetch has the same permission as *Find
+missing chapters* and takes the listing as its authorisation (a number the last check did not see is
+refused, not guessed at). It deliberately ignores two of the automatic rules: *patience* — you are the one
+asking, so the best copy on offer is taken rather than waited on — and the retry cap, which it resets. It
+never ignores the *blocklist*: a chapter only blocked groups released is shown so you know it exists, and
+unblocking the group is the way to have it.
+
+For admins the bar carries two more. **Delete from server** removes the file and nothing else: the chapter
+row stays, marked *Deleted from the server*, everyone's progress stays, the counts stay, and the series
+cover moves to the lowest chapter that still has a file — the same tombstone the cleanup below leaves. It
+only ever touches a file hbook downloaded itself, and never one a reader has bookmarked; a chapter in a
+library you assembled, or with a bookmark on it, is skipped and the toast says how many and why — and a
+delete that deleted nothing is reported as the failure it is, not as *0 deleted*. **Fetch again** is the replace that v0.31.0 refused to do on its own: the file is set
+aside, the copy the scanlator rules choose *now* is downloaded onto the same row — so a chapter you took
+before ranking a group can be swapped for that group's copy without losing where anyone was in it — and the
+old file is put back if the download fails. A different group's copy may have a different page count.
+
+### Pick from known groups
+
+A series' *Edit details* panel has listed its own groups since v0.31.0, but the server defaults under
+**Admin → Settings → Scanlators** — the blocklist that applies to every series, the ranking a series
+without one falls back to — were bare text fields, and a group name has to match exactly. They now offer,
+under the field, the group names actually seen across the library — on disk and in the sources' listings,
+busiest first, filtered as you type — as chips to press, so there is nothing to spell from memory
+(`GET /api/admin/scanlators`).
+
+### Delete chapters after they are read
+
+From [PR #41](https://github.com/YUnauuu/hbook/pull/41) by TIGamingTV, the first code contribution,
+and good work: an opt-in hourly job that deletes the file of a chapter once **everyone who started it has
+finished**, N days after the last of them did (30 by default; 0 means the next run). Off by default, and
+switching it on under **Admin → Settings → Delete read chapters** asks you to confirm with the number of
+chapters the first run would take in front of you. It only touches hbook's own downloads folder, never a
+library you assembled; it leaves alone anything one reader is partway through, anything nobody has opened,
+anything bookmarked (a bookmark points at a page inside the file), and the chapter a series draws its cover
+from. What it leaves behind is a *tombstone*: the chapter row stays, marked deleted, so reading history
+survives, no count changes, nothing is pushed to AniList, and the updater — whose idea of "have" is the
+rows — does not fetch the chapter back the same night. `CLEANUP_MAX_PER_RUN` (500) caps one run, as a blast
+radius rather than a speed limit. **Admin → Tasks → Delete read chapters** shows the last run and what it
+freed.
+
+What was fixed on top before shipping, plainly. The PR's thirteen integration tests had never run: every
+one died at its seed, which set the series cover before the chapter existed, so the job's rules were
+proven by unit tests of the SQL text alone. Its seventeen strings existed in English only. And the
+tombstone was honoured by the series page and the reader but not by the rest of the product: OPDS feeds,
+`GET /api/books/:id/next`, *Continue reading*, the offline plan, the download manifest, the fingerprint and
+page-hash jobs, the web reader's own next/previous, and the Mihon extension all still handed out a chapter
+with no file — every one now skips it (extension 1.6.3 hides them). A chapter fetched again after a prune
+would have been deleted at the next hourly run, because everyone's progress on it still said *finished*:
+the job now judges by reads of the copy on disk — a chapter is due only when its last reader finished
+*after* the current file landed. A tombstone now forgets the page dimensions, fingerprint and page
+hashes it had cached, which described bytes that no longer exist. A downloads folder that is not there
+when the job runs — a network share not mounted right now, so every chapter it was about to look at is
+missing folder and all — stops the run and says so, where the first version would have marked five
+hundred chapters an hour as deleted while their files sat safe on the unmounted disk; a single series
+whose folder was removed by hand is still marked as gone, and a hidden series is not examined at all. And
+a reader who finished a chapter last year and is re-reading it today is left alone: a completed row that
+is not at the chapter's end counts as partway through.
+
+### Found on the way
+
+The web reader's next/previous list could walk into a deleted chapter (fixed with the rest of the
+tombstone audit above), and the series cover now follows the lowest chapter that still has a file rather
+than the lowest number, so a manual delete of chapter 1 does not take the art off the shelf. The reader's
+"finished this chapter" ping reported the last page *shown*, which with junk pages hidden is a page or two
+short of the file's end; it now reports the chapter's real last page, as the cross-into-the-next-chapter
+ping always did — without that, the cleanup above would have read every such chapter as still being read.
+The Library's select bar was painted under the phone's bottom navigation, so its chips could not be tapped
+below the first row; both select bars now sit above the bar.
+
+### The limits, stated
+
+A listing is as old as the last check; a series never checked has no grey rows at all, and *Check now* is
+how to get them. A followed source in a cooldown is not listed on that sweep, so numbers only it carries
+drop off the page until the next one. Counts keep tombstones: a chapter nobody read that an admin deletes
+stays "unread" until it is fetched again, and *Mark unread* on a live one counts as an unfinished reader,
+so the cleanup leaves it alone until it is read again. Blocked ghosts are not fetchable — unblock first.
+And the cleanup's first-run count is lower than you might expect on a downloads folder copied without its
+modification times: the mtime rule then reads every file as newer than its reads, which fails toward
+keeping, and it corrects itself as chapters are read again.
+
+## v0.31.0 — 2026-09-13
+
+Both halves of [#35](https://github.com/YUnauuu/hbook/issues/35): which group's release to keep, and
+following a series on more than one source.
+
+### Which scanlation group's release to keep
+
+On MangaDex, and on most extensions, a chapter comes back once per group that released it. hbook keeps
+one file per chapter number, so something had to pick — and until now that something was three adapters
+with three different rules, none of which knew what a group was: the extension bridge threw the name away
+one line after receiving it, MangaDex was never asked for it, and the pick was whichever copy happened to
+be listed first. Nothing in the Mihon family does better; Mihon only excludes groups, because it shows every
+duplicate row and leaves the choice to the reader.
+
+The choice is now one rule in one place (`bff/src/lib/releases.ts`), applied wherever a source is listed: a
+per-series ranking ("prefer A, then B"), a blocklist ("never C"), and a patience window — how long to wait
+for a ranked group before taking the best copy on offer (2 days by default, 0 to take it at once). Server
+defaults live under **Admin → Settings → Scanlators**; a series overrides them from *Edit details*. Blocks
+accumulate, a series ranking replaces the server's, and patience falls back. A joint release belongs to
+every group on it and is blocked only when all of them are. A chapter already on disk is never replaced by
+a better-ranked copy that arrives later; the chapter row shows which group it came from, and the group is
+written into the file as ComicInfo `<Translator>` — the tag Mihon and Suwayomi write and Komga and Kavita
+read. Files downloaded before this release carry no group.
+
+Three things the rule deliberately does not do: wait on a source that names no groups (a scraped site with a
+priority list set would otherwise hold every chapter for two days for a group that can never arrive); prefer
+an external link — MangaDex's pointer to the publisher's own site — over a copy that can actually be read,
+whatever group it carries; and replace anything. The add path applies the server blocklist too, because a
+blocked copy taken at add time would be locked in by the never-replace rule.
+
+### Following a series on a second source
+
+A series has always been wired to exactly one source. It can now also follow others: from **Find missing
+chapters**, any source whose numbering matches at least 90 % of what you hold can be followed with one
+press (admin only, the same gate that keeps the fill from filing another story's chapters under yours).
+The sweep then lists every followed source and takes each missing number from the first that has it, the
+primary winning ties — so whichever site releases first is the one that supplies the chapter, and a series
+whose extension was uninstalled keeps updating from the site it also follows. "N behind" counts across
+followed sources, each chapter row says where it came from, and Health lists a dead-primary series that
+still has a live follower as reference rather than frozen.
+
+Found on the way and fixed: *Check for new chapters now* downloaded chapters that only appeared in the
+library at the next scan; it scans now, and says when chapters are being held for a preferred group rather
+than reporting "already up to date".
+
+Guards for every rule above are proven by reintroduction — the one worth naming is that a series whose
+primary adapter is gone used to answer "unrouted" before its followers were even read, which three
+independent reviewers caught against the Health page's promise.
+
+## v0.30.0 — 2026-09-13
+
+Four things one reader asked for on the day the Mihon extension shipped ([#36](https://github.com/YUnauuu/hbook/issues/36),
+[#37](https://github.com/YUnauuu/hbook/issues/37), [#38](https://github.com/YUnauuu/hbook/issues/38)).
+
+### Hide the languages you don't read
+
+Installing an extension switched on every source it ships, in every language — one extension can be thirty
+of them — and quietly ate the `SUWAYOMI_MAX_SOURCES` limit (25), with the overflow visible only in the server
+log. **Admin → Extensions → Languages** now lists every language your extensions offer, with how many sources
+and how many of your series came from them, and hides or shows a whole language in one press. Hidden is a
+standing setting: the next extension you install leaves those languages off. One request flips every row in
+one statement and reloads the sources once (`POST /api/admin/extensions/sources/bulk`).
+
+Two things came out of the same work. A source you switched off — by hand or by language — no longer turns
+the Health page amber; it is listed greyed as "turned off by you", and a series whose source you hid is
+reported as "switched off" rather than "no longer installed". And the source limit finally has a face: the
+panel and Health both say when enabled sources are not registered because of it.
+
+The panel's layout and the Health observation are from [#39](https://github.com/YUnauuu/hbook/pull/39)
+by TIGamingTV; the implementation was reworked so hiding a language is one reload rather than one per source,
+and so an install respects it.
+
+### Extension downloads at the speed the engine allows
+
+Pages were fetched one at a time with a quarter-second pause between them. That rule exists because that is
+what stopped the 429s on the sites we scrape ourselves — but it was applied identically to extension sources,
+where every page request goes to the local engine, which fetches upstream one page at a time because we asked
+one at a time. A 120-page chapter through a proxy, serially, with a pause: one to two minutes.
+
+Pacing is now the source's to declare. Extension sources fetch four pages at once with no pause (the engine
+enforces each extension's own rate limits, as Mihon would); scraped sites keep the old rule to the
+millisecond — the floor is measured from the previous reply as well as the previous start, so a slow site is
+still not asked again until the gap after it answers. A 429 still stops the burst, and the retry runs one
+page at a time. `SUWAYOMI_PAGE_CONCURRENCY` (1–8, default 4) is the dial, and it is passed through by every
+deploy file — a test now reads the settings table in `docs/extensions.md` and checks each of them, because
+this knob was documented before it was wired.
+
+### "Latest N" when adding a series
+
+The Add dialog offers *Latest 10/25/50…* next to *First N* — which, to be honest about it, always meant the
+**oldest** N, and the API doc said the opposite. A series added as "Latest N" gets a floor: auto-update
+fetches new releases instead of spending weeks backfilling chapter 1 onwards. The older chapters are still
+one press away — *Find missing chapters* now offers the run below what you hold, from the series' own source
+and no other (the fill dialog's rule against extrapolating across sources stands). The floor is written on
+every add, so a series deleted and added again as "All" does not keep one from its earlier life.
+
+### One card per title on the Discover wall
+
+Search already folded the same title from several sources into one card with a count badge; the Newest and
+Popular wall did not, so a popular title sat there three or four times. It folds now, the same way, with the
+providers ordered as the page ranks sources so the dialog's "preferred" is the one it would have asked first.
+
+## v0.29.0 — 2026-09-13
+
+### One token for a third-party client
+
+An API token (Profile → Account) opened `/api/*` and nothing else: pictures were served only to the
+browser's cookie or to an OPDS reader's Basic credential. So a client that had just listed a chapter's pages
+could not fetch a single one of them without a second secret pasted in. `/img/*` now accepts an API token as
+a Bearer too, and a `read`-scoped token is enough — images are reads. Library grants apply exactly as they
+do for a session: a token for a member without access to a library gets the same 404 that member would.
+
+The same token could not search the library either: `POST /api/series/search` is a POST only because its
+filter tree travels in a body, but the `read` scope gated every non-GET as a write. That one route is now
+exempt — keyed on the route, not the URL, so a query string cannot dress a real mutation up as a search.
+Everything else a read token could not do, it still cannot.
+
+This is the groundwork for the hbook extension for Mihon, Tachimanga and Suwayomi
+([#33](https://github.com/YUnauuu/hbook/issues/33)), which holds one token and needs it to work for
+everything it fetches. The extension itself lives at
+[AngeloSha/hbook-extension](https://github.com/AngeloSha/hbook-extension); the README and
+`docs/USAGE.md` point at it.
+
+### "Popular", for a library that belongs to one person
+
+Mihon requires every source to answer a popular listing, and for a personal shelf the word means nothing —
+so `POST /api/series/search` gained `sort: "favorites,desc"`: your starred series first, then whatever you
+are furthest behind on. It is per user, and there is a test that fails if one member's stars ever sort
+another member's list.
+
+Found on the way: the existing `unread` sort named a per-user join that only exists for signed-in callers,
+so an anonymous request with that sort was a SQL error rather than a listing. Nothing could reach it (the
+library requires a session), but it is closed now: without a user, both sorts fall back to title order.
+
+## v0.28.1 — 2026-09-13
+
+### A series folder with a cover in it is still a series
+
+Reported and diagnosed by [@ThomasRunting](https://github.com/ThomasRunting) in
+[#34](https://github.com/YUnauuu/hbook/issues/34): a Tranga library — top-level series folders, each
+holding its `.cbz` chapters and a thumbnail — scanned to **zero series** in four seconds, with no error
+anywhere. They read the scanner and found why: any subfolder containing an image was counted as a chapter,
+so every series folder read as a chapter *of the root*; the root therefore "had chapters", and a directory
+with chapters is a series that the scanner does not descend into. At the root that pushed nothing and
+walked nothing.
+
+Their one-line fix is in. It is not the whole fix, though, because the same test hid three more layouts:
+Mihon's local source (`cover.jpg` beside chapter folders), Komga and Kavita (`cover.*` beside archives), and
+any of those inside a wrapper folder — where the failure was **worse than zero**, because the wrapper became
+a series whose "chapters" were the real series. A folder is now a chapter only if its images are the whole
+of its contents; anything holding archives or image-bearing subfolders is a series. Seven layout fixtures
+cover it, and each part of the fix has a test that only it holds.
+
+The "run now" buttons in Tasks were not broken — the scan ran, found nothing, and the toast said *Started*,
+which from the outside is indistinguishable from a button that does nothing. It now says what the scan
+found, and says "nothing found — check the folder layout" when that is the answer.
+
+### The cover proxy's engine exemption no longer follows redirects
+
+The cover proxy trusts one origin — the configured extension engine — and skips the SSRF guard for it. Its
+own comment said *"redirects are not followed here"*, and for two releases that was a sentence rather than a
+fact: the fetch used the default, which follows. A redirect from the engine to a private address would have
+been followed with no guard looking at the hop. It now refuses redirects, proven against a real redirecting
+server rather than a mock. Found by re-reading the line CodeQL flagged — the tool could not see the origin
+check, but it did make someone look.
+
+Two smaller CodeQL findings fixed on the way: a test that asserted a hostname by substring (the exact
+weakness it was asserting against), and a no-op `.replace('/', '/')` in the browser suite.
+
+## v0.28.0 — 2026-09-10
+
+### The server can tell you a new version exists
+
+Until now it could not: the version lived in `package.json` and nothing read it at runtime, so the app did
+not know what it was, let alone whether anything newer had been published. **Admin → Health** now has a
+Version row, and once a day the server asks GitHub whether a newer release is out.
+
+It is a plain read of a public releases page — the same one you could open in a browser. **Nothing about
+your server is sent.** GitHub sees an IP address, as it would for anyone loading a public page, and that is
+all. Being a version behind is never treated as a fault and will not turn anything amber; an update notice
+that cries wolf is one people learn to ignore.
+
+On by default, with a switch in Settings. Off means no request is made at all, and the row says so rather
+than quietly claiming you are up to date. If GitHub cannot be reached, it says that too — "up to date" and
+"we could not ask" look identical on a page, and only one of them is a reason to relax.
+
+### And, if you want, it can be counted
+
+Nobody can see how many people self-host this. That is the point of self-hosting, and it also means nobody —
+including whoever wrote it — knows whether a release reached twenty people or two hundred.
+
+So there is now an **opt-in** install count, **off by default**, as a separate switch. Turn it on and once a
+day your server sends this, and nothing else, to hbook.com:
+
+```json
+{ "id": "3f2a…", "month": "2026-09", "version": "0.28.0",
+  "arch": "arm64", "layout": "aio", "db": "embedded" }
+```
+
+The settings page shows you that exact object before you agree to it — not a description of it, the literal
+thing, built by the same code that sends it, so the two cannot drift apart.
+
+- **The id changes every month.** It is a hash of a secret that never leaves your server plus the current
+  month. Two pings in one month count as one install; two pings in different months cannot be linked to each
+  other — not by us, and not by anyone who obtained the data, because the secret is not in it.
+- **No library, no titles, no accounts, no address, no hostname.** A test fails the build if a field is ever
+  added to that payload, because a field added quietly is a field you were never shown.
+- **The collector stores no IP and no clock time**, only the UTC date, and access logging is off for that
+  endpoint so there is no side channel that re-identifies a row. Anything unrecognised in a ping is dropped
+  rather than stored. Months older than a year are deleted.
+- **Turning it off destroys the secret** and asks the collector to forget the current month. Turning it back
+  on later makes a new id — it cannot resume the old one, which is the honest behaviour even though it means
+  a returning install looks like a new one.
+- `GET https://hbook.com/api/hello` shows the running totals, so you can see what your ping became.
+
+The two switches are deliberately separate and point at different servers. If the update check went to a
+server this project runs, that server could count installs from its access log whether or not anyone
+consented, and "updates on, counting off" would be a setting that did nothing. Keeping them apart is what
+makes the off position real, and there is a test that fails if they ever converge.
+
+`HBOOK_PING_URL` repoints the count at your own collector, or disables it outright if set empty.
+
+## v0.27.0 — 2026-09-09
+
+### One Library, and its filters finally organised
+
+Browse was a second Library. `/browse?genre=Horror` ran the same search over the same collection and drew it
+in the same grid as `/library?genres=Horror` — the only thing it had of its own was the wall of genre tiles.
+So the tab is gone, and the wall's useful half has moved to where you were going to end up anyway.
+
+The Library's own controls had drifted into a pile: three horizontally-scrolling rows of chips, one of them
+seven wide, mixing four sort options with a Filters button, an 18+ toggle and a Select toggle — nothing
+saying which were sorts and which were filters. Behind the Filters button, the genre list was a flat wall of
+**ninety-three unsorted, uncounted, unsearchable words**.
+
+All of it now lives in one panel with labelled sections — **Sort by**, **Library**, **Read state**,
+**Status**, **Format**, **Genres**. On a laptop the panel sits down the left of the grid and stays there. On
+a phone it opens as a proper sheet: one Filters button instead of a row of seven chips.
+
+What came across from Browse:
+
+- **Genres are counted and ranked**, biggest first, each with a small mosaic of covers from that shelf — the
+  part of the old tile wall that made it worth looking at, at a size that suits a list.
+- **Formats stay separate from genres.** Manhwa covers 161 of the 2,132 series on the library this was built
+  against, so ranked by size it outranks every actual genre while saying nothing about what a book is like.
+- **Surprise me**, the random-series button, is now beside the Library title.
+- A **search box** over the genres, so ninety-three of them is a list rather than a wall.
+
+Two things fixed on the way past:
+
+- The genre list used to come from an endpoint that returns genres exactly as they are spelled, while the
+  filter matches them case-insensitively. That is 100 chips for 93 genres: "Martial arts" and "Martial Arts"
+  appeared as two, and either one returned the same series. They are now one.
+- Picking a library used to filter the grid while the Filters badge said nothing was filtered, because the
+  library tabs were counted as navigation rather than as a filter. Now everything that narrows the shelf
+  counts, and `Clear all` clears all of it.
+
+The publication statuses — Ongoing, Completed, Hiatus, Cancelled — were being title-cased in code rather
+than translated, so they read in English in all eight languages. They are translated now.
+
+### Large displays have been a column short this whole time
+
+Found while measuring the new layout, and older than it. Five cover grids — library, search (twice),
+discover and the admin picker — each ended with a step like `min-[1800px]:grid-cols-10`, and **not one of
+them had ever applied**. Tailwind emits that kind of breakpoint before its own named ones, so on a 1920px
+display the earlier `2xl` rule came later in the stylesheet and won.
+
+Nothing failed, because a grid one step short of its own source code still looks like a grid. Measured in a
+browser at 2560px: seven columns of 314px covers where the class list asked for ten.
+
+The extra breakpoints are now declared properly, and a test refuses any responsive step that a later rule
+would override. It found the fifth grid on its first run.
+
+### The last of the MangaRead covers
+
+Different fault from v0.26.3, and this one was doubling the listing.
+
+The listing parser reads the same series link out of three different pieces of markup, and one of the three
+patterns dropped the trailing slash from the URL while the other two kept it. On any site that writes the
+slash — MangaRead does — the check for "have I already seen this series?" never matched. Every series came
+back **twice**: once properly, and once more named after its `alt` text and carrying no cover at all.
+
+Measured against a live MangaRead listing: twelve series parsed as twenty-four. Because a source page keeps
+the first 24 results, that also means half of what MangaRead offered on Discover was a copy of the other
+half. The proper entries came first and the blank ones after, which is why it looked like a few missing
+covers rather than a doubled list.
+
+The three passes now agree on the key. The URL a series is *stored* under is untouched, so nothing already
+in a library is affected. This also fixes the reverse case, which nobody had reported: a site writing the
+slash on its headings but not its thumbnails loses **every** cover rather than half of them.
+
+It hid for so long because every fixture in the test file wrote URLs without a trailing slash — the one
+shape that breaks was the one shape the tests never used. It is now asserted in both directions.
+
+## v0.26.3 — 2026-09-09
+
+### The rest of the grey covers, and why they broke on their own
+
+v0.26.2 fixed the covers that came from the extension engine. The ones that remained — some of a source's
+covers working and others not, on the same page — were a different fault with a much more ordinary cause.
+
+Sites that load images lazily put a spacer in the `src` attribute and the real picture in `data-src`. The
+code that reads a cover out of that markup was written as one regular expression listing both attributes,
+which reads as a preference and is not one: which attribute wins is decided by regex mechanics and by the
+order the site happened to write them in. Two different spellings of that expression were in use, in
+different parts of the code, and they failed on **opposite** attribute orders.
+
+So a cover was right or wrong depending on nothing but markup order — which is the whole answer to why
+covers that worked for months stopped without anything changing here: the site reordered its markup, and the
+extraction quietly flipped. It is also why only *some* series were affected rather than all of them.
+
+There is now one place that answers "which attribute holds the picture", and it answers by preference:
+`data-src`, then the other lazy attributes, then `srcset`, and `src` only as a last resort. Every engine uses
+it. The same fault was present in the code that reads **page images**, where it would have served placeholder
+pages rather than placeholder covers — nobody had hit it yet.
+
+### A picture repeated on every card is not a cover
+
+When a listing comes back with the same image on three or more different series, that image is a placeholder
+and the covers were not parsed. Rather than show one picture twenty times — which is a confident lie — the
+cover is dropped, and the fallbacks that already exist take over: the artwork from AniList for a series in
+your library, then its first downloaded page, and otherwise the app's own empty tile.
+
+### Sources are now checked for this, not just for whether they answer
+
+The daily source check already fetched a listing and a series page and looked only at whether they returned
+anything. It now also compares them: when the two disagree about the same series' cover, one of the two
+parsers is wrong, and that is exactly the fault above — visible without waiting for somebody to notice grey
+tiles. It also notices one image repeated across a listing, and a listing that has lost its covers entirely.
+
+Reported in Admin → Health, never as a failure: a source whose covers are wrong still fetches and reads
+perfectly well, and marking it broken would turn a cosmetic fault into an outage.
+
+### Security
+
+Two Dependabot advisories, both about zip extraction following symlinks, neither with a published fix.
+Assessed rather than ignored: one is a test-only dependency that never reaches a running server, and the
+other is used here solely to *build* archives — the vulnerable extraction call is never made, and untrusted
+archives are read by a different library entirely. A test now enforces that second claim, so if extraction is
+ever added, it fails rather than quietly making the assessment untrue.
+
+## v0.26.2 — 2026-09-09
+
+### Discover's grey covers
+
+Whole rails of Discover showed a grey box with a broken-image icon instead of cover art — every result from
+an affected source, permanently. The cause is a fix colliding with a design.
+
+v0.21.0 hardened the cover proxy so it could not be pointed at anything on the local network, because the URL
+it fetches is supplied by whoever asks. Separately, the extension engine serves every cover through itself,
+so an extension source's cover lives at the engine's own address — which is on the local network. The guard
+did exactly what it was written to do, to the app's own engine, and the result was served as a grey
+placeholder and then cached under the real cover's key with a one-year lifetime.
+
+The proxy now recognises the one address it is configured to talk to and fetches covers from it, exactly as
+the extension-icon route already did. That is a single origin, matched whole — not a rule about private
+addresses, which would hand back the capability the original fix removed.
+
+Two more things were wrong in the same place, and both outlived the cause:
+
+- **A failure was cached as though it were the picture.** A cover that could not be fetched wrote its grey
+  stand-in under the real cover's key, marked immutable for a year, with nothing able to clear it. One bad
+  minute on a source's CDN — or a single hiccup from a name server, which the guard cannot tell apart from a
+  blocked address — meant a grey tile until the cache overflowed. Placeholders are no longer stored, and
+  expire in a minute.
+- **The grey already on your screen would have stayed.** Browsers keep those year-long copies by address, so
+  the address changed too, and the server-side entries written under the old scheme are now unreachable.
+
+### The Cloudflare solver says when it is behind, and speaks up when it dies
+
+The solver announces its version and the app printed it and compared it to nothing. Admin → Health now says
+when a newer release is out. It is advice, never an alarm: if GitHub is unreachable, rate-limited, or returns
+something unfamiliar, the app has no opinion rather than a problem — a health page that can fail because a
+third party is having an afternoon is worse than no version check at all.
+
+The bigger gap was that the solver's health was only ever examined when somebody opened the Health tab. A
+solver that died at two in the morning stayed dead until it was noticed, while every Cloudflare-protected
+source failed and blamed itself — the exact confusion that check exists to clear up. It now runs hourly and
+notifies on a change, in both directions, so a recovery is reported too and a long outage does not become
+hourly noise.
+
+## v0.26.1 — 2026-09-08
+
+### The background jobs keep up now
+
+Fingerprinting ran **once**, five minutes after the server started, and never again. Nothing else asked for
+it either — not a library scan, not the updater sweep, not adding a series from Discover — so every chapter
+downloaded after that single pass went unprocessed until the container happened to restart. A server that
+simply stays up was the worst case, which is exactly backwards.
+
+The effect was invisible because it looks like nothing: the reader treats an un-fingerprinted page as an
+ordinary page, so the feature just quietly stopped applying to anything new. Measured on a real library the
+day it shipped: 22 chapters, all added after that morning's boot, still untouched hours later, with 50 to 80
+more arriving daily.
+
+Both backfills now re-check every six hours, re-arming after each pass — including a pass that failed, since
+a job that stops rescheduling because one batch went wrong is the same bug wearing a different hat. The long
+first delay stays: page fingerprinting decodes every page in the library and should not compete with a server
+that has just booted.
+
+The same fault was in the older chapter-fingerprint job, which feeds folder rematch. Fixed alongside.
+
+### Marking a page by hand no longer switches the feature off for that chapter
+
+Marking a page as repeated wrote a row that made the chapter look already-processed, so it was dropped from
+the queue for good — its other pages were never fingerprinted and the automatic rule never ran there again.
+Marking one advert turned detection off for the whole chapter, and it was most likely on a **new** series,
+where the backlog is exactly the chapters being opened.
+
+A chapter is now recorded as looked-at only when it has actually been looked at.
+
+### Admin → Tasks shows the backlog
+
+The number of chapters still waiting was calculated, sent to the browser and then discarded, so a job that had
+quietly stopped picking up work looked identical to one with nothing left to do. Each task now shows how many
+items are outstanding, and the schedule reads honestly instead of claiming the job runs once.
+
+## v0.26.0 — 2026-09-08
+
+### A repeated page folds down instead of disappearing
+
+v0.25.0 removed the pages that are not the story — the credit page, the advert — from the chapter you were
+reading. That was the wrong shape, and reading with it for a day made the reason plain: a chapter was quietly
+shorter than it really was, a floating chip announced the fact at every chapter start whether you cared or
+not, and there was no way to see what was going to be removed before it went.
+
+Now the page stays exactly where it is, drawn as a thin band of itself with a label. You scroll past it in an
+instant, or tap it to open it in place and tap **collapse** to fold it away again. The band is a slice of the
+real page, so you can see it is the credit page rather than take our word for it — which is the part that was
+missing. The floating chip is gone: the notice sits where the page is, which is both harder to miss and
+impossible to mistake for a comment about something else.
+
+**Repeated pages** in reader settings now offers *Show all*, *Collapse* (the default) and *Hide*. *Hide* is
+the old behaviour for anyone who wants the page gone outright, chip and all. Reading page-by-page rather than
+scrolling, *Collapse* still removes — a slide is one whole page wide, so there is no room for a band, and in
+that mode an unwanted page costs a swipe rather than a scroll anyway.
+
+### Four bugs that removal had been causing
+
+Putting the page back in the list the reader counts with fixed a set of failures that all had the same root:
+while pages were being removed, a position in the chapter and a page number were two different things, and
+several places assumed they were the same.
+
+- **Resume and saved Moments landed late.** Opening a Moment saved on page 3 took you to page 4 — one page
+  further on for every repeated page earlier in the chapter. Silently, because arriving a page on is
+  indistinguishable from having read that far.
+- **The chapter divider vanished** when a chapter opened on a credit page, taking the "Up Next" heading with
+  it — and because the same marker keeps a chapter's first page unpaired, every double-page spread in that
+  chapter was shifted by one.
+- **Tapping a dimmed tile in the page grid** scrolled to the top of the entire library instead of to the page
+  you tapped.
+- **A chapter that was entirely furniture disappeared**, and continuous reading walked from the chapter
+  before it to the chapter after with nothing in between.
+
+The reading flow is now built in one place, `web/lib/readerFlow.ts`, where it can be tested — which is why
+these were reachable at all. Each has a test that fails when the old behaviour is put back.
+
+## v0.25.2 — 2026-09-08
+
+### Blank slices were being skipped as if they were the same page
+
+The fingerprint asks, sixty-four times, whether a pixel is brighter than the one to its **right**. So the only
+variation it can see is variation across a row. The guard meant to refuse featureless pages measured something
+subtly different — the brightest and darkest pixel anywhere in the page.
+
+Those come apart on exactly the kind of page a long-strip webtoon is full of. A slice that fades from black at
+the top to white at the bottom has the widest possible range, 255, and sails through a guard asking for 8 — while
+every left-to-right comparison on it is a tie. All sixty-four answers come back "no", the fingerprint is all
+zeros, and *every* such slice in the library carries that same fingerprint. They were being matched to each other
+and skipped.
+
+This was not theoretical. On a real 42,000-chapter library the all-zero fingerprint alone was hiding 100 pages,
+and in one series 59 of the 166 skipped pages were this. The guard now measures what the fingerprint actually
+reads, and a page with no left-to-right variation is refused, as was always intended.
+
+Fixing the guard is not enough by itself, because fingerprints already recorded were written by the old one and
+the background job never revisits a chapter it has seen. So the same rule is applied where the matching happens:
+a fingerprint in which almost every comparison was a tie is no longer accepted as evidence that two pages are the
+same page. That takes effect immediately, without re-reading anything.
+
+Some genuinely repeated near-blank separators stop being skipped as a result. They are blank slices, so this
+shows up as a sliver of nothing rather than a missing panel — and fewer skips is the direction this feature is
+meant to be wrong in.
+
+## v0.25.1 — 2026-09-08
+
+### The page-hash job could never finish
+
+Found by watching v0.25.0 run against a real library, which is the only place it shows.
+
+The job picks its next batch by asking for chapters that have no page fingerprints yet, and it writes a row
+per page. A chapter that yields *no* pages — an unreadable archive, an empty one, a file that has since been
+moved — therefore wrote nothing, and so was still "not looked at yet" when the next batch was chosen. Working
+chapters get their rows and drop out; broken ones accumulate. The moment they are all that is left, the loop
+has nothing to exhaust and spins on them, at full CPU, forever.
+
+One such chapter in a library is enough, which on any library of real size is close to a certainty.
+
+A chapter that produced nothing now records that it was looked at, so it drops out of the queue like any
+other. That mark is inert everywhere else: it carries no fingerprint, so it can never match another page, and
+it is never offered to the reader as a page to skip.
+
+### A chapter is never mostly skipped
+
+The same first real run turned up the failure this feature is least allowed to have. Across seven thousand
+fingerprinted chapters the average chapter had 1.4 pages of furniture and under 6% of all pages were
+flagged — but a few hundred chapters wanted to skip a third or more of themselves, and the worst wanted 68
+pages out of 88.
+
+Those are duplicate and phantom chapters, where the same file is filed under several chapter numbers. Every
+page then genuinely does recur across chapters, so the arithmetic is right and the conclusion is nonsense.
+Nothing inside the rule can tell that case apart, so the chapter's own shape is the check: if more than a
+third of a chapter is about to be skipped, the automatic decision is thrown away and the chapter reads
+exactly as it always did. Fewer skips, which is the direction this feature is always wrong in.
+
+A page you marked by hand is never subject to that cap. It is the one input that is not arithmetic, and the
+entire point of it is that it outranks the rule.
+
+## v0.25.0 — 2026-09-08
+
+### The pages that are not the story
+
+Every chapter of a scanlated series opens with the same credit page. Some carry an advert, or a "read the
+rest at…" splash. You swipe past them, chapter after chapter, and they are the single most repetitive thing
+about reading here. No manga reader does anything about this — the closest thing in any adjacent product is
+Jellyfin skipping a TV intro.
+
+hbook now finds them and skips them, and the way it decides is deliberately dull. A credit page is *the
+same image in every chapter of that series*, so a page whose fingerprint turns up in three or more chapters
+is furniture. That is arithmetic, not a guess about what a page looks like: story pages are not the same
+picture twice. Three chapters and not two, because two chapters sharing a title card is a coincidence, and
+two is the commonest state of a part-downloaded series.
+
+It only ever compares chapters within one series, even though the same group's credit page across *different*
+series would be stronger evidence still. Flagging across series means a page could be hidden in a book whose
+chapters nobody ever compared, and missing a few skips is a far better failure than that.
+
+Nothing is ever hidden without saying so. A skipped page leaves a quiet chip — *skipped 1 repeated page —
+show* — that puts it back with one tap, and the page grid still lists every page, dimmed and labelled, so the
+chapter you see is never secretly shorter than the chapter you have. You can mark a page as junk by hand, or
+rescue one it got wrong; either decision is permanent and outranks the arithmetic in both directions, which
+is what makes skipping safe to leave on by default. It is a switch in reader settings if you would rather it
+did not. Pages are fingerprinted by a background job, alongside the other library jobs in Admin → Tasks.
+
+One honest limit: a chapter you downloaded *before* its pages were fingerprinted keeps the flags it was saved
+with, until you download it again.
+
+### Things this app claimed that were not true
+
+Four of them, found by reading our own documentation against our own code.
+
+Push notifications are listed as a feature; they need a pair of keys that only the developer setup script
+ever generated, so on a normal install the button was not missing-with-a-reason, it was simply absent. The
+server now generates and keeps those keys on first boot, exactly as it already did for its signing secret.
+
+`docs/CONFIGURATION.md` said `.env.example` was the authoritative list of settings. Twenty-one of twenty-three
+were not in it, including the ones most worth touching on a small server — how many series a sweep may check,
+the free-space floor, how long a Cloudflare-protected source is allowed. They are all there now, with their
+real defaults.
+
+The v0.6.0 changelog announced that renaming a folder no longer loses your series. That code ships switched
+off and appeared in no example file. It is documented now, off by default, with its `report` mode explained.
+
+And a badge added yesterday, showing which series you have downloaded, went stale the moment you downloaded
+another — the function that refreshes it had no callers. Mine, from the day before.
+
+### Thanks
+
+[@hawwwwwk](https://github.com/hawwwwwk) again, for [#32](https://github.com/YUnauuu/hbook/pull/32):
+`docs/INSTALL.md` still described a database container that has not existed since v0.18.0. Second time he has
+caught stale install docs.
+
+## v0.24.0 — 2026-09-07
+
+### The app opens on a plane
+
+Launching the installed app in airplane mode showed the sign-in screen, with the chapters you had downloaded
+for exactly this sitting on the device, unreachable. Tapping a chapter *inside* an already-running app has
+worked since v0.20.0; a cold start never has, and the code said so — the browser tests carried a note calling
+it out of scope, and v0.20.0's own changelog admitted it.
+
+Two things were being thrown away. The session check could not tell "the server rejected you" from "there is
+no server to ask": both came back as a plain no, and a plain no means sign in. And the signed-in account was
+remembered only in memory, while every downloaded chapter is filed under whose it is — so even past the
+sign-in screen the reader would have found nothing, which is a worse failure, because it reads as though the
+downloads are gone.
+
+Now a device that had a session keeps it when the server is simply unreachable, and opens on your Downloads
+with a banner naming the account. The reader works exactly as it does in a tunnel today. Everything needing
+the server is dimmed rather than hidden, because there is nothing behind it until you reconnect — and the
+moment you do, it checks in, clears the banner and sends up whatever you read.
+
+The part that took the most care is the part nobody sees. This is a multi-user app and household devices get
+shared, so: signing out ends it immediately — the next offline launch asks for a password and lists nothing,
+though the files stay on disk and become readable again when that account signs back in. If the server ever
+answers that the session is gone, the device signs itself out. The grace expires exactly when the login
+itself would have, which the server now tells the app rather than the app assuming. And nothing new is
+stored that could serve as a credential: the record says who you were, not how to prove it.
+
+Right-to-left manga also read its double-page spreads in the wrong order offline. The downloaded chapter had
+carried the reading direction all along; the reader threw it away and left a comment saying the information
+was not available, one field from where it was.
+
+### A README the size of its category
+
+504 lines and 4,797 words, against a median of 132 and 743 across Komga, Kavita, Mihon, Stump, Suwayomi and
+Audiobookshelf. The install section alone was longer than five of those six READMEs in their entirety, and
+44 lines of it warned about upgrade problems from v0.9.0 and earlier — fourteen releases ago, and already
+written down in this file.
+
+It is 141 lines now. Almost nothing was deleted: the platform-by-platform install moved to `docs/INSTALL.md`,
+the environment variables to `docs/CONFIGURATION.md`, and the comparison against other readers to
+`docs/COMPARISON.md`, where a table making dated claims about five moving projects is less likely to be the
+second thing a visitor reads.
+
+## v0.23.0 — 2026-09-07
+
+### Three gradients start rendering what they were written to render
+
+Tailwind v3's opacity scale is multiples of five. `via-ink-950/88`, `to-ink-950/62` and
+`via-ink-950/72` are not, so all three matched nothing and were dropped without a warning — the sign-in
+screen, the profile header and Wrapped have always drawn a lighter scrim than their code asked for. Tailwind
+v4 accepts any integer and would have started honouring them, which on the sign-in screen turns the cover
+collage to mud. They are removed rather than adopted: a dependency upgrade is not the moment to restyle a
+screen, and making it darker is a decision someone should make on purpose. It is the same shape as the
+fog-200 bug this project already keeps a test for — a value that simply produces nothing.
+
+### Tailwind 4
+
+The config file is gone; the theme is an `@theme` block in the stylesheet. Everything carried over, and the
+parts that could not be translated were rebuilt: the accent colour, which is themeable at runtime and had no
+v4 equivalent for its opacity placeholder; the font variables, which would have become self-referential and
+dropped the app to the browser's default typeface; and the placeholder colour, which v4 stopped providing, so
+every empty input on this black background would have read as filled. Four utilities changed meaning rather
+than name and were rewritten to keep what they meant.
+
+Two visible changes are kept on purpose. Hover styles no longer apply on touch devices, which is what a
+phone should do — no more state stuck on a card after a tap. And the wrapper the language switcher uses is
+finally invisible to layout; the folder it lives in was never scanned before.
+
+### An empty digest fails the build instead of half-publishing
+
+The release pipeline recorded whatever digest the build step produced, and that action only sets one when
+there is image metadata. An empty value went into the artifact the merge job trusts, and the merge matrix
+does not stop on a failed sibling — the exact route to a version tag over one architecture instead of two,
+which has happened twice. It now fails the build leg. The two publishing actions moved a major version each
+at the same time, checked against their source rather than their release notes.
+
+### Smaller things that were already built
+
+A saved page can be un-saved from Moments, which is where you go to look at saved pages; the API for it had
+existed since the first commit with no button anywhere. Wrapped draws the weekday breakdown it was already
+computing — it knew your busiest day and never showed the week behind it. And the README mentions Moments
+and the Reading Studio, which shipped three versions ago without ever being written down.
+
+## v0.22.0 — 2026-09-07
+
+### Next 16 and TypeScript 7, which had to arrive together
+
+TypeScript 7 is the compiler rewritten in Go, and it removes options rather than deprecating them:
+`baseUrl` is gone, and so is the classic `node10` module resolution that `"moduleResolution": "Node"`
+selected. The backend now says `node16` for both `module` and `moduleResolution`, which still emits
+CommonJS -- the shipped `dist/` has the same shape it always had -- and only changes which algorithm finds
+a package.
+
+The frontend could not take TypeScript 7 on its own. On Next 15 the compiler resolved `@/*` perfectly well
+and the bundler then could not, failing every import of `@/lib/*`; Next 16 resolves it. So the two upgrades
+were never separable, and both workspaces moved at once rather than leaving one on a compiler the other
+cannot build with.
+
+Offline reading was the thing worth checking, because Next 16 changed how a route is prefetched: Next 15
+fetched one payload per route, and 16 fetches a tree and a page segment, with the route's own query string
+attached. With the network cut entirely, a downloaded chapter still opens, still decodes its pages out of
+IndexedDB, still has both chapter arrows live, and still never falls through to the sign-in page or shows a
+raw payload as text.
+
+### A dependency round
+
+undici 6 to 8 and `@node-rs/argon2` 1.8.3 to 2.2.0 on the backend, plus three GitHub Actions. argon2 is a
+native module and a password hash is not a thing to be casual about, so the check that mattered was not
+that it builds: a hash generated by 1.8.3 was verified under 2.2.0 on both musl and glibc, with the wrong
+password still refused on both. Nobody has to change their password.
+
+### The browser suite names what failed
+
+A console error used to be reported with the page it happened on and nothing else, while the failing
+resource's URL sat unused in the same event -- which is a bad position to debug from, and was exactly the
+position Next 16 left us in. It now prints the resource, and when a run is already red it prints the type of
+every request that failed. Requests that fail while the suite is deliberately holding the browser offline
+are listed but no longer counted as faults: cutting the network and then reporting that a network request
+failed was the harness marking its own test setup as a defect.
+
+## v0.21.0 — 2026-09-07
+
+### The cover proxy stops fetching whatever it is told to
+
+`/img/sources/cover` took a URL and fetched it. It checked the scheme and nothing else, and any signed-in
+account — or anything holding an OPDS token — could point it at the server's own network: the database, the
+extension engine, the solver, the LAN, a cloud metadata endpoint. It was not even blind about it, because a
+failure handed back the upstream status code, which turns the route into a working port scanner, and
+anything the image pipeline could decode came back as a picture.
+
+It now refuses anything that is not a public address, resolves the hostname before trusting it, re-checks
+every redirect hop rather than letting one bounce it somewhere private, and answers a flat 502 instead of
+reporting what it found. A blocked URL is served the same placeholder as any other unusable cover, so there
+is no difference to measure.
+
+Two-factor recovery codes were 40 bits, stored unsalted; each one bypasses 2FA on its own. They are 80 bits
+now. Image authorisation moved to cover the whole `/img/` prefix, because it lived inside one plugin and any
+future plugin serving image bytes would silently have had none. And the HTML stripping that cleans scraped
+titles now runs to a fixed point, so a tag cannot survive by being split in half.
+
+### Titles that are not in English can be added again
+
+MangaDex asked only for English chapters, so a series scanlated solely into Spanish or Portuguese reported
+zero chapters and could not be added at all — indistinguishable from a dead series. English is still
+preferred; when there is none, it now falls back through a fixed language order, one language at a time, so
+the chapter list stays coherent rather than mixing languages arbitrarily.
+
+### Node 24, and a dependency sweep
+
+The runtime moves to Node 24 LTS across all three images, CI, and both workspaces at once. Node 26 was
+offered but does not become LTS until late October, and shipping a self-hosted product on a Current release
+is the wrong trade. zod 4, framer-motion 13, sharp 0.35.4, nginx 1.31 and five GitHub Actions majors all
+landed with them.
+
+### Unraid instructions that work
+
+Adding a template repository URL has not worked since Unraid 6.10 removed the field, and the file behind it
+has not been read at all since 7.3 — so the documented steps sent people to a box that no longer exists.
+The template file now gets copied onto the server instead, which is what Unraid actually reads. Found by
+[@hawwwwwk](https://github.com/hawwwwwk).
+
+### Also
+
+`:latest` is now gated on the tag not being a prerelease. It was gated on every image publishing
+successfully, but nothing stopped a release candidate from claiming it.
+
+## v0.20.0 — 2026-09-06
+
+### Moments: the pages you saved, as the pages you saved
+
+The bookmark star in the reader has always written to an API that keeps the series, chapter, page and a note
+for up to five hundred saved pages, and nothing anywhere rendered that list. You could save a page and never
+find it again. `/moments` shows each one as the actual panel, grouped by series, and a note can finally be
+attached to a page or to a series. There are four ways in — the top bar, your profile, the series page and
+the command palette — and deliberately not a seventh item in the bottom nav, which at 390px would leave
+55px per item for German and Russian to clip.
+
+A complete notes API had been sitting unused since the first commit: four routes, a table, an index and a
+foreign key, with no frontend reference anywhere. Giving it a screen is what revealed that two of those
+routes had no visibility check at all — see below.
+
+### The unread badge counts what is unread
+
+Every cover badge in the app showed the total number of chapters in the series and never moved, however much
+you had read. The per-user figure was being computed correctly the whole time and thrown away. Fixed on the
+server rather than in the card, because `booksUnreadCount` is a Komga-shaped field that OPDS clients read
+too. Extracting that logic also closed a gap nobody had noticed: your favourites rail and the contents of a
+collection were returning series with no per-user state at all.
+
+### A reader that pairs, retries and lets you move
+
+A landscape double-page spread — already two pages wide — was pinned beside a portrait page and squeezed to
+half width, and because it filled one slot instead of two, every pair after it in the chapter was off by one.
+Wide pages, and the page before them, now get a slide of their own.
+
+Reader pages were plain images with no error handling, so a single failed request left a broken glyph until
+you reloaded the whole chapter; they now retry once and then offer a button. The chapter list was a dropdown
+marked desktop-only, which meant that on a phone the only way through a series was one chapter at a time —
+it is a sheet at every width now, and it opens where you already are. The page counter opens a thumbnail
+grid of the chapter.
+
+### The Reading Studio, and a Wrapped you can look back through
+
+The profile's Reading tab held four settings cards and no reading. It now has a calendar heatmap, a pace
+line and a weekday breakdown, over 90, 180 or 365 days. `/wrapped` gained a year picker: it had always
+accepted `?year=`, and both callers hardcoded the current one, so every past year was computed on request
+and unreachable.
+
+`/api/wrapped` was bucketing years in the database's timezone and months and weekdays in the server's, while
+`/api/stats` next door used UTC. The two endpoints disagreed with each other, and a chapter finished on New
+Year's Eve counted in the wrong year for every reader west of UTC. Both are UTC now, and the new range
+predicate can use the index where the old one scanned every event an account had ever recorded. "Top genres"
+also meant "the genres of your top five series", each counted once whether you read three chapters of it or
+three hundred; it is twenty series now, weighted by how much you actually read.
+
+### Covers that tint their own card, and how far behind you are
+
+Each card sets one custom property from its cover's dominant colour, and the existing glow and border tokens
+read it, so a card lifts off the page in its own artwork's colour and every surface that does not set it is
+unchanged. The series page can finally tell you a source has chapters you do not, from a number the updater
+has been computing on a schedule for months and showing to nobody. Five rules keep a slow or unreachable
+source from ever reading as alarming, and it is never red.
+
+### Offline reading that works offline
+
+Downloaded chapters opened at page one and announced that you had finished the series after every single
+one, because both the resume page and the chapter list came from calls that cannot succeed offline. Progress
+is now recorded alongside the download, the chapter list falls back to what you actually hold, and an unknown
+list is no longer treated as an ending.
+
+Underneath that, tapping a downloaded chapter with no network did not open the reader at all: the service
+worker had no rule for the per-route payload Next fetches on every navigation, so the request went to the
+network, failed, and the tab ended up showing that payload as raw text. It is cached per route now, and
+navigations no longer all overwrite a single cache entry with whichever page was loaded last. A cold start
+with no network still asks you to sign in — that needs the session, which needs the network.
+
+### Fixed while we were in there
+
+`GET /api/notes` and `POST /api/notes` had no visibility check of any kind: they answered for, and wrote
+against, any series id at all — including one that had been deleted, one in a library your account has no
+grant for, and one above your age cap. The listing also joined any book id stored on a note, so a note could
+borrow the title of a chapter in a series you cannot see. Both are closed, and the note length cap now
+applies on edit as well as on create, where it was previously bypassable by posting a short note and editing
+it.
+
+Saving a bookmark could erase a note written on it, because the star sends no note and the write treated
+"absent" and "cleared" as the same thing.
+
+## v0.19.0 — 2026-09-04
+
+### Releases that build on the machine they run on
+
+Every arm64 image used to be cross-built under emulation on an amd64 machine, and that broke four of the
+last five releases the same way: the native-module builds hung until the timeout or died on an illegal
+instruction, and re-running the failed half was the standing fix. Each architecture is now built on a
+machine of that architecture and the two are merged into one image afterwards. The version tag exists only
+once both halves do, and `latest` moves only once every image has both, so a half-built release cannot
+reach anyone through either.
+
+Every published image now carries a signed statement of which workflow built it from which commit, and a
+software bill of materials. `gh attestation verify oci://ghcr.io/yunauuu/hbook:v0.19.0 --owner AngeloSha`
+checks it.
+
+### Watched dependencies, scanned code
+
+Dependabot watches the two npm trees, the workflow actions and the base images of all three Dockerfiles,
+weekly and grouped, so the eighteen-minute test run happens once per ecosystem per week rather than thirty
+times. CodeQL scans the TypeScript on every push and weekly; findings land in the repository's Security tab.
+
+### Unraid and Umbrel
+
+An Unraid Community Applications template (`deploy/unraid/hbook.xml`) and an Umbrel app
+(`deploy/umbrel/hbook/`), both the one-container layout with the database inside, which is what both
+stores expect and what v0.18.0 made possible. Honesty note: the Umbrel manifest is written to Umbrel's
+published format and tested for shape, but has not yet been run on umbrelOS itself; its store submission is
+a pull request to Umbrel's app repository, and it pins the image by digest, which is filled in once this
+release exists.
+
+## v0.18.0 — 2026-09-04
+
+### One container, database included
+
+Leave `DATABASE_URL` unset and the container runs its own Postgres: initialised on first start in the
+`hbook_data` volume, listening on a unix socket only -- nothing outside the container can reach it and
+there is no password to manage -- and started before the app so the app never races it. That one variable
+is the whole switch. Set it, as every install before this release has, and none of it runs; the container
+behaves exactly as it did.
+
+`deploy/docker-compose.yml`, the file the install instructions curl, is now that one container plus the
+optional solver and extension engine. The layout with a Postgres container beside the app is still shipped
+as `deploy/docker-compose.external-db.yml` and is still supported; `docs/MIGRATING.md` has the move in both
+directions, which is a dump and a restore over the socket. App stores expect a one-container app, and this
+is what makes the Unraid and Umbrel manifests in the next release possible at all.
+
+The container is now a supervisor for exactly two processes and knows which one is the database. On
+`docker stop` the app finishes what it is writing and then Postgres stops cleanly (the compose file gives it
+a 40 s grace period, because Docker's default ten would kill a checkpoint). If Postgres dies underneath the
+app, the app is stopped so the container exits and `restart: unless-stopped` brings both back in order,
+which is the opposite of what an init system's restart-the-service semantics would do to a database. A data
+directory from a different Postgres major is refused up front, with the upgrade path named, rather than
+crash-looping on an error nobody should have to decode. Docker's own healthcheck asks Postgres too when it
+is inside, and the admin overview says which layout this is in one word.
+
+The browser end-to-end suite now drives both layouts on every commit, and the entrypoint itself is driven
+as a script with fake Postgres binaries that record their arguments. That harness caught two mistakes before
+they shipped: the socket directory was never created when the container runs as a non-root `user:`, and the
+app was launched through a shell function in the background -- which puts it in a subshell, so the signal
+sent on `docker stop` would have stopped the subshell and left the app running with its database gone.
+
+## v0.17.0 — 2026-09-04
+
+### The API has a reference now, and it cannot fall behind
+
+Every route the app has -- all 184 of them -- is described in one OpenAPI file, and the app serves it at
+**`/api/docs`**: a browsable reference with "try it out", authenticated with the same token you would use
+from a script. Each operation says what it does, what it takes, what it answers and how it is gated, and the
+security schemes match the three ways in: a session or API token, the image cookie, the OPDS password.
+
+The point is not the file but the test behind it. A hand-written reference goes stale the day someone adds
+a route and forgets it; this one is checked against the routes the server actually registers, in both
+directions, every time the suite runs, and so is the route list in `docs/api.md` -- which turned out to be
+one short, with nothing to say so. The served version number must match the package too, so a release
+cannot ship a reference claiming to be an older API.
+
+## v0.16.0 — 2026-09-03
+
+### An OPDS reader can read page by page, and filter what it sees
+
+Until now an OPDS reader could do one thing with a chapter: download the whole CBZ. Panels, Chunky and
+KOReader all stream pages over OPDS-PSE when a feed offers it -- the reader fetches page one, then page
+two, and a long chapter starts in a second instead of after a download -- so every chapter entry now
+carries the stream link: a page template, the page count, and where *this* reader last stopped, taken from
+its own reading progress. Without a width the original page comes back, from the same cache the web reader
+uses; ask for a width and you get a JPEG no wider than that. A reader that does not know the extension sees
+nothing different and keeps downloading.
+
+The series feeds carry facets: sort, library, genre and status, each with how many of your series it would
+leave, marked when in force, and combinable. Search is now the same feed as the listing, so it pages and
+filters too, where before it stopped at sixty hits with no way past them. Counts come from the same gated
+source as the listing, and a library is only offered as a filter when you can see more than one -- a count
+is a disclosure, and "Library (1)" would have said a hidden one exists.
+
+Every `<updated>` in the catalogue was the moment of the request. A reader that checks for changes saw the
+whole library change on every fetch. A series now carries its newest chapter's time, a chapter its own, and
+a feed the newest of its entries.
+
+### 18+ libraries in a reader, if that reader is the one you want them in
+
+The web app has a reveal button for 18+ libraries; an OPDS reader has no button, so it always got them
+hidden, with no way to ask. The choice now lives on the OPDS credential itself -- **Profile → External
+readers → Include 18+ libraries in this reader** -- off by default, and per credential rather than per
+account, because the phone in a pocket and the e-reader on the shelf are different audiences for the same
+person. Your age limit, if you have one, applies whatever the switch says; that is a permission, and this is
+not.
+
+### Two things found on the way
+
+**The chapter list of a series answered 500, and had since v0.8.0.** The query behind
+`/opds/series/:id` reused the parameter list of the lookup above it, so Postgres was handed a value it could
+never type and refused the whole statement. It shipped that way on 2026-08-23 and has been in every release
+since; nobody on this install had opened a chapter list in a reader, which is the only reason it stayed
+quiet. It works now, and the test drives it over HTTP against a real archive.
+
+**Paging links were escaped twice.** A reader paging past sixty series was sent `&amp;amp;page=1`, decoded
+that to a query key named `amp;page`, and started again from page one. Links are now built raw and escaped
+exactly once, where they are written.
+
+## v0.15.1 — 2026-09-03
+
+### A source behind Cloudflare gets the time its challenge takes
+
+Every wait in the app was one number regardless of how a source answers. A plain site answers in a second;
+a site behind Cloudflare answers only after the solver has driven a real browser through a challenge, which
+for the source that carries most of this library takes about a minute. The nightly sweep gave a listing 20
+seconds and lost 15 of that source's series to it, every sweep. The fill scan gave a search 45 seconds and
+lost the same source at exactly the moment it mattered. A minute-long challenge against a 20-second wait is a
+structural loss, not a flaky site.
+
+Sources that need the solver now get a budget that fits it (`SOLVER_BUDGET_MS`, 90 seconds) for listings,
+searches and the add path; everything else keeps the short waits it had.
+
+### Chapters that keep failing identically are left alone
+
+Over three sweeps the same seventeen chapters failed three times each with the same page counts (94 of 95,
+151 of 176), nothing that had failed twice ever landed, and together they cost 26 of every 150 download
+attempts, every sweep, indefinitely. After three failed tries (`CHAPTER_RETRY_CAP`) the sweep now leaves a
+chapter alone and says how many it skipped. The health page shows them with their counts, "find missing
+chapters" on the series still fetches them on purpose, and the moment one lands its record clears itself.
+
+### One series got its source back
+
+*The Avenger's Reincarnation Eldmia Ega* had been frozen since its extension was removed on 20 August. It is
+now pointed at Mangakakalot, which lists it under "Eldmia Ega, the Reincarnated Avenger", and picked up two
+of its four newer chapters straight away.
+
+## v0.15.0 — 2026-09-03
+
+### Extensions now actually update themselves
+
+hbook has had an automatic extension updater since v0.11. On the install it was written for it had, as far
+as can be told, never updated a single extension.
+
+The reason is one missing call. Suwayomi does not poll its repositories; it recalculates "an update is
+available" only when it is told to re-read them. hbook asked for that in exactly three places, all of them
+buttons in Admin. The nightly job that installed updates was not one of them. So every night it read a
+catalogue whose freshness depended on somebody having pressed **Refresh**, found nothing marked as updatable,
+and reported a clean run. Fifteen extensions installed, zero flagged, while the repository behind them
+published roughly every fifteen hours.
+
+Extension updates are now their own scheduled task, running every 6 hours, and the first thing it does is
+re-read the repositories. It appears in **Admin → Server → Tasks** with its last run, its result and a **Run
+now** button, and it can be switched off in Settings, in which case it still tells you what is waiting.
+
+**Update all** had the same bug and is fixed the same way: it refreshes before it updates, so it can no
+longer tell you everything is up to date by consulting a catalogue from three weeks ago.
+
+While fixing that, four related things that were invisible:
+
+- **A repository that cannot be read is no longer silence.** An unreachable repository and a genuinely
+  up-to-date library produced identical output. A failed refresh is now a named outcome, shown in the panel
+  and pushed once — not once per check, because an engine that is down stays down.
+- **Your repository list survives the engine's volume.** It was stored only inside the extension engine, in
+  the volume people delete when it misbehaves, and it was not in the nightly backup. hbook now keeps its
+  own copy, adopts whatever the engine has on first run, and puts the list back — along with the extensions
+  you had installed — if that volume is wiped. It cannot restore which series came from which extension;
+  nothing outside the engine ever knew those ids.
+- **Abandoned extensions are named.** An installed extension no repository offers any more keeps working and
+  will never update again. It is now reported. It is never uninstalled: that would orphan every series routed
+  through it.
+- **Updates wait for the chapter updater.** Swapping an extension out while a library sweep is using it
+  breaks that sweep's downloads. The check now defers, and says that it did.
+
+An extension you remove in the engine's own interface stays removed. The check reports it and leaves it alone.
+
+## v0.14.4 — 2026-09-03
+
+### The extension engine can no longer download into its own volume, and says when it is down
+
+Three compose files describe the same optional extension engine, and they had drifted. The development file
+set `AUTO_DOWNLOAD_CHAPTERS: "false"` and explained in a comment that the engine "must never write into" the
+library. `deploy/docker-compose.yml` -- the file the README tells you to download -- set only the timezone.
+
+So an install done the documented way ran an engine that would download chapters into its own Docker volume
+the first time a series from an extension source was followed: a second copy of the library that nothing
+manages, prunes, backs up, or shows you. Both deploy files now carry the setting, and a test compares all
+three so they cannot drift again.
+
+The engine also had no healthcheck in any file, so a wedged JVM was indistinguishable from a healthy one in
+`docker ps` and the only symptom was the app timing out. It has one now. It is written with bash rather than
+curl because the image ships no curl, wget or nc, and it treats 401 as alive -- an engine with authentication
+switched on is up, not broken.
+
+Deliberately no `depends_on`: the service is optional and the compose file tells you how to remove it, and a
+`depends_on` pointing at a removed service makes `docker compose up` fail outright.
+
+Also:
+
+- `.env.example` documents the `SUWAYOMI_*` variables. The extensions guide told you to edit `.env`, and the
+  example file it referred to had never mentioned them.
+- The comment above the extensions API said hbook "never fetches or installs extension APKs itself" and
+  that installing was a link out to the engine's own interface. That stopped being true the day the catalogue
+  was written, ninety lines below it.
+
+## v0.14.3 — 2026-09-03
+
+### "Find missing chapters" stops calling sources broken for waiting their turn
+
+With many sources installed, the scan asked all of them at once. The Cloudflare solver runs four at a time,
+so most of the queue spent its entire 45 second budget waiting for a slot and was then reported as "could
+not be reached". In one real scan, 16 of 21 candidates were sources that never got a turn.
+
+Three changes:
+
+- A search's clock starts when it starts, not while it waits. The scan now holds a solver slot before the
+  timer runs, so a source is only "unreachable" if it actually failed to answer.
+- Sources are asked in a sensible order: the series' own source, then sources in its language, then sources
+  that publish in several languages, and only then sources pinned to another language.
+- The scan stops asking once enough sources have the title (three, `SCAN_ENOUGH`). Sources it did not get to
+  are listed as "not asked", which is what they are, rather than as broken or as not having it.
+
+Nothing about which sources are installed or enabled changed; only how the scan uses them.
+
+## v0.14.2 — 2026-09-03
+
+### Small things that were quietly wrong
+
+Each of these was known and written down a week ago. None was the biggest thing at the time, and all of
+them are the kind of defect that produces no error and no log line.
+
+- **A stale tab could rewind your place.** The server refuses a progress write older than the one it has,
+  but only when the write carries a timestamp. The offline queue always sent one; the live path never did,
+  so every live ping was accepted unconditionally, and a desktop tab left open on chapter 3 could still
+  rewind the phone that had read to chapter 9. The live write now carries its clock.
+- **Two definitions of "gap".** The health page and "find missing chapters" each computed missing chapters
+  their own way, and on a series that starts at chapter 0 and jumps to 93 they disagreed: health said no
+  gaps, the dialog offered to fetch 92. Both green in their own tests. There is one definition now, the
+  dialog's, and the health page uses it.
+- **Chapters were written less carefully than the thumbnail cache.** A chapter file was written straight
+  onto its final name, and the "already downloaded" check is a bare look for that name, so a container
+  restarted mid-download could leave a half-chapter that was then skipped forever. The cache already wrote
+  to a temporary name and renamed on success; the library now does too, and abandoned temporaries are
+  swept on boot. The nightly database dump gets the same treatment, so a backup interrupted halfway does not
+  masquerade as a completed one.
+- **The safe backend is now the default.** `LIBRARY_BACKEND` had to be exactly `owned` for the permission
+  model to apply; unset or misspelled, the code fell back to the legacy mode whose model is "the other
+  server enforces it", which on this backend means no restriction at all, on the path that serves page
+  images and OPDS downloads. Every compose file sets the variable, which is exactly why nobody noticed. Only
+  an explicit `komga` selects the legacy mode now.
+- **Deploys no longer starve the nightly sweep.** The first sweep after boot waited a full interval, so
+  every deploy pushed it out by six hours; on a day with three releases the library did not update at all,
+  measured. The time of the last completed sweep is now kept, and a restart schedules whatever remains of
+  the interval, with a ten-minute floor.
+- **Stopping the server stops the sweep at a chapter boundary.** There was no signal handler at all: a
+  restart mid-sweep killed it mid-chapter, the job card kept polling a run that no longer existed, and
+  nothing recorded that it had been interrupted rather than finished. The sweep now ends between chapters
+  on SIGTERM and reports `stopped: shutdown`.
+
+## v0.14.1 — 2026-09-03
+
+### The fill dialog stops recommending sources that have never worked
+
+"Find missing chapters" checked one thing before offering a source: whether its cooldown had lapsed. Not its
+record. So a source could be offered as a clean option while sitting in a nineteen-deep failure streak, or
+having never once completed a download here. WeebCentral had refused every image byte since June, and
+because listing chapters still worked it rendered as a confident "Fetch 12 chapters" button.
+
+Hiding those sources would have been the obvious fix, and it would have been wrong: a streak is cleared only
+by a successful download, which is the very thing hiding it prevents. So the dialog now shows the record
+under the button instead: "Recently unreliable · refused us 3 times in a row · never completed a download
+here". The decision stays with the person, with the facts in front of them.
+
+### Series that can never update are now said out loud
+
+When an extension is removed, the series that came from it keep reading fine and quietly stop updating
+forever. The nightly sweep counted them as "unrouted" and threw the count away; their health row, if any,
+said fine because nothing had ever been asked. One series had been frozen that way for twelve days.
+
+The health page now lists them, with the fix: re-add the extension, or point the series at a source that
+carries it.
+
+### Removing an extension no longer leaves its health rows behind
+
+Uninstalling deleted the sources but not their health rows, which had accumulated a dozen orphans, three of
+them recording 404s from the evening their extensions were pulled. They are now removed with the extension,
+except for a source that still has series, whose row is the only record those series ever had a home.
+
+## v0.14.0 — 2026-09-02
+
+### The nightly sweep stopped sabotaging itself
+
+Last night's sweep reported `ok=61, blocked=164`. One chapter came up 25 images short, and those 25 had
+arrived as HTTP 200 with nothing in them, which turned out to be the one kind of page failure that set no
+status at all. The blame code fell through to its harshest default, a 30-minute cooldown, on the source
+that carries 192 of your 226 series. Every later series on that source was skipped for the night. Nothing
+was logged.
+
+Four things changed, each measured before it was written:
+
+- **An empty body is not a refusal.** A CDN answering 200 with nothing behind it now reads as "not serving",
+  the 5-minute tier, and only when more than half the chapter is missing. Half the chapter arriving as real
+  images proves the CDN is up and the holes are per-image.
+- **The sweep has a budget**, 150 attempts by default (`UPDATER_SWEEP_MAX`). That fits inside the six-hour
+  interval and drains the backlog the moved-domain fix uncovered in about three weeks, instead of hitting it
+  as hard as possible every night. Chapters already on disk cost nothing against it.
+- **Sources take turns.** One queue per source, visited round-robin, least-recently-checked first. A source
+  that goes into a cooldown parks its own queue and nobody else's, and whatever a sweep leaves unvisited goes
+  first next time instead of never. Under the old order the 54 series furthest behind sorted last.
+- **The disk has a floor**, 10 GiB by default (`MIN_FREE_GB`). Nothing checked free space before; the first
+  sign would have been a half-written chapter.
+
+The sweep's log line now says how many series it visited and whether the budget or the disk stopped it.
+
+### Failures are written down
+
+A chapter that would not download was a bumped counter. "12 chapters could not be saved" was the whole
+record: which series, which chapter, which source and why existed nowhere, and the next sweep tried the
+same ones again. Every failure now logs one line naming all four, and is kept per chapter with how many
+times it has been tried. The health page lists them by source, and the entry disappears the moment the
+chapter lands.
+
+The admin overview also says how far behind the library is, from what each source said the last time it
+was asked. Until now that number could not be known without asking every source again.
+
+## v0.13.2 — 2026-09-02
+
+### Sidebar covers were being counted as chapter pages
+
+Chapter pages are read out of the reader block on the page. When that block did not match, the code fell
+back to scanning the *whole* document, and these sites carry a sidebar of other series. Measured on one
+chapter: 96 "pages", the last of which was the cover of a completely unrelated title.
+
+That is not cosmetic. The number of page URLs is what a chapter is measured against, so junk entries make a
+chapter that fetched every real page still look short. A short chapter is refused, and a big enough
+shortfall is reported as the *source* failing. A parsing slip was being charged to the site, and then the
+site was put in a cooldown for it.
+
+Covers are now never counted, and a chapter's pages are taken from the one directory they all share, so a
+handful of sidebar images cannot survive even when the block match fails.
+
+### We were crashing the Cloudflare solver ourselves
+
+Looking for missing chapters searches every source you have. It did that all at once, and the solver drives
+real browsers, so a dozen simultaneous challenges made it log "Task queue depth is 4" and then
+"Error starting Chrome". A crashed solve arrives looking exactly like the site refusing us, so the fan-out
+was manufacturing source failures out of nothing.
+
+Solves are now capped at four at a time (`SOLVER_CONCURRENCY`).
+
+### A source that could not be reached said nothing at all
+
+If a search threw or timed out, the source was dropped from the results silently, which looks identical to
+"that source does not have this title". Aqua Manga holds 192 of the 224 series here, and it was being
+dropped from *every* scan because its Cloudflare challenge takes about 63 seconds against a 20 second
+budget. Nothing anywhere said so.
+
+Sources that could not be asked are now listed with the reason, and the budget was raised to 45 seconds so
+a source waiting its turn behind the new solver cap is not counted as broken.
+
+## v0.13.1 — 2026-09-02
+
+### Downloads stopped going too fast and then blaming the site
+
+"Act Like a Boss Monster, Mr. Swallow!" would not fill its missing chapters, 34 to 92, from any source. Six
+attempts over three days put zero chapters into that gap. The sites were not the problem. We were.
+
+A chapter here is 110 to 130 images. The pause that existed was between *chapters*, not between images, so
+each chapter went out as a burst of a hundred-odd requests back to back, two chapters at a time. Measured at
+the moment it broke: about two images a second, sustained for minutes. Both sites eventually said "slow
+down" (HTTP 429), which is a fair thing for them to say. We were not banned: at a third of a request per
+second the same hosts served us normally minutes later.
+
+What happened next is the part that was mine. A 429 arrives with the remedy attached, namely how long to
+wait. That instruction was only honoured if at least one image had already arrived. When the very first
+image was refused, the whole wait-and-retry step was skipped, so the chapter was written off as
+"0 of 115 pages" 1.28 seconds after a single request, the source was put in a cooldown, and because a
+cooldown ends the entire run, the other 58 chapters were abandoned untried. Every attempt died inside
+chapter 34.
+
+The nightly sweep then compounded it. It was the one place that did not stop when a source refused, so it
+asked for four more chapters that were never going to arrive, and each refusal lengthened the cooldown:
+15 minutes, then 30, 45, 60, 75. A single burst locked the source for over an hour, which is why trying
+again by hand did not work either.
+
+Three changes:
+
+- A quarter of a second between images. A 120-page chapter takes about 30 seconds longer. A cooldown took
+  75 minutes.
+- A 429 is now waited out and the chapter resumes where it stopped, up to three times, going slower after
+  each one. A source still refusing after that is genuinely refusing, and is treated exactly as before.
+- The nightly sweep stops at the first refusal, which is what both other callers already did.
+
+One more thing worth knowing: trying "a different source" was less different than it looked. Mangakakalot
+and Natomanga run the same engine here and serve their images from the same CDN, so five of the six
+attempts were effectively the same site.
+
+### The Cloudflare cookie that was never kept
+
+Before fetching a chapter's images we ask the solver for a clearance cookie by loading the image host's
+front page. An image CDN has no front page: it answers 403, the solver reports that as a block, and the
+cookie was thrown away with it. Nothing was ever cached, so this repeated for every single chapter, and
+every image was then fetched with no cookie at all, on exactly the hosts that were refusing us.
+
+It now falls back to the image address we are about to fetch, which does exist and so can be solved, and
+remembers a host that cannot be solved rather than asking again on every chapter.
+
+## v0.13.0 — 2026-09-01
+
+### Series kept asking a site that had moved
+
+"Mr Devourer, Please Act Like a Final Boss" would not download anything new, and nor would most of the
+library. Aqua Manga moved from aquareader.net to aquareader.org, the address was updated here, which is the
+right thing to do, and it changed nothing. A series stores the full address it was added with, one per
+series, so the 176 Aqua series added before the move went on asking the old host.
+
+What hid it is the shape of the failure. The old host still answers. It just answers with a "page not found"
+page rather than an error, so the fetch succeeded, the chapter list came back empty, and an empty chapter
+list looks exactly like a series with nothing new. Every surface reported healthy, including the health
+checks. All 176 series on the old address had gone a fortnight with no new file; of the 16 already on the new
+one, 12 had not.
+
+Now a stored address pointing at a host the site no longer uses is pointed at the current one as it is read.
+Changing a site's address in settings is you saying it moved, and that now applies to series already in the
+library rather than only to new ones. The series that was listing 0 chapters lists 142.
+
+### Extensions say when they are out of date, and say when they cannot update
+
+A failed extension update was invisible here. The nightly check tried, the attempt threw, and the error was
+discarded on the spot: nothing logged, nothing shown, and no difference between "this failed" and "there was
+nothing to do". The only trace was a stack trace in the extension server's own log, which is not somewhere
+anyone looks.
+
+- The extensions panel now says how many installed extensions are out of date, with an Update all button
+  beside it. The per-extension Update button is unchanged.
+- A failed update is reported with a reason in plain words. "HTTP error 404" becomes "the repository no
+  longer offers that version to download", which is the repository's problem rather than yours.
+- Admins are notified when an update fails, and both outcomes are written to the audit log.
+
+Update all runs the same code the nightly check runs, rather than a second copy of it that could drift.
+
+## v0.12.2 — 2026-09-01
+
+### Asking a site to slow down, instead of ignoring it
+
+v0.12.1 stopped a lost page from blaming the whole site, and it worked. Retrying the fill straight afterwards
+got further and then stopped again, this time for a real reason: Mangakakalot asked us to slow down and we
+kept asking anyway.
+
+A chapter here is around a hundred images, fetched one after another with no pause between them. The pause
+that exists is between *chapters*, not between pages. So three chapters in a row is a few hundred rapid
+requests, and the site starts refusing. What made it worse is that the refusal changed nothing: the loop
+carried on and asked for the remaining ninety-odd pages too, collected ninety-odd more refusals, and turned
+a pause into a chapter that had lost most of itself.
+
+Now, when a site says slow down, we stop asking, wait for as long as it asked for, and pick up the pages we
+missed. In the ordinary case the chapter simply completes a few seconds later instead of failing.
+
+If a site is still refusing after that wait, the run stops and says so, which is the same as before and is
+the right thing: at that point it is not a blip, it is a no.
+
+## v0.12.1 — 2026-09-01
+
+### One missing page stopped blaming the whole site
+
+You pressed "find missing chapters" and it fetched 3 of 92. That was my fault, not the sites'.
+
+A chapter that comes back short is refused, because writing an incomplete one leaves a file that is then
+skipped forever. That part was right. What was wrong is what happened next: it also marked the whole source
+as failing and put it in a cooldown, no matter how small the shortfall. Two of your sources were sitting in
+one over **98 of 101 pages** and **109 of 110**. Since every download run stops when a source starts
+refusing, your 92-chapter fill stopped at the first chapter that lost a single image.
+
+It was costing more than that one button. Across the last four nightly updates the library gained 26 chapters
+and lost 40, with seven or eight series skipped each night for sources that were not really broken.
+
+Three changes:
+
+* **Pages that fail are asked for a second time.** Almost every one of these is a single image on a busy
+  server that answers fine a moment later. One extra request, instead of losing the chapter and the day.
+* **A shortfall is only the site's fault when it is a real one.** Losing a page or two out of a hundred is
+  now recorded against that chapter and nothing else. Losing a fifth of a chapter, or being told no outright,
+  still counts against the source exactly as before.
+* **One bad chapter no longer ends the whole run.** It is skipped, counted and reported, and the rest of the
+  run carries on.
+
+The two sources have been let out of their cooldown, so the chapters you were waiting for can arrive.
+
+## v0.12.0 — 2026-08-31
+
+### Find missing chapters
+
+A new button on every series page. It asks every source you have whether it carries this series, works out
+which of your missing chapters it could supply, shows you what it found, and fetches only after you say yes.
+
+v0.11.3 fixed the usual reason a series is short, and for most of them the nightly update now repairs itself.
+This is for the rest: a series whose own source genuinely never had the early chapters, where the only way to
+complete it is to take them from somewhere else.
+
+**It asks before it fetches, and that is the whole point.** A chapter is stored under its number, so a chapter
+taken from the wrong series lands exactly where the right one belongs, looks correct in every list, and is
+only discovered by opening it. So the dialog shows you which source, what the series is called *there* (often
+something quite different: yours is listed elsewhere as "Mr Devourer, Please Act Like a Final Boss"), how many
+of your existing chapters line up, and how many it would add. Nothing is downloaded until you press a button
+that repeats all of that back to you.
+
+Sources it checked and rejected are listed too, with the reason, because "this one has it but numbers its
+chapters differently" is worth seeing.
+
+It will not offer:
+
+* a source whose numbering does not line up with yours, which is what catches a series that restarts counting
+  each season, and most cases of the wrong series entirely
+* chapters before the beginning or after the end of what you have, since those are not gaps, they are simply
+  where you have got to
+* a hole where the two sides do not agree on the chapters either side of it
+* anything at all on a series with fewer than three chapters, because there is not enough there to tell one
+  series from another
+
+If a source has it under a name too different to find, there is a box to search under that name instead.
+
+Progress appears in the same downloads panel as everything else, and it keeps going if you close the dialog.
+
+## v0.11.3 — 2026-08-31
+
+### Series from Mangakakalot and Natomanga were arriving two-thirds empty
+
+Someone opened a series and found chapter 93 was the first one in it. It was not that series: it was every
+series from those two sites.
+
+Both run on the same reader engine here, and the way it read a chapter list was to fetch the series page and
+take the links out of it. That page only ever shows the newest fifty chapters, and it says so nowhere. There
+is no "next page" to click, no "load more", no "showing 50 of 145". It is simply a list that stops. So every
+series added from those two sites arrived with only its most recent fifty chapters, and the nightly update
+could never repair it, because it kept asking the same page and kept getting the same fifty.
+
+On this library that was **7 of the 10 series** from those sources, about **528 chapters** missing. The worst
+was down to 8 chapters out of 76.
+
+The page does name where the rest live: there is a proper chapter-list feed behind it, which the site's own
+front end uses. The engine now reads that instead, following it to the end rather than stopping at the first
+fifty, and falls back to reading the page the old way for the older sites that do not offer it.
+
+Two of the affected series, before and after:
+
+```
+Act Like a Boss Monster, Mr. Swallow!    51  ->  145 chapters
+Return of the War God                    57  ->  176 chapters
+```
+
+The missing chapters will fill in over the coming nights, oldest first.
+
+**A second thing came free.** That feed also carries each chapter's real release date, which these two sites
+never gave us any other way. New chapters from them will be properly dated instead of undated, so "released
+3 months ago" on the series page starts being true for them.
+
+## v0.11.2 — 2026-08-31
+
+### Fixes "Loading chapter..." never finishing
+
+A regression introduced by v0.11.1 the same day, and the reason to be sorry rather than pleased about it.
+
+v0.11.1 moved the offline store to a new version so that downloaded chapters could belong to an account.
+A browser will not change a database's version while anything else still has it open, and the service worker
+had it open: it opened the store to send queued reading and never closed it again, on any path out. So the
+upgrade waited for a worker that was never going to let go, the page waited for the upgrade, and the reader
+waited for the page. Because the reader checks for a downloaded copy before it asks the server, that wait
+happened before anything could be drawn, and every chapter showed "Loading chapter..." for good.
+
+Three things changed, because any one of them alone leaves the door open:
+
+* The service worker now closes the store on every path out, and steps aside immediately if a page needs to
+  change the version while it is working.
+* The page no longer waits indefinitely for a store it cannot open. If something is holding the old version,
+  it gives up at once and reads online instead, and tries again next time rather than giving up for good.
+* A store that cannot be opened now means "nothing is downloaded" rather than an error, so a cache that is
+  unavailable can never stop you reading.
+
+If you are stuck right now, closing every tab of the app and opening it again clears it, because that
+releases the connection that is holding the upgrade.
+
+This is squarely the same failure the previous two releases were spent on: something that could not answer,
+where nothing was built to notice. The v0.11.0 work gave the reader a failure state, and a failure state does
+not help when the answer never arrives at all. There is now a test that squats on the old version and asserts
+the reader still gets an answer; with the shipped code it hangs until the runner is killed.
+
+## v0.11.1 — 2026-08-30
+
+### Two ways one account could reach another account's things
+
+Both found by auditing the running instance rather than the code, and both are the same shape as the
+sign-out fix in v0.11.0: something that is correct for one person and wrong the moment a device is shared.
+
+**Downloaded chapters had no owner.** Offline chapters were stored under the chapter's id alone, with no
+record of who downloaded them, and signing out did not remove them. The reader checks that store before it
+asks the server, which means for anything downloaded the store IS the permission check. So on a shared
+tablet or PC, one person could download chapters, sign out, and the next person to sign in could open them
+by opening those chapters, with the age limit and the library permissions never consulted.
+
+Everything downloaded is now filed under the account that downloaded it, and is simply not there for anyone
+else. Signing back in brings your own downloads back, so this is scoping rather than deletion.
+
+The same applied more quietly to reading that had not yet reached the server: a queue left behind by one
+person would have been filed against whoever signed in next, taking their streak and leaderboard position
+with it. Queued reading now waits for the person who did the reading.
+
+**One thing to expect on this upgrade:** chapters downloaded before today are removed, because nothing about
+them records who saved them and there is no honest way to assign an owner after the fact. They can be
+downloaded again. Reading progress is untouched, including anything still queued.
+
+**An internal detail was readable by any signed-in account.** One source-status route answered with the raw
+health record, including the last error text, which names internal addresses and ports. The public route
+fifteen lines above it goes out of its way not to publish that, and says so in a comment. The leaking one
+was a duplicate of a properly restricted admin route that the admin page has always used instead, and
+nothing else ever called it, so it is gone rather than merely restricted.
+
+## v0.11.0 — 2026-08-30
+
+### Twelve things that were failing without telling you
+
+This release came out of auditing a running instance rather than reading the code, and everything in it has
+the same shape: the app said nothing was wrong, and something was being lost anyway. They are listed roughly
+by what they cost.
+
+**Getting signed out at random.** One browser is one cookie jar, but it runs several refresh timers over it:
+every open tab has its own, and so does the offline worker. Two tabs left open collided every twelve minutes,
+and the one that lost the race deleted the login the winner had just written. Both tabs, and the whole
+device, were signed out. On a family server that means someone locked out until an adult resets their
+password. A login that was rotated a moment ago is now recognised for what it is. Signing out, or being
+signed out by an admin, still takes effect instantly.
+
+**Reading that vanished after a trip.** Chapters finished offline queue up and send when you reconnect. That
+queue counted every failure the same way and deleted the entry on the fifth attempt, so a bad connection was
+treated exactly like a corrupted record. Finish twenty chapters on a plane, land somewhere with a flaky
+captive portal, and the lot was silently discarded: progress, streaks and Continue Reading all rewound. Only a
+genuine, permanent rejection can discard something you read now.
+
+**One person's library showing up for the next.** On a shared tablet, the stored copies of pages like your
+home screen, history and stats were never cleared when you signed out, and one network hiccup was enough for
+the next person to be shown them, including titles their age limit is meant to hide. Signing in or out now
+clears them. The same store also had no size limit and grew forever, which on an iPhone eventually pushes out
+your downloaded chapters.
+
+**Restrictions that lifted themselves.** If the database stumbled while checking which libraries an account
+may see, the answer came back as "all of them, with no age limit". That check now fails safe.
+
+**Key art you should not have been able to see.** Every image route checks whether you may see the series.
+One did not.
+
+**Chapters filed under the wrong series.** Finishing a chapter let the app tell the server which series it
+belonged to. After merging two duplicate entries, a phone that had been offline could file its reading under
+the version that no longer exists, where it counted for nothing and quietly disappeared from Continue
+Reading. The server works this out for itself now.
+
+**A bookmark that jumped backwards.** A queued page from six hours ago could overwrite where you had since
+read to on another device. Events now carry the time they happened, and the most recent one wins. Turning back
+a page still works exactly as before.
+
+**Nightly updates that could stop entirely.** Six different ways for the update sweep to fail all reported
+"+0 chapters", which is also what a perfectly quiet night reports. Every source could have been broken for
+weeks and the admin page would have looked fine. It now says which sources did not answer, and one hung site
+no longer holds up the whole sweep.
+
+**A black screen in the reader.** A damaged file, a library that is not mounted, or a chapter someone else
+deleted all produced either a black screen with no explanation or, part-way through a series, the "You
+finished" card. There is now a message saying which it is, and a Try again button.
+
+**Deleting a member left no trace.** It is the most destructive thing the admin page can do, removing
+someone's entire reading history, and it was the only action that recorded nothing. It now records what was
+removed and who removed it.
+
+**Backups that reported clean when they were not.** The backup already knew when it had failed to capture the
+config folder, and knew when it could not measure itself, and then threw both facts away before anyone could
+see them.
+
+**Two things quietly filling the disk.** Half-written image files that the cleanup could not see, so it
+reported the cache under its limit while the folder was over it; and failed offline downloads leaving page
+data behind that nothing could reach, including "clear all downloads".
+
+Nine new test files came with these, and every fix was checked by putting the original bug back and confirming
+the test noticed.
+
+## v0.10.2 — 2026-08-30
+
+### The Add button stops being where you wait
+
+v0.10.1 moved the downloading out from behind the button, and measuring the result showed the button still
+took twenty-three seconds to answer. The reason turned out to be worse than slowness.
+
+Opening the add window asks the site for the series and its chapter list, which is how it can tell you "120
+chapters". Pressing Add then asked the site for exactly the same two things all over again, a few seconds
+later, and asked for them one after the other rather than together. On a site behind a bot check, each of
+those questions costs a real browser challenge, so opening the window and pressing Add paid for four of them
+to learn two facts.
+
+Both now share one answer, fetched once and remembered for a minute and a half. In the ordinary case —
+open, glance, press Add — the button does no network work at all before replying.
+
+The window's own opening pause is unchanged, because that part is the site's own cost rather than ours.
+
+## v0.10.1 — 2026-08-29
+
+### Adding a series tells you straight away
+
+Pressing Add left the button saying "Working…" for up to a minute, and the only way to learn that it had in
+fact started was to close the dialog and find it further down the Discover page. On one install that wait
+was measured at fifteen, forty-eight and fifty-nine seconds.
+
+The reason is that the request downloaded the whole first chapter before it answered. It no longer does.
+Everything that decides what to tell you still happens first, so you are still told immediately if the title
+is already in your library, if you have it from another source, or if there is nothing to download. Only the
+fetching happens afterwards, which is what the app was already doing for every chapter after the first.
+
+**Downloads now follow you.** A small indicator appears wherever you are while anything is downloading,
+showing what it is and how far along, and it opens to a list. Previously progress lived in one strip on
+Discover, below the hero and hidden behind the add window itself, so navigating away meant losing sight of
+it entirely.
+
+**A download that fails now says why.** It names the source and how far it got, instead of the same single
+sentence for every possible cause, and it stays until you dismiss it. Finished downloads now clear
+themselves after a few minutes; before this they were never removed at all and simply accumulated.
+
+Two smaller things this fixes. An add that took longer than two minutes used to report "Add failed" while
+succeeding perfectly well in the background. And pressing Escape, or clicking outside the window, while an
+add was in flight closed it and left you with no confirmation at all.
+
+## v0.10.0 — 2026-08-28
+
+### Discover shows you where things come from, and lets you choose
+
+The row of source names above the wall was information and nothing else: which sources were asked, and how
+each one answered. It is now the place you steer from.
+
+**Sources show their own icons.** Extension sources have always sent one; the app fetched it and threw it
+away. Sites you added yourself now show their own favicon, and anything without a usable icon gets a
+lettered tile in a colour of its own rather than a blank square.
+
+**Tap a source to see only its titles**, and tap again to go back to all of them. This is instant and
+changes nothing about what is loading: every source carries on filling in behind the filter, so there is no
+waiting and nothing to lose by trying it.
+
+**Newest or Popular**, for the whole wall. This is each source's *own* ranking rather than anything this
+server works out — most sites already publish a popularity listing beside their recently-updated one, and
+extensions have always offered both. Sources that cannot offer one step aside while Popular is chosen.
+Switching between the two is instant the second time, because neither view discards the other's work.
+
+## v0.9.12 — 2026-08-28
+
+### The rest of the missing covers
+
+v0.9.11 fixed two ways a listing could go wrong and left a third in place. Sites of one family were still
+returning a wall where half the entries had no artwork.
+
+A listing page carries more than its listing: alongside it sit "popular" and "recommended" panels, and those
+links look enough like results to be mistaken for them. They also appear near the top of the page, so they
+were taking places from real entries — and since those panels show no thumbnails, the places they took came
+out blank. The listing itself is now read on its own, and the panels beside it are left alone. Sites that
+lay their pages out differently are unaffected.
+
+Measured against a live listing: twenty-four titles, twenty-four covers, where before thirteen of the
+twenty-four had none.
+
+## v0.9.11 — 2026-08-28
+
+### Covers come back, and chapters stop pretending to be series
+
+Two separate faults, both visible on the Discover wall as cards that were wrong rather than missing, so
+nothing anywhere reported a problem.
+
+**Half of some walls were not series at all.** A listing page shows each title alongside its newest
+chapters, and both live at similar addresses. The reader was treating those chapter links as if they were
+series, so a wall of twenty-four could be twelve real titles and twelve entries called "Chapter 2" or
+"Chapter 156" — each with no cover, because a chapter page has none to show. This arrived in v0.9.8 and is
+now gone: only a link to a series itself is accepted.
+
+**Some sites returned every title with no artwork.** Sites built on the same engine do not agree on how they
+mark up a thumbnail, and only one of the conventions was recognised. A site using the other returned a full
+wall of blank cards. Both are now read, along with a third arrangement some themes use.
+
+Fixing that surfaced a third fault underneath. Where a site provides a placeholder image and the real cover
+separately — which is how a page avoids loading every picture at once — which of the two was picked came
+down to the order the site happened to write them in, rather than to any preference. Sometimes the
+placeholder won, and a card showed a grey square. The real cover is now chosen deliberately.
+
+Also worth stating, since it looks like a bug and is not: a listing showing fifteen cards for six series is
+correct. A title appears once for each of its recent chapters, and collapsing those into one result is the
+right answer.
+
+## v0.9.10 — 2026-08-28
+
+### A slow source is no longer treated as a broken one
+
+Discover gives each source a few seconds to return its newest page. When that ran out, the source was
+recorded as having failed, and a failing source is put aside for five to thirty minutes — during which it is
+not asked at all. So a source that was merely slower than the time allowed was punished by having taken away
+from it the only thing that could have shown it working, and the punishment grew each time.
+
+That is not a hypothetical. On the install this was found on, the largest source — holding 190 of 215 series
+— answered perfectly well in about eleven and a half seconds, against a budget of eight. It disappeared from
+Discover for a day while every health check, which allows itself far longer, kept correctly reporting it
+healthy. The two were never measuring the same thing.
+
+Running out of our own patience is now recorded as its own fact. It cannot escalate, and it cannot make a
+slow source look like a blocked one. A single slow answer costs the source nothing at all. Only once it is
+clearly a pattern does the source get a short, fixed pause — enough that browsing does not spend the whole
+budget on the same source over and over, never enough to hide it — and it is ranked below sources that
+answer in time rather than removed. A page that arrives in time clears the record.
+
+A source in that state now says so plainly, and names the setting to change and the number it keeps
+exceeding, instead of reporting an unexplained failure.
+
+Sites that genuinely refuse us are unaffected: those still back off hard, because asking a refusing site
+again soon costs something and gains nothing.
+
+## v0.9.9 — 2026-08-28
+
+### The source check no longer cries wolf
+
+The first real run of the daily check reported the healthiest source on a live install as blocked. It was
+working: 190 series, answering normally.
+
+The check asks each site directly, on purpose, without the Cloudflare solver in the way, because that is
+what separates "the site is down" from "the solver is broken". But a site behind Cloudflare answers a
+request like that with a refusal every single time. That is the challenge page, not a verdict, and it was
+being read as one.
+
+Two corrections. A source that just demonstrated it can search, list chapters and serve pages is now
+reported as working, whatever a bare request to its homepage made of it. And a refusal to such a request is
+no longer treated as evidence for sources that reach their site through the solver, since for those it is
+simply the expected answer.
+
+The check also gets longer to work with. A source behind the solver makes several requests in sequence, each
+taking a few seconds, and the old budget was tight enough that a healthy source could run out of time
+mid-check, which then became the wrong conclusion rather than no conclusion.
+
+## v0.9.8 — 2026-08-27
+
+### Sources are now checked for you
+
+A source that dies quietly stays dead. It answers with an empty page, throws no error, records nothing, and
+goes on reporting itself healthy. One install ran six weeks that way: its main site, holding 189 of 215
+series, had its domain quietly repurposed into an unrelated website, and the only symptom was that some dots
+on Discover looked wrong.
+
+There is now a daily check. It asks each site directly, exercises the source end to end, and writes down
+what it finds. Two things it fixes by itself, because both have exactly one correct answer and both can be
+verified before committing to them:
+
+- **A site that has moved** is followed to its new address, but only after the new address proves it can
+  still search, list chapters and serve pages. If it cannot, the change is rolled back. This matters more
+  than it sounds: on the install this was built for, one dead site redirected to a chat community and
+  another to a page serving "404 Not Found" with a success code. Both would have looked like moves.
+- **Extensions with an update available** are updated.
+
+Everything else is reported rather than acted on: a site refusing the server, a listing that has changed
+shape, a host that has gone. Those need a judgement call, and disabling a source over what turns out to be a
+two-hour outage is worse than leaving it be. Admins get a notification when something needs them, and
+Admin, Sources, Providers has a **Check all now** button that runs the identical sweep on demand.
+
+### Two sources repaired
+
+Manganato-engine sites had stopped listing anything. The path the engine asked for, `/genre-all`, now
+answers successfully with a page containing no series at all, which is exactly the silent failure above. It
+now asks for the current listing path and keeps the old one as a fallback for sites that still serve it.
+
+## v0.9.7 — 2026-08-27
+
+### The trending hero shows the slides it has
+
+v0.9.6 took the hero from five titles to ten and then hid the fact. Its position dots are drawn as a sliding
+window, capped so that a long carousel cannot push the row off the side of a phone, and that cap was applied
+at every screen size. The row therefore looked identical whether it held five slides or ten.
+
+The overflow it guards against was only ever a phone problem. The window now follows the space available:
+every dot on a desktop, the compact window on a phone.
+
+## v0.9.6 — 2026-08-27
+
+### Failing sources now say what is wrong, and what to do about it
+
+Discover showed a dot beside each source: green when it came back with covers, grey when it did not. Grey
+turned out to mean four unrelated things, and the two worth knowing about were invisible.
+
+A source serving out a cooldown is never asked at all, so it returns an empty list and looks exactly like a
+healthy source with nothing new. And an empty answer was recorded nowhere: a Cloudflare check served as an
+ordinary page, or a site that had changed its layout, produced no error, so nothing was ever written down.
+A source could be broken for weeks while looking merely quiet.
+
+Both are now visible. An empty answer is counted without being treated as a failure, which matters: several
+sites answer a failed check with an empty page rather than an error, and treating that as success would wipe
+a cooldown that was recorded for good reason. A source that keeps answering with nothing is marked as such,
+sorted below the ones that work, and says so on Discover with an estimate of when it will be tried again.
+
+Admin, Sources, Providers gains a **Test** button. It goes and looks at the site right now, deliberately
+without the Cloudflare solver in the way, then exercises the source end to end and reports which step failed.
+That distinction is the whole point: a site that answers this server directly while the solver is failing is
+a solver problem, not a site problem, and those two were indistinguishable before.
+
+The reason is written in plain language with a suggested fix, rather than as the raw recorded error. Five
+different faults used to record the single word "timeout".
+
+Custom sites can finally have their address changed. Previously the only options were add and delete, and
+deleting loses the link to every series that came from that source, so following a site to a new domain
+meant orphaning your library.
+
+### The Cloudflare solver stops failing silently
+
+Chrome cannot run in Docker's default 64 MB of shared memory. It was crashing mid-check, and the app
+faithfully reported that as the *sites* blocking us. The solver also leaks memory, reaching 2.5 GB after two
+months here, and a bloated one fails in that same misleading way.
+
+It now gets the memory it needs, a cap so a leak restarts it instead of degrading it, and a health check, so
+"running" and "working" stop being the same thing. The health page carries it as its own line and points at
+it directly when several sources fail at once and all of them blame it.
+
+Also fixed: the health page's count of how many series depend on a source, which compared a display name to
+an id and so always reported zero.
+
+### More on the Discover hero
+
+The trending hero rotates through ten titles instead of five, a little quicker, and preloads the next one.
+
+Raising the number alone would have done nothing on a large library. The hero only used titles with wide
+banner art, and of forty trending titles only sixteen have any; on a 215-series library just seven survived
+the filter for things you do not already own. It now fills the remaining slots from titles with ordinary
+cover art, which it already knew how to display.
+
+## v0.9.5 — 2026-08-27
+
+### Discover no longer stalls, and the language chips are gone
+
+Switching language before the wall had finished loading left covers stuck loading, sometimes for the rest of
+the session. That was a bug, not slowness.
+
+Each source on the wall reports back when it settles. The report fires on a change, and a source that
+appeared under both the old and the new language never changed: it kept its place, kept its cached answer,
+and so never reported again — while the page had just forgotten it. The wall was then permanently waiting on
+a source that had already answered, which is why the loading tiles never resolved, the progress bar stuck,
+and scrolling for more stopped working.
+
+Two things made it worse. Switching could fire ten requests at once instead of four. And nothing was
+cancelled, so every abandoned request still cost the server its full eight-second budget — and a request that
+times out puts that source on a cooldown for the next five to thirty minutes. Clicking impatiently actively
+made the wall emptier.
+
+**The language chips are removed.** They were the trigger, and the thing they were solving is better solved
+by ranking: healthy sources first, then the ones your library actually came from. The source chips above the
+wall are the filter now, and they still show which sources are being asked and how each one answered.
+
+The causes are fixed separately from the trigger, since the same failure would return the moment anything
+else restarted the wall. Requests are now cancelled when abandoned, so changing your mind no longer costs a
+source its availability for half an hour.
+
+Also fixed: with the add dialog open on the hero, every source that finished loading refired a search across
+every source — a fan-out with a 25-second timeout each, over and over, while the wall filled in behind it.
+
+### A sharper sign-in wall on high-DPI screens
+
+The cover wall behind the sign-in screen looked soft on a 2K display. A screen at that pixel ratio asks for
+5120 pixels of image and was handed 2560, then stretched them. There is a larger twin now, and the page picks
+it only on screens that can use it — an ordinary display still takes the small one.
+
+## v0.9.4 — 2026-08-26
+
+### A wall of covers behind the sign-in screen
+
+The login screen sat on a single piece of key art. It now sits behind a tilted grid of cover tiles, which is
+what a manga library should look like before you have signed into it.
+
+The tiles are cut from the art hbook already ships — the twelve genre backdrops plus the login, splash,
+wrapped, hero and section pieces — at several crop positions each, because at wall scale a different crop of
+one image reads as a different book. Seventeen sources give fifty-nine tiles. `scripts/login-wall.py`
+composes them and is seeded, so it rebuilds the same wall every time.
+
+**It is deliberately not your library.** The sign-in screen is pre-authentication, so anything on it is
+visible to anyone who can reach your server. Feeding it real covers would serve titles and art straight past
+per-library access, per-user age caps and the 18+ hide, and the service worker would then keep those covers
+in a cache that survives signing out on a shared device. The wall is generated art, and the sign-in screen
+still requests no images from your library at all.
+
+Also fixed: the backdrop's entrance animation ignored `prefers-reduced-motion`. The CSS rule that handles
+this everywhere else cannot reach a JavaScript animation, so that screen never honoured the setting.
+
+## v0.9.3 — 2026-08-25
+
+### The dependency tree answers for itself
+
+Turning on GitHub's vulnerability alerts surfaced **49 findings** across the two lockfiles, four of them
+critical. This release clears them.
+
+**The ones that were real.** The API ran `fast-jwt` 4 — the library that verifies every login token — which
+has since accumulated three critical advisories (auth bypass via an empty HMAC secret with async key
+resolvers, cache confusion that can return one token's claims for another, and an algorithm-confusion fix
+bypass). None of the three is reachable with hbook's configuration, which uses a static HS256 secret and
+no RSA — but "not reachable today" is not an argument for keeping a known-broken verifier under the auth
+system. Alongside it: `@fastify/static` (route-guard bypass via path traversal — it serves the web app in
+the single container), `fastify` itself (a Content-Type parsing quirk that bypasses body validation),
+`sharp` (inherited libvips CVEs — it processes untrusted images downloaded from sources), and `adm-zip`
+(a crafted ZIP forcing a 4 GB allocation — it opens CBZs fetched from sources).
+
+All of those fixes live on the far side of a framework major, so the whole family moved together:
+**Fastify 4 → 5** with `@fastify/jwt` 10 (carrying `fast-jwt` 6.3), `@fastify/static` 10, and new majors of
+compress, helmet, cors, cookie and rate-limit; plus `sharp` 0.35 and `adm-zip` 0.6. The entire 476-test
+suite, the mounted-route wiring tests and the browser end-to-end pass unchanged on the new major — and
+tokens signed by the old verifier still verify under the new one (and vice versa), so **nobody is signed
+out by upgrading**, or by rolling back.
+
+**The ones that were theoretical.** Thirty findings pointed at Next.js. The web app is a **static export**:
+there is no Next server, no middleware, no Server Actions and no image optimizer running anywhere in
+production, so none of those advisories was reachable. They are cleared anyway — **Next 14 → 15, React
+18 → 19** — because an install page full of open advisories makes a reader do the reachability analysis
+themselves. Next also vendors its own old copy of `postcss`; an override pins the patched one everywhere.
+
+One finding remains open by necessity: `extract-zip`, a development-only dependency of the browser-test
+harness, has no patched release to move to. It never ships in any image.
+
+
+### The repo now runs what it ships
+
+Cloning the repo and running `docker compose up -d` gave you the deprecated two-container split, while every
+document told you the install is one container. `scripts/setup.sh` did the same, and the README offered it as
+a normal alternative to the browser setup step without saying which layout it started.
+
+`docker compose up -d` now builds **`hbook-app`** from `Dockerfile.aio` — the same single container the
+released image ships and the only layout the end-to-end tests drive. The split is still there and still
+buildable from source, because its images are still published on every release; it moved behind a profile:
+
+```bash
+docker compose --profile split up -d     # hbook-bff + hbook-web, on SPLIT_WEB_PORT (8081)
+```
+
+It gets its own port on purpose: the profile adds services rather than replacing them, so both would
+otherwise fight over the same one.
+
+`setup.sh` follows, and gained a guard — it refuses to run in a checkout whose `docker-compose.override.yml`
+manages a service it does not, so it can no longer rebuild and restart a server's live install from the
+working tree. It also chowns volumes to the configured `PUID`/`PGID` instead of a hardcoded 10002, which was
+already wrong for anyone running as the owner of their library.
+
+**`WEB_PORT` is 8080 everywhere now.** It was 3000 in the development stack and 8080 in the shipped one, and
+`.env.example` hard-set the development values while `docs/USAGE.md` tells you to copy that file to point
+`LIBRARY_PATH` at your library — so following the docs moved the app off the port the same page had just
+told you to open, and left `PUBLIC_ORIGIN` pointing somewhere else again. Both are now commented out in
+`.env.example`, so the compose default wins unless you deliberately change them.
+
+## v0.9.2 — 2026-08-25
+
+### The single container could not back itself up, and said nothing
+
+**If you run the all-in-one image, your backups have been empty since v0.9.0.** `Dockerfile.aio` never
+installed the Postgres client, so `pg_dump` was not in the image. `bff/Dockerfile` installs it and always
+has, with a comment saying it is there for the backup task; the line was simply never carried across when
+the single-container image was written.
+
+Nothing about it was visible. The task wrote a 20-byte empty archive into a directory that looks like a
+backup, logged nothing at all, and left `backup_last_result` untouched — so the admin Tasks panel kept
+reporting the last run that *had* worked. On an install migrated from the split layout, that was a real
+backup written by the old containers, which is about the most convincing way to be told everything is fine.
+
+Three things changed, because the missing package was only the first of them:
+
+- The runtime installs `postgresql16-client`, exactly as the split image does.
+- **A failed dump is now recorded as a failure.** The Tasks panel shows the error, and the manual
+  Backup button no longer discards it. A run that fails also deletes its own directory, so rotation cannot
+  count empty archives as backups and push the last good one out of retention.
+- `pg_dump` missing by name gets a message that says so, instead of an ENOENT.
+
+The dump helper also resolved too early: an empty pipe closes cleanly and gzip still emits its header, so
+"the file finished writing" was treated as "the dump succeeded". It now requires the process to have exited
+0 as well.
+
+`bff/test/aioParity.test.ts` — which exists for exactly this, "the split image did something and the single
+one quietly stopped" — now holds all of it. Worth saying that the first version of that guard did not work:
+both Dockerfiles *explain* why the client is installed, so searching the file matched the comment that
+survives deleting the instruction. It reads only what Docker executes now.
+
+**Check your own install:** `docker exec <container> pg_dump --version`. No output means every backup you
+have taken since v0.9.0 is empty. Compare the sizes in your backup directory — a real dump is megabytes, a
+broken one is 20 bytes.
+
+### Reading progress for a chapter that no longer resolves
+
+`PUT /api/books/:id/progress` answered **500** when it could not look the chapter up. The route fell back to
+a placeholder series id, and migration `0004` had since given `read_progress` a foreign key to `lib_series` —
+so that fallback could only ever violate the constraint.
+
+The client that reaches it is the offline outbox replaying a queued page for a series deleted or merged in
+the meantime. A 500 is retried forever; a **404** lets the queue drop the entry, which is what it now gets.
+
+### One container is the install now
+
+The docs used to present two layouts as equals, which meant three published images and a reader having to
+pick before they knew anything. The single container is now the only one the instructions describe, and the
+default filename went with it: `deploy/docker-compose.yml` is the single container, and the two-container
+split moved to `deploy/docker-compose.split.yml`.
+
+**The split is deprecated, not removed.** Both images are still built and still published on every release.
+Nothing about a running install has stopped working, and there is no deadline. Unpublishing them while
+leaving the packages in place would be the worst of both worlds: `docker compose pull` would keep succeeding
+and silently freeze people on the last release with nothing to tell them, which is exactly the trap the old
+`koryomi-*` packages caused.
+
+**There is now a migration guide**, which there never was: `docs/MIGRATING.md`. Both layouts use the same
+named volumes and the same Postgres image, so moving is four commands and no data is copied or converted.
+The one step that is easy to miss is repointing a reverse proxy, because nothing errors: it was aimed at
+`hbook-web:80`, and that container no longer exists.
+
+The CasaOS manifest ships the single container too, so its store tile stops naming a container that would
+not exist. And the screenshot rig, the proxy helper and the container names in the backup-and-restore
+instructions all follow the same layout the reader is being told to run.
+
+## v0.9.1 — 2026-08-25
+
+### The single container compresses again
+
+Moving the web tier into the API process quietly dropped the one thing nginx was doing that nobody thinks of
+as an application concern: it gzipped CSS, JS, JSON, SVG and the manifest, and because `application/json` was
+in that list, every API response too. The all-in-one image had no compression plugin at all.
+
+Measured against a real install: a cold load went from **261 KB of JS and CSS to 736 KB**. Nothing breaks, it
+just gets slower, and only noticeably off your own network. Fixed with `@fastify/compress`, which also offers
+brotli, which nginx never had here at all.
+
+It also sends `Vary: Accept-Encoding`, which nginx did **not**: it ran `gzip on` with no `gzip_vary`, so a
+shared cache in front of it could hand a gzipped body to a client that never asked for one. That is a real
+hazard closed, not merely parity restored.
+
+### A healthcheck that means liveness
+
+`/healthz` runs `SELECT 1`, which is the right answer for "should traffic be sent here" and the wrong one for
+a container healthcheck: the single container pointed at it, so one database blip marked the whole app
+unhealthy. In the split layout nginx answered `/healthz` itself and stayed up through an outage, still
+serving the shell so the app could render an error rather than the browser showing connection refused.
+
+There is now a `/livez` that answers unconditionally, and the container healthcheck uses it. `/healthz` is
+unchanged and still the readiness probe.
+
+### Also
+
+The repository root had no `.dockerignore`, and `Dockerfile.aio` builds from the root, so `COPY web/ ./` and
+`COPY bff/ ./` copied the host's `node_modules` straight over the ones `npm ci` had just installed one layer
+earlier, native modules included. Continuous integration never saw it, because a fresh checkout has none. Local
+builds dragged around 790 MB of context and could produce a wrong build from a stale tree.
+
+## v0.9.0 — 2026-08-24
+
+### Libraries you can actually build
+
+A library is now **a folder, plus any series you file into it by hand**, and there is a way to pick that
+folder: browse your library root at any depth, or type the path. Before, the only option was a list of
+suggestions computed from the top level of the root — which on most installs holds the source names the
+downloader wrote, so the only folders offered were the ones not to pick, and the one you wanted could not be
+reached at all.
+
+**Libraries may sit inside one another.** With `Manga` and `Manga/Seinen` both declared, the most specific
+one wins. Removing the inner one hands its series back to `Manga`, not to the default library.
+
+**An age rating on the library**, inherited by everything in it, so marking a shelf 18+ is one action rather
+than two hundred. A single title can still be rated differently from its own page. Unrated stays visible to
+everyone.
+
+**Access from the library's side**: each row lists who can open it. Worth knowing, because it is the one way
+to lock someone out by accident — a member with no limits set can open every library, including ones added
+later, so granting them one changes nothing and unticking them is what narrows them to an explicit list.
+
+**File a series by hand** from its own page, or select several on the Library page and use **Move to
+library**. A series filed by hand stays put across rescans, across creating a library whose path contains it,
+and across re-pathing that library. Set it back to **Automatic** to hand it to the folder rule again.
+
+**A library's path can be edited** instead of only its name, and the Library page grows a row of tabs once
+you have more than one.
+
+No files move, nothing is deleted, and no reading progress changes. An install with one library behaves
+exactly as before.
+
+### Age ratings, so a household can include children
+
+Mark a series with a minimum age and cap what a member's account may open. Ratings come from ComicInfo's
+`AgeRating` during a scan and can be set or corrected on any series page.
+
+**Series with no rating stay visible.** Almost nothing in a real library carries one, so hiding unrated
+content would empty an account the first time you set a limit. Setting a rating opts one title *in* to being
+filtered; it never opts the rest of your library out. An install with no ratings and no limits behaves
+exactly as before.
+
+### MyAnimeList and Kitsu
+
+Alongside AniList, and you can connect more than one at a time — each syncs independently, with its own
+errors and its own progress, so one service being down cannot stop another.
+
+### Nine languages, and right-to-left
+
+English, Spanish, French, German, Portuguese (Brazil), Russian, Japanese, Chinese and Arabic, chosen under
+**Profile → Language** and remembered across your devices. Arabic mirrors the whole layout, not just the text.
+
+Everything except English is machine-assisted and says so, in that language. Each is one JSON file with
+English strings as the keys, so a correction is a one-line pull request and a missing entry falls back to
+English rather than showing a placeholder.
+
+### Bookmark a page
+
+A star in the reader marks where you are, with a per-series list. Bookmarks are kept when a series is
+hidden, the same way reading progress is: a bookmark records having read something, not where the bytes are.
+
+### OPDS links expire
+
+They never did. One token per account, valid forever unless you happened to regenerate it — and it is the
+one credential that lives in a reader app on a phone and gets forgotten. They now last a year, the profile
+page shows when one was last used, and you can revoke it.
+
+**Existing links are not cut off.** They get a year from now, not from when they were issued.
+
+### PDF and image EPUB
+
+Both are read now, and both are treated as what they are: an ordered run of page images in a container, the
+same as a CBZ. A PDF's pages are rendered at reading resolution, so it behaves exactly like any other
+chapter -- thumbnails, the reader, offline downloads and OPDS all work without knowing the difference.
+
+EPUB pages come out in **spine order** rather than filename order, because manga bought from a store names
+its image files by an internal id that sorts wrong.
+
+**A text ebook is still not a chapter**, and that now falls out rather than being a rule: a reflowable novel
+has no images in its spine, so it yields no pages and the scanner skips it. Dropping one into your library
+does nothing instead of adding something that opens to a blank screen. hbook is a manga reader, not an
+ebook library, and Kavita is the better answer if you want one.
+
+### One container
+
+`deploy/docker-compose.aio.yml` runs hbook as a single container: the API serves the web app itself
+instead of a second nginx doing it. It is now the install the README leads with.
+*(That file is simply `deploy/docker-compose.yml` since 2026-08-25 — see the Unreleased section.)*
+
+Measured against the split layout on the same host: **238 MB instead of 385 MB**, **33 MiB of memory instead
+of 41**, one less network hop on every API call, and no redirect at all on deep links -- nginx answered
+`/library` with a 301 and this answers it with the page. nginx serves a static file about 0.9 ms faster,
+which is the only thing it wins.
+
+**Nothing breaks if you are already running the split layout.** It is still built, still published, still
+documented, and `deploy/docker-compose.yml` is unchanged. The single-container build is additive: the same
+API image serves the web app only when `WEB_ROOT` points at it.
+
+> **Correction, 2026-08-25.** Two thirds of that paragraph still hold and one no longer does. The split
+> layout is still built and still published, and nothing about a running install has stopped working. It is
+> no longer *documented as an equal option*: the docs now lead with the single container, and the file moved
+> from `deploy/docker-compose.yml` to `deploy/docker-compose.split.yml` so the default name belongs to the
+> layout the instructions actually describe. If you already downloaded the old file it keeps working — it
+> pulls images by name, not by filename. See `docs/MIGRATING.md` when you want to move.
+
+### Discover, rebuilt
+
+The page that adds new series was a search box on black with a ragged grid hanging off it. Production
+disagreed with that design: in 48 hours there were 32 requests for "what's new on this source" and **zero**
+searches. So the wall of what your sources just published is the page now, led by a full-bleed hero built
+from the AniList key art the endpoint had been returning since it shipped and the page was rendering as a
+144px thumbnail. Forty-five sources across thirty languages collapse to one remembered language chip. Search
+survives as a field, with a way back out that it never had.
+
+**It is also much faster.** `GET /api/sources/latest` was the only endpoint of its kind with no time limit of
+its own: it inherited the adapter's, which is 30 seconds for an extension source and 95 for a site behind
+FlareSolverr. The worst measured call took **63 seconds**. It is now capped at 8 seconds (`SOURCE_LATEST_TIMEOUT_MS`),
+cached for ten minutes per source and page, and concurrent requests for the same page collapse into one
+outbound fetch instead of six. A source that times out is recorded against its health, so it earns a cooldown
+and stops being asked first. The six sources fetched are now ranked by what your library actually came from,
+rather than alphabetically, which had been putting sources with no series behind them ahead of the one that
+supplied 80% of the collection.
+
+The horizontal rails have **a visible scrollbar and arrows**. They had neither, and smooth scrolling eats a
+vertical wheel over a horizontal strip, so on a desktop mouse there was no way to move them at all.
+
+### Adult sources, and who may open Discover
+
+Two account settings that existed only in name now hold:
+
+**A member whose age limit is below 18 cannot reach a source its extension declares adult.** It is absent
+from their source list, and the server refuses it by id. The app is a static export, so hiding it in the UI
+would have left the JSON one guessed URL away. This is not an edge case on a real install: on the one this
+was written against, 36 of 44 enabled sources are adult. Sources that declare nothing (the built-in engines, source
+packs, custom sites) count as not adult, the same way an unrated series stays visible.
+
+**A member who may not add series no longer sees Discover.** `canDownload` was enforced on exactly one route,
+the final POST, so a denied account could browse every source, search them and read full series detail, and
+only met a wall on the last button. Every route behind the page refuses now, and the tab is gone.
+
+### An 18+ library stays off the shelf
+
+Marking a library 18+ already capped who could open it. It now also decides what turns up unasked: such a
+library is left out of the home rails, the library grid, search, browse-by-genre, collections, updates,
+history, bookmarks and the OPDS feeds, and its tab is gone from the Library page. A **Show 18+** button beside
+the sorts brings it back for as long as the browser is open, and hides it again by itself. The button appears
+only for accounts that actually have such a library, and never for one whose own age limit is below 18.
+Admins are not exempt, because this is about a tidy screen rather than about permission.
+
+**It is not an access control**, and the distinction is the whole design. A link, a bookmark, an
+offline-downloaded chapter, next-and-previous and reading progress all keep working while the library is
+hidden. The alternative was tempting and wrong: the service worker flushes reading progress with the app
+closed, an image tag carries no session, and an OPDS reader has no button to press, so folding this into the
+access rule would have silently lost people's place in whatever they were reading.
+
+Two long-standing gaps closed along the way. The library list had no notion of age limits at all, so a member
+capped at 13 was shown the name of the 18+ shelf and a tab that could only ever be empty. And reading history
+had no visibility rule whatsoever, so it kept listing the titles of series that had been deleted, merged away
+or moved into a library that member no longer holds.
+
+### Also
+
+MangaDex asks its API for English and nothing else, but declared no language, so it joined all thirty
+language groups: choosing Japanese filled a third of the wall with English MangaDex rows. It declares English
+now. The language chips also count **sites** rather than rows, so one site installed once per language stops
+presenting itself as thirty separate choices.
+
+Editing a series' metadata failed with "Could not save" for **every** field, not just the age rating that
+made it noticeable: the statement asked for seven values and was given six, so Postgres refused it. Queries
+now fail loudly at the call site when their placeholders and parameters disagree, which is how this was
+found and how the next one will be.
+
+The comparison table gained the two rows where something else does more: **reflowable EPUB**, which Kavita
+reads and this deliberately does not, and **Kobo device sync**, which Komga has and this has no answer for.
+An unlisted gap is worse than a listed one.
+
+## v0.8.1 — 2026-08-23
+
+**Upgrade if you are on v0.8.0.** Its library page listed nothing.
+
+### The library, search and browse pages were empty
+
+v0.8.0 made the view context the first argument of every backend method, so that a call site which forgets
+it fails to compile. One call site was cast to `any` and kept the old argument order, which is the one thing
+that turns that guarantee off. The arguments shifted by one, the page offset landed past the end of the
+library, and the result came back empty while the total count stayed correct.
+
+Nothing was lost and nothing needs re-scanning: the rows were always there, the query simply asked for a
+page beyond them. The library, search and browse pages and the command palette all read from that one
+endpoint, so all four listed nothing.
+
+### Offline downloads, which had never worked
+
+Downloading a chapter to read offline asks the server for a manifest first, and that route talked to Komga's
+HTTP API rather than to your own library. There is no Komga in a self-hosted install, so it answered "not
+found" for every chapter, from the first release onwards. It now reads your library, and refuses a series
+the viewer is not allowed to see.
+
+### Two of the three OPDS feeds
+
+`/opds` offers "recently updated", "A–Z" and "recently added". The first and third sorted by columns the
+v0.8.0 rewrite stopped selecting, so both answered a server error for everyone, admins included, and the
+broken one was listed first. Only A–Z worked.
+
+### Deep links on any port other than 80
+
+nginx listens on port 80 inside the container, and built its own redirects from that, so visiting
+`http://localhost:8080/library` was redirected to `http://localhost/library/` with the port dropped. 8080 is
+the documented default. Moving around the app never noticed, because that happens in the browser, but a
+bookmark, a shared link or a reload on any path landed nowhere. Redirects are now relative.
+
+### Renaming a folder had no button
+
+v0.8.0 added the ability to rename a series' folder on disk, documented it, and shipped no way to reach it
+outside of `curl`. There is now a **Rename folder** action on the series page for admins, which shows the
+server's own refusal when a folder cannot be moved, since that message names the fix.
+
+### Also
+
+A malformed request body returned 500 with the whole validation error, schema field names included, rather
+than 400. The handler meant to prevent that was registered after the routes it was meant to cover, so it had
+never applied to any of them; internal error messages were reaching clients the same way.
+
+## v0.8.0 — 2026-08-23
+
+**Read this one before upgrading.** The library mount changed, and a security fix closed three ways to read a
+series you were not meant to see.
+
+### Three ways to read a hidden series, closed
+
+All three predate this release, and all three needed nothing but an id.
+
+`/img/lib/books/:id/page/:n` resolved a file path from a book id with no join to the series at all, so a book
+id alone returned **raw page bytes off disk**, including for a series that had been deleted. The OPDS
+download resolved the same way. The image server verified your token and then discarded who you were, so no
+image route could filter by anything. And the chapter query never referenced the series table, so a chapter
+inherited no series-level rule and next/previous walked the rest of it.
+
+The visibility rule now lives in exactly one place instead of the twenty-three hand-written copies it had
+spread into, and three tests hold that line: one fails if a twenty-fourth appears, one fails if a call site
+invents an all-seeing viewer, and one requires every image and OPDS route to state how it is gated.
+
+### Several libraries, and who can see them
+
+Split your collection into separate libraries, then choose per member which ones they can open. Libraries are
+**declared, not guessed**: the obvious rule, "each top-level folder is a library", would have renamed a lot of
+existing installs into libraries named after their download sources.
+
+Nothing changes on upgrade. Everything starts in one library, no reading progress moves, and an account with
+no restriction set keeps seeing everything, including libraries created later.
+
+### It can now rename folders and delete files, if you let it
+
+hbook can rename a series' folder and delete its chapter files. **It cannot do either unless you run it as
+the user who owns your library**, which is opt-in:
+
+```
+PUID=1000    # id -u
+PGID=1000    # id -g
+```
+
+Leave both unset and nothing changes: the app runs as its own uid, your library is effectively read-only, and
+the startup log says so plainly along with the exact command to change it.
+
+`PUID=1000` is the common case and works: the app does not renumber its own user, so it will not collide with
+the uid the base image already uses.
+
+Deleting a series' files requires hiding the series first, so the reversible step always happens before the
+irreversible one, and it keeps every chapter row and everyone's reading progress. Renaming refuses outright
+unless every folder the series occupies is writable: renaming only half of a series that spans your library
+and your downloads folder would split it in two on the next scan.
+
+### Upgrading
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+**The library mount is no longer `:ro`.** That alone grants nothing, because the app still runs as a uid that
+cannot write your files, but if you relied on the read-only flag as a guarantee, add it back:
+
+```yaml
+      - ${LIBRARY_PATH:-./library}:/library:ro
+```
+
+**The container now starts as root and immediately drops privileges** to its own uid (or `PUID`). Previously
+it never ran as root at all. That is the cost of being able to run as the owner of your library; the
+alternative was asking you to hand your media collection over to uid 10002. The app itself never runs as
+root, and `PUID=0` is refused.
+
+One thing worth being straight about: restricting someone's library access applies immediately on the server,
+but images and chapters they already viewed or downloaded may stay in their own browser's offline storage
+until they clear it. The server cannot reach into a device it does not control.
+
+## v0.7.0 — 2026-08-22
+
+**Library management.** The honest caveat in the README used to open by conceding that Komga and Kavita were
+further along here. This release is that gap, measured and closed.
+
+### Any folder layout
+
+The scanner read exactly two directories below your library root, so a series had to be at
+`<group>/<series>/<chapter>`. Anything else was invisible: no error, no log line, just an app that started
+fine and showed nothing. A folder is now a series when it directly contains chapters, at any depth, so
+`One Piece/Chapter 1.cbz`, `Manga/One Piece/…` and `Comics/Manga/Author/One Piece/…` are all read without
+rearranging anything.
+
+Existing libraries are untouched. This was verified against a copy of a real 210-series, 40,506-chapter
+install: zero series rows and zero chapter rows changed. Set `LIBRARY_MAX_DEPTH=2` to reproduce the old
+behaviour exactly; the default is 6.
+
+### Metadata you edit stays edited
+
+Only title and summary could be edited. Author, publication status and genres were read from ComicInfo and
+silently rewritten by every scan, and scans happen constantly. All of them are now editable and survive a
+rescan, and because genres drive Browse and the recommendation rails, editing one steers those too.
+
+Chapters can be corrected as well. Numbers are parsed from filenames by taking the first number found, so
+`Vol 2 Ch 5.cbz` was chapter 2: it sorted between 1 and 3, and 2 is what a tracker was told. Numbers and
+titles now have a per-chapter override.
+
+### Filters that actually filter
+
+The library had one filter, genre, and every other filter silently returned the entire library rather than
+erroring. Read state, publication status, author and multi-genre now work, filters live in the URL so the
+back button works and a view can be shared, and a filter the query cannot express says so instead of quietly
+widening. The "Most chapters" sort is now "Most unread" and sorts by your real unread count.
+
+### Bulk actions
+
+Select several series on the Library page and mark them read or unread, favourite them, or file them into a
+collection. Marking a backlog read deliberately does not write reading events, so it cannot inflate streaks,
+the household leaderboard or Wrapped.
+
+### Your tracker can no longer be walked backwards
+
+AniList accepts a lower progress and rewrites the entry, with no undo. Anything that reduced your highest
+completed chapter would quietly send the smaller number: merging two series, marking a batch unread, or
+correcting a chapter number. Progress is now monotonic per series, and lowering it takes a deliberate resync
+from the series page. This closed a hazard that already existed before any of the above.
+
+### Also
+
+The admin Art tab was broken in v0.6.0 by a query with its `WHERE` below its `ORDER BY`; fixed in v0.6.1 and
+now covered by a test. Next and previous chapter compared numbers alone, so two chapters sharing a number
+made "next" arbitrary and could return the chapter you were already reading.
+
+### Upgrading
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+The schema gains three tables and three columns on first boot, all additive. Nothing existing is rewritten,
+and no scan re-mints anything.
+
+## v0.6.1 — 2026-08-22
+
+Two fixes for things a new install hits immediately.
+
+**The admin Art tab was broken in v0.6.0.** The art overview query shipped with its `WHERE` written below
+its `ORDER BY`, which Postgres rejects, so the endpoint returned a 500 and the whole Art Review gallery was
+dead. It slipped out because the query lived inside a route handler and nothing in the test suite ever ran
+it; it now lives in `lib/seriesArt` with a test that fails if the clause order is ever broken again.
+
+**The documented library layout was wrong.** The README and USAGE told you to lay your library out as
+`<series>/<chapter>`, but the scanner reads `<group>/<series>/<chapter>` — two levels below the library
+root. Following the documentation gave you an app that started perfectly and showed an empty library, with
+nothing to explain why. The docs now describe the layout the scanner actually reads, and the troubleshooting
+section names this as the usual cause of an empty library.
+
+So: `Manga/One Piece/Chapter 1.cbz` is found. `One Piece/Chapter 1.cbz` on its own is not. If your
+collection is laid out the second way, wrapping it in a single folder is enough. A future release will read
+any depth.
+
+Nothing in this release changes the database.
+
+## v0.6.0 — 2026-08-22
+
+**Your library stops being a list of folders and starts being a list of series.** Until now a series was
+whatever a folder was called, and its identity was derived from the path. Rename the folder, move it to
+another disk, or let a source rename it for you, and hbook saw a brand new series: a second copy in the
+library, an empty progress bar, and the one you had actually been reading stranded under a name that no
+longer existed.
+
+### Series management
+
+- **Delete a series.** It hides rather than erases. Chapters, favourites, ratings, notes and above all your
+  reading history stay attached to something real, so it is undoable and nothing silently rewrites your
+  stats. A hidden series stays hidden across a rescan instead of reappearing under a new id.
+- **Restore one**, exactly as it was.
+- **Merge two into one**, for when the same series arrived twice from different sources. Everything the
+  absorbed series held moves across, including every chapter and every progress row. Chapters that look
+  like duplicates are deliberately **kept, not de-duplicated**: dropping one means folding two progress rows
+  into one, and getting that wrong marks chapters unread and then syncs that outward to your AniList account,
+  where it cannot be undone. Duplicate chapter numbers are untidy; lost reading progress is not recoverable.
+- **Stop following a series**, or check one for new chapters on demand rather than waiting for the sweep.
+
+### The library recognises files that moved
+
+Chapters now carry a **content fingerprint** taken from the archive's index rather than its path, so a
+renamed or relocated folder is matched back to the series it belongs to instead of being imported as a
+stranger. Library ids are minted rather than derived from the path, which is what made the old behaviour
+inevitable. Existing libraries are fingerprinted in the background, a slice at a time.
+
+### Continue Reading offers the next chapter
+
+Finishing a chapter used to remove the series from Continue Reading, and nothing put the next one in front
+of you: you had to remember what you were reading and go find it, which is the one job that rail has. It now
+shows the chapter you are part-way through, or the next one you have not read. A series you have finished
+entirely still drops out. The rail also stopped being capped at 20, which was hiding most of a heavy
+reader's list.
+
+Also in the reader: **the manga name at the top is now a link to its series.** It was plain text, and the
+back arrow beside it returns you to wherever you opened the chapter from, so from the home rail there was no
+route to the series at all short of searching for it by name.
+
+### Images stop waiting on things they already have
+
+Covers were cached for five minutes, so most cover requests were round trips that returned a byte-identical
+image. They are cached for a day now, which is safe because every way the art can change already busts the
+url. Chapter thumbnails opened each archive twice, once to list it and once to read one page. Hero art warmed
+one frame at a time. The disk cache walked every file every ten minutes to conclude it had nothing to do, and
+its "least recently used" eviction sorted by *write* time, which a read never updates, so the first time it
+filled it would have discarded the covers you look at daily and kept last night's page images.
+
+### Your data now has referential integrity
+
+Postgres enforces 14 foreign keys that were previously enforced by hope. Rows that already pointed at nothing
+are copied into an `orphan_refs` table **before** being removed, so anything reclaimed is one `UPDATE` from
+coming back rather than a restore from last night's dump.
+
+`read_progress` deliberately does **not** cascade when a chapter is deleted. Nothing deletes chapters today,
+but a cascade would have turned any future cleanup into silent, unrecoverable loss of reading history, so it
+fails loudly instead and makes whoever writes that cleanup decide what should happen.
+
+### Upgrading from v0.5.1
+
+This release **migrates your database on first boot**, and the migration is one way. It adds columns and
+foreign keys, and it moves rows that reference series or chapters which no longer exist into `orphan_refs`.
+On the instance this was developed against that was 199 rows, none of them reading progress.
+
+It is applied automatically and is safe to run, but it is the first release to change existing data rather
+than only add to it, so taking a dump first is the cautious move:
+
+```bash
+docker compose exec -T hbook-db pg_dump -U hbook hbook > hbook-before-0.6.0.sql
+docker compose pull
+docker compose up -d
+```
+
+That dump contains password hashes and API tokens. Delete it once the upgrade looks right.
+
+As always, `docker compose up -d` alone does **not** fetch a newer image. Without the `pull` you stay on the
+version you already have.
+
+## v0.5.1 — 2026-08-21
+
+**A fresh install could not write two of its own volumes.** If you installed from
+`deploy/docker-compose.yml`, this one matters and the upgrade note below is not optional.
+
+The runtime image created and gave ownership of `/cache` and `/backups` to the app user, but not `/config`
+or `/library-dl`. Docker seeds a new named volume from the image directory it covers, so a directory the
+image never creates arrives owned by root — and hbook runs as an unprivileged user. Three things failed
+because of it, and none of them said why:
+
+- **every chapter download failed**, so "it also fetches new chapters" did not work at all on a first install
+- **adding a site by URL returned a bare error**, because that writes `/config/sites.json`
+- **the generated JWT secret could not be saved**, so a new one was made on each boot — which signed
+  *everybody* out on every restart
+
+The setup script had always fixed this itself, but it only runs if you clone the repo, which is explicitly
+not the documented way to install. All four directories are now created and owned correctly in the image.
+
+### If you installed before this release
+
+A new image cannot fix a volume you already have: Docker never re-seeds one that exists. Do this once.
+
+```bash
+docker compose down
+docker volume ls | grep hbook        # confirm the names — they are prefixed by your folder
+docker run --rm -v hbook_config:/a -v hbook_downloads:/b alpine chown -R 10002:10002 /a /b
+docker compose pull
+docker compose up -d
+```
+
+**On CasaOS**, the app directories are host bind mounts, which never inherit ownership from an image, so
+this is a permanent requirement rather than a one-off:
+`sudo chown -R 10002:10002 /DATA/AppData/hbook`.
+
+### Updating, in general
+
+`docker compose up -d` on its own does **not** fetch a newer image — Docker reuses the `:latest` it already
+has. Run `docker compose pull` first. This was never written down before, which means anyone who installed
+earlier and tried to update has been sitting on their original version without knowing.
+
+### Also
+
+`JWT_SECRET` can now actually be set in `.env`; the install compose named it but never passed it through, so
+setting it did nothing. `LIBRARY_BACKEND` had the same problem and is now a real setting rather than a
+hardcoded value. And a pass over the documentation removed a set of claims that were simply untrue: an API
+example that could never have worked, a 2FA recovery route that does not exist, a Node version the test suite
+cannot run on, and a sources project that was never published. The route reference now matches the code
+exactly — 142 documented, 142 real.
+
+## v0.5.0 — 2026-08-20
+
+The release that closes the gap with Mihon and Suwayomi, and one that finally shows the product.
+
+**Mihon / Tachiyomi extensions.** Browse roughly 1,400 extensions from inside the admin panel and add one with
+a click. They run on a bundled Suwayomi engine that starts with the stack and configures itself; installing an
+extension switches its sources on straight away, so it is searchable from Discover immediately. hbook keeps
+owning the library, reader, downloads and updates. It hosts nothing and ships no repository URL: you point it at
+a repository you trust. The engine is a JVM and sits around 800 MB of RAM; set `SUWAYOMI_URL=` empty to turn the
+whole feature off. See [docs/extensions.md](docs/extensions.md).
+
+**Single sign-on.** Optional OIDC against Authentik, Authelia, Keycloak or anything else that speaks OpenID
+Connect, with optional group-to-admin mapping. Strictly additional: local accounts, 2FA, lockout and session
+revocation are untouched, so a provider outage cannot lock you out of your own server.
+
+**AniList sync.** Connect your account once and finishing a chapter updates your list on its own. Progress is
+the highest chapter you have *finished*, so re-reading an old one never rewinds your list, and AniList being
+slow or down can never delay a page turn.
+
+**Library health.** A new admin tab that audits the library: chapter gaps, chapters that downloaded as one or
+two images, duplicate series, impossible chapter numbers, and failing sources. Each check reports what it cannot
+see as well as what it found.
+
+**Scoped API tokens.** Long-lived, revocable tokens with read / write / admin scopes, listed beside your active
+sessions. An admin's token still needs the admin scope before it can touch the admin API. There is an API
+reference now too, at [docs/api.md](docs/api.md).
+
+**Also**
+
+- Reader settings follow your account instead of the device you set them on.
+- A pull-based install (`deploy/docker-compose.yml`) and a CasaOS app manifest.
+- Screenshots are now generated by a committed rig (`scripts/shots/`), so they stop rotting.
+- Fixed: pages served from URLs without a file extension were stored with the wrong one, which made a chapter
+  download perfectly, contain every image, and read as **zero pages**. Nothing errored.
+- Fixed: `migrate()` now takes an advisory lock, so two processes starting at once cannot collide.
+
+**Nothing to migrate.** New tables and columns are created on boot. With `SUWAYOMI_URL` unset, nothing about an
+existing install changes.
+
+## v0.4.0 — 2026-08-19
+
+**Koryomi is now hbook.**
+
+The old name didn't work in Japanese: romanized, "Koryomi" reads as こ-りょ-み (ko-**ryo**-mi), because `ryo`
+is a single mora りょ — so the よみ of 読み ("reading") never survived. That broke the link to Tachiyomi
+(立ち読み) and Suwayomi that the name was meant to signal, and left the 読 mark claiming something the name
+didn't say.
+
+**hbook** (うちよみ, 内読み) keeps よみ intact and follows the convention the ecosystem already uses:
+Tachiyomi is standing-reading, Suwayomi is sitting-reading, **hbook is reading at home** — which is what a
+self-hosted reader is. The logo evolves to match: the same faceted 読, now sheltered under a roof.
+
+### Nothing to migrate
+Only the product name changed. `hbook` is the shared root of both names, so every stateful identifier is
+untouched — the database and its volumes, the offline IndexedDB, auth cookies, saved reader preferences, OPDS
+entry ids, and container names. **Existing installs upgrade in place: nobody is logged out, no reading
+progress resets, no downloaded chapter is orphaned.**
+
+### If you pull images
+Images now publish to **`ghcr.io/yunauuu/hbook-bff`** and **`ghcr.io/yunauuu/hbook-web`**. GHCR does
+not redirect renamed packages, so the old `koryomi-*` images stay published and keep working — update your
+compose file when convenient. ~~The GitHub repo moved to `YUnauuu/hbook`; the old URL redirects.~~ The
+repo move is still true; the promise about the images is not.
+
+> **Correction (2026-08-21): the `koryomi-*` packages have been deleted, and `docker pull` of them now fails.**
+> Keeping them published turned out to be worse than removing them: releases only ever publish `hbook-*`,
+> so `koryomi-*:latest` sat frozen at v0.3.0 while still reading as "latest" to anyone running it. Point your
+> compose file at `ghcr.io/yunauuu/hbook-bff` and `ghcr.io/yunauuu/hbook-web`.
+
+## v0.3.0 — 2026-08-19
+
+Groundwork release: don't lose your data, don't ship broken reading, and don't retype your library.
+
+### Backups
+- Nightly backup of the database and your config, rotated automatically (14 runs by default) and restorable
+  with plain `psql` — no matching tool versions needed. Runs at a configurable hour, shows up in
+  **Admin → Tasks** with its last run and size, and has a **Run now** button.
+- Point `BACKUP_PATH` at a host directory — ideally on a different physical disk, so a dead drive doesn't
+  take the backups with it. Downloaded chapters and the image cache are deliberately excluded: both are
+  large and reproducible.
+- Restore instructions in [docs/USAGE.md](docs/USAGE.md#11-backups--restore).
+
+### Import
+- Bring a library over from **Mihon / Tachiyomi** (`.tachibk` backup) or a **public MangaDex list**. Titles
+  are parsed and shown for review first, with anything already in your library filtered out, before any
+  importing starts. Pasting a plain list still works.
+- Private MangaDex follows are not supported: they need an account login, which hbook doesn't ask for.
+
+### Fixes
+- **Downloads are now paced.** Every add previously spawned its own uncapped background download loop, so a
+  large import meant hundreds of simultaneous downloads against a handful of sites — a good way to get your
+  server blocked. All downloads now share a per-source concurrency limit and a politeness gap.
+- Chapter dates: `"Chapter 12"` was being accepted as a date (December 2001) and could be stamped as a
+  release date. Date parsing now requires text that actually looks like a date.
+
+### Under the hood
+- A test suite (30 tests) covering the logic that has actually broken before: the phantom-chapter guard,
+  date parsing, volume vs chapter labelling, chapter ordering, hero art fitting, backup parsing, download
+  pacing, and the reading-progress rules (run against a real Postgres, since they live in SQL). CI runs it
+  on every pull request — previously a green build only proved the code compiled.
+- Lockfiles added, so builds are reproducible.
+
+## v0.2.1 — 2026-08-19
+
+- Volume-based libraries read correctly: archives named as tomes (`Tome 01.cbr`, `Berserk T41`, `v01`) now
+  label as **Vol. N** instead of Ch. N, and a mostly-volume series reports "N volumes". Chapter markers still
+  win, so a release-version suffix like `Ch. 5 v2` stays a chapter.
+
+## v0.2.0 — 2026-08-09
+
+The "cinematic + convenient" release.
+
+### Art & visuals
+- Real banner art for the home hero: sharp, aspect-aware variants per device (`wide`/`tall` frames) —
+  art close to the frame's shape is smart-cropped full-bleed; mismatched shapes render whole over an
+  ambient blur of themselves. Pre-warmed server-side and preloaded client-side, so the hero loads instantly.
+- Banner/cover backfill across the whole library from **AniList** (including banners from a manga's anime
+  adaptation), **Kitsu** wide covers, and **MangaDex** high-res covers — plus an admin **Art Review** picker
+  with per-series candidates.
+- Hi-res cover pipeline (`?w=` variants) for detail posters and hero thumbs.
+
+### Reader
+- **Up Next**: finishing a series shows a card with related-series suggestions (both reading modes).
+- **Double-page spreads** in paged mode — chapter covers solo, pairs after, RTL-aware for manga.
+- **Page-preview scrubber**: dragging the progress slider shows a live thumbnail of the target page.
+- Chapter dividers labeled "Up Next · {chapter}".
+
+### Home & series
+- Cinematic series page: title-over-art hero with author, status, chapter count, "Updated X ago", and
+  rating badges; "More like this" rail; "Because you read {title}" rails on Home.
+- Chapter release dates surfaced throughout (Updates feed sorts by them).
+
+### Convenience
+- **Ctrl+K command palette**: instant series search, quick actions, recents; live results in the top bar.
+- **Collections**: create/reorder reading lists with accent colors; add from any series page; Home rail.
+- **Reading history** timeline page.
+- **Mark as read** (chapter / previous / whole series) and **bulk offline-download delete** (per series or all).
+
+### Accuracy & robustness
+- Chapter completions now record reliably (fast-scrolling past a last page used to miss them — this starved
+  streaks and the leaderboard). Completion is retroactive on chapter-crossing, immediate on the last page,
+  and server-enforced as a safety net. Re-reading a chapter no longer un-reads it.
+- Offline reading progress syncs in the background; push subscriptions self-heal after browser rotation;
+  the updater's first run respects the configured interval.
+
+### Sources
+- Madara engine: falls back to the manga page when a site's ajax chapter endpoint serves junk (fixes
+  ManhuaPlus updates), on top of the earlier cross-title widget scoping fix.
+
+## v0.1.0 — 2026-07-02
+
+Initial public release.
