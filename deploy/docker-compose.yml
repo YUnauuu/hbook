@@ -51,6 +51,11 @@ services:
       # database want room too, and a cache is safe to delete (it refills).
       CACHE_MAX_BYTES: ${CACHE_MAX_BYTES:-8589934592}
       SOURCES_DIR: /sources
+      # When the solver cannot answer -- and on a small machine it is busy most of the time --
+      # fetch the page DIRECTLY instead of giving the source up on it. Most of the Chinese manga sites
+      # put no challenge in front of their pages, so this is the difference between a slow source and
+      # a dead one. The development compose and the start script have said this all along.
+      SOURCE_DIRECT_FETCH: ${SOURCE_DIRECT_FETCH:-1}
       CUSTOM_SITES_FILE: /config/sites.json
       # Generated and persisted to /config on first boot when left empty.
       JWT_SECRET: ${JWT_SECRET:-}

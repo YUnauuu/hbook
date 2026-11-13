@@ -42,6 +42,11 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       FLARESOLVERR_URL: http://hbook-trawl:8191
       SOURCES_DIR: /sources
+      # When the solver cannot answer -- and on a small machine it is busy most of the time --
+      # fetch the page DIRECTLY instead of giving the source up on it. Most of the Chinese manga sites
+      # put no challenge in front of their pages, so this is the difference between a slow source and
+      # a dead one. The development compose and the start script have said this all along.
+      SOURCE_DIRECT_FETCH: ${SOURCE_DIRECT_FETCH:-1}
       CUSTOM_SITES_FILE: /config/sites.json
       # Mihon/Tachiyomi extensions. This listing ships no extension engine; import the add-on beside it
       # (deploy/casaos/hbook-suwayomi.yml), then set this to http://hbook-suwayomi:4567 in CasaOS's

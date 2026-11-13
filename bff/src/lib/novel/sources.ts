@@ -89,13 +89,29 @@ function ruleCountOf(json: BookSourceJson): number {
  * The bundled one is resolved from this file's own location rather than from the working
  * directory, because the two differ between running from source (`bff/src/lib/novel/`) and running
  * the built server (`bff/dist/lib/novel/`) -- and the working directory is wherever the operator
- * happened to start it. Four levels up from either is the repository root, where `novel-sources/`
- * lives: in a container the same path is `/app/novel-sources`.
+ * happened to start it.
+ *
+ * ⚠️ The two layouts are NOT the same depth. From source, `novel-sources/` is a sibling of `bff/`,
+ * four levels up. In the image the server's code is at `/app/dist/lib/novel` and the sources were
+ * copied to `/app/novel-sources` -- three levels up. Four levels up there is `/`, and the sources
+ * were not found: the reader showed no novels at all, with nothing to say about it.
+ *
+ * So: the places they may be, in order, and the first that exists wins.
  */
-export function sourcesDir(): string {
+export function sourceDirCandidates(dirname: string = __dirname): string[] {
   const configured = process.env.NOVEL_SOURCES_PATH;
-  if (configured) return path.resolve(configured);
-  return path.resolve(__dirname, '../../../..', 'novel-sources');
+  if (configured) return [path.resolve(configured)];
+  return [
+    path.resolve(dirname, '../../../..', 'novel-sources'), // the repository root (running from source)
+    path.resolve(dirname, '../../..', 'novel-sources'),    // the image: beside dist/, at /app/novel-sources
+  ];
+}
+
+/** The sources directory: the first candidate that is really there. */
+export function sourcesDir(dirname: string = __dirname): string {
+  const candidates = sourceDirCandidates(dirname);
+  for (const dir of candidates) if (fs.existsSync(dir)) return dir;
+  return candidates[0];
 }
 
 /** Read every source out of one JSON file. */

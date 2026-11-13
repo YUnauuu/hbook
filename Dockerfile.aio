@@ -85,6 +85,9 @@ COPY --from=api /app/dist ./dist
 # The novel side's book-source collections, so a fresh install has sources to search without the
 # operator fetching anything. A bind mount over /novel-sources replaces them.
 COPY novel-sources/ ./novel-sources
+# Where they were copied to: the server resolves the path from its own location, and
+# that is one level shallower in an image than in the repository.
+ENV NOVEL_SOURCES_PATH=/app/novel-sources
 # The API reference the server serves at /api/docs. Next to dist/, where lib/apiDocs.ts resolves it.
 COPY bff/openapi.yaml ./openapi.yaml
 # The Chinese manga sites that ship with the app (the operator adds more in /config/sites.json).

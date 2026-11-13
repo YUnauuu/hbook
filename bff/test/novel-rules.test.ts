@@ -6,6 +6,7 @@
 // because those are live sites whose behaviour changes.
 
 import { test } from 'node:test';
+import { existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 import { evalField, evalList, makeScope, splitOperators } from '../src/lib/novel/legado/rule';
@@ -13,6 +14,7 @@ import { htmlToText } from '../src/lib/novel/legado/source';
 import { jsonPath } from '../src/lib/novel/legado/jsonpath';
 import { selectXPath } from '../src/lib/novel/legado/xpath';
 import { parseHtml, queryAll, textOf } from '../src/lib/novel/legado/html';
+import { sourceDirCandidates, sourcesDir } from '../src/lib/novel/sources';
 
 const env = { url: 'https://example.test/book/1', runtime: undefined as never, vars: {} };
 
@@ -220,4 +222,24 @@ test('the JSON path parser handles the shapes sources use', () => {
   assert.equal(jsonPath('$.data.list[1].n', data), 2);
   assert.equal(jsonPath('$.other', data), 'x');
   assert.equal(jsonPath('$.data.list[*].n', data)?.length, 2);
+});
+
+/**
+ * Where the book sources are looked for.
+ *
+ * ⚠️ The two layouts are not the same depth. From source, `novel-sources/` is a sibling of `bff/`
+ * (four levels up from `bff/src/lib/novel/`). In an image the server is at `/app/dist/lib/novel`
+ * and the sources were copied to `/app/novel-sources` (three levels up). Four levels up there is
+ * `/`, and the reader found no novels at all — with nothing to say about it.
+ *
+ * Reintroduce by taking the first candidate only: in an image the sources are not found, and the
+ * reader shows an empty 书库.
+ */
+test('the book sources are looked for where each layout puts them', () => {
+  const fromSource = sourceDirCandidates('/srv/hbook/bff/src/lib/novel');
+  assert.deepEqual(fromSource, ['/srv/hbook/novel-sources', '/srv/hbook/bff/novel-sources']);
+  const fromImage = sourceDirCandidates('/app/dist/lib/novel');
+  assert.deepEqual(fromImage, ['/novel-sources', '/app/novel-sources']);
+  // And the one that wins is a directory that really exists.
+  assert.ok(existsSync(sourcesDir()), `the sources directory does not exist: ${sourcesDir()}`);
 });
