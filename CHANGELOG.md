@@ -2,6 +2,20 @@
 
 ## v0.104.0 — 2026-11-05
 
+**This release is hbook: the Uchiyomi reader server, renamed, with a novel side added from scratch.**
+
+- **hbook**: the project is renamed throughout — the brand, the logo, the containers, the images, the volumes, the
+  networks, the configuration prefix, the cookies, the API's own field names, the browser's storage keys and the
+  service worker's caches. `scripts/rename-hbook.mjs` is the script that did it, and running it again changes nothing.
+- **The novel side**: a rule engine for the Legado book-source format, written from scratch under
+  `bff/src/lib/novel/`, with 266 book sources that were checked one by one and 37 more that carry 18+ material. The
+  novels read in the same browser as the comics, behind the same search box and the same 18+ switch.
+- **The Chinese manga sites**: 36 of them in `bff/manga-sites.json`, each site's theme worked out at runtime rather
+  than written down by hand.
+- **Sized for a small machine**: the Cloudflare solver is trawl now (about 320 MB idle against FlareSolverr's 865),
+  the extension engine's heap is 512 MB with its own WebView browser switched off, and the image cache is 8 GiB — the
+  whole stack fits in 2 GB of RAM.
+
 **Upload new series or missing chapters, keep artwork beside your files, and improve the reader, lists and source controls.**
 
 ### Chapter uploads and local artwork
