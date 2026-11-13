@@ -237,7 +237,7 @@ could not get past.*) with an admin `fix` that names the engine's own switch rat
 by the names the shipped compose files use, never the development stack's: *The extension engine's own
 Cloudflare bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped
 compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses
-(http://hbook-flaresolverr:8191 in the shipped files), then recreate it. The v0.37.0 compose files
+(http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files
 already set both, so an upgrade that recreates the engine is the fix there.* Since v0.37.0 this route and
 the scheduled source check also read the source's slow streak, so `diagnosis.code` can be `too_slow`
 (*This source answers, but takes longer than the time it is given.*; before v0.49.1 *…but more slowly than it is

@@ -115,7 +115,7 @@ test('a bare Docker service name never reaches the solver', async () => {
     'http://hbook-suwayomi:4567/api/v1/settings/about',
     'http://hbook-suwayomi:4567/api/v1/extension/list',
     'http://hbook-db:5432/',
-    'http://hbook-flaresolverr:8191/v1',
+    'http://hbook-trawl:8191/v1',
   ]) {
     await assert.rejects(fetchCoverImage(u, CF.id), unfetchable, `${u} is refused`);
     assert.deepEqual(asked, [], `the solver was asked to open ${u}`);

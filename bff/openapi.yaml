@@ -14964,7 +14964,7 @@ paths:
         (since v0.37.0). A live `adapterOk: true` outranks the stored error, so a passing extension source no
         longer carries an old Cloudflare verdict. `diagnosis` is {code, reason, fix, actor, silent, needsProbe}: the `fix` for a
         stored "Cloudflare bypass currently disabled" (code `cf_challenge`) names the engine's own switch by
-        the shipped compose names (hbook-suwayomi, http://hbook-flaresolverr:8191), never the
+        the shipped compose names (hbook-suwayomi, http://hbook-trawl:8191), never the
         development stack's; and since v0.37.0 this route reads the source's slow streak, so `code` can be
         `too_slow` ("This source answers, but more slowly than it is given.") here as well as from Discover's
         health view, with a `fix` naming the configured SOURCE_LATEST_TIMEOUT_MS budget in seconds. Since

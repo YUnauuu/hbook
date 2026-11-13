@@ -52,7 +52,7 @@ typing *import* in search.
 
 Prefer a CLI-seeded admin? Run `bash scripts/setup.sh` from a clone instead — it generates the secrets, creates
 the admin from a password you type, fixes volume ownership, and starts the development stack (`hbook-app`,
-`hbook-db`, `hbook-suwayomi`, `hbook-flaresolverr`). `hbook-app` is the same single container the install ships,
+`hbook-db`, `hbook-suwayomi`, `hbook-trawl`). `hbook-app` is the same single container the install ships,
 built from source.
 
 For a source checkout, the development database stays on its existing PostgreSQL 15 image. A fresh volume
@@ -2397,8 +2397,8 @@ hbook doesn't support out of the box, typically an **API-only** site or a **Java
 Those need a code-level adapter (a source plugin); the three bundled engines cover the large majority of manga
 sites, but not every one.
 
-> **Cloudflare:** many sites sit behind Cloudflare. The bundled FlareSolverr container (`hbook-flaresolverr`;
-> `hbook-flaresolverr` in the development stack) handles that automatically; just make sure it is running (it
+> **Cloudflare:** many sites sit behind Cloudflare. The bundled trawl container (`hbook-trawl`;
+> `hbook-dev-trawl` in the development stack) handles that automatically; just make sure it is running (it
 > is, by default). The desktop app has its own Cloudflare helper instead, with nothing to run
 > ([desktop guide](DESKTOP.md#cloudflare)).
 
@@ -4235,7 +4235,7 @@ and has to be told about a FlareSolverr; the compose files set `FLARESOLVERR_ENA
 container since v0.37.0, so `docker compose up -d` (which recreates the engine) is the fix. The admin *Test* button
 and the Health page say the same, in these words: *The extension engine's own Cloudflare bypass is switched off. On
 the Suwayomi engine's container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and
-FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-flaresolverr:8191 in the shipped files),
+FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files),
 then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix
 there.* Since v0.49.0 **Admin → Sources** says so (since v0.53.0 in the *Cloudflare helper* cell of the engine's strip), and
 **Connect** there — or on Health's

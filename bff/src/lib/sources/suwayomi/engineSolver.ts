@@ -74,7 +74,7 @@ export async function setEngineSolver(url: string, run: Gql = defaultGql): Promi
 /**
  * The solver hbook itself was given, for the engine to share: FLARESOLVERR_URL as set, or '' when it was not.
  *
- * Not flaresolverr.ts `solverUrl()`: that falls back to the development stack's `http://hbook-flaresolverr:8191`
+ * Not flaresolverr.ts `solverUrl()`: that falls back to the development stack's `http://hbook-trawl:8191`
  * so the built-in engines always have somewhere to ask, and offering to point someone's engine at a host that
  * exists on one development machine would be a fix that breaks it. Read on each call rather than once, so a
  * test can vary it; on desktop the shell sets it before the server starts (lib/desktop).

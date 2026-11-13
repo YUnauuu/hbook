@@ -123,8 +123,42 @@ includes the Cloudflare solver; the Mihon extension engine is not part of it.
 | Container | Role |
 |---|---|
 | `hbook` | the app: the API, the PWA it serves, and the embedded Postgres database |
-| `hbook-flaresolverr` | Cloudflare solver — **started automatically**; sources that need it use it with no config, and since v0.37.0 so does the extension engine. trawl or Byparr can take its place, and since v0.55.3 a second solver can stand by as a backup ([the Cloudflare solver](CONFIGURATION.md#the-cloudflare-solver)) |
+| `hbook-trawl` | Cloudflare solver (trawl, a Camoufox browser) — **started automatically**; sources that need it use it with no config, and since v0.37.0 so does the extension engine. FlareSolverr or Byparr can take its place, and since v0.55.3 a second solver can stand by as a backup ([the Cloudflare solver](CONFIGURATION.md#the-cloudflare-solver)) |
 | `hbook-suwayomi` | the extension engine, so Mihon / Tachiyomi extensions work once you add an extension repository ([step by step](extensions.md#add-an-extension-repository--step-by-step)); the compose file points it at the solver above (`FLARESOLVERR_ENABLED` / `FLARESOLVERR_URL` on this container). Optional: `EXTENSION_ENGINE=0` in `.env` and `docker compose up -d` leave it out and keep its data ([turning it off](extensions.md#turning-it-off)) |
+
+## On a small machine (2 GB of RAM)
+
+The shipped files are sized for a small server: **trawl** instead of FlareSolverr (about 316 MB idle against
+865), the extension engine's heap capped at 512 MB with a 1200 MB ceiling, the image cache at 8 GiB, and two
+solves at a time. The whole stack then sits at roughly 1.5–1.7 GB.
+
+```bash
+# 1. Give the host 2 GB of swap. Without it, memory pressure makes the kernel kill Postgres mid-write,
+#    which is a lost transaction rather than a slow page.
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 2. Install and go.
+curl -O https://raw.githubusercontent.com/YUnauuu/hbook/main/deploy/docker-compose.yml
+docker compose up -d
+```
+
+Two knobs in `.env` if the machine is smaller still:
+
+```bash
+# The extension engine is the biggest single piece. This leaves the app, the database, the solver and
+# the Mihon extensions out -- the sources that need no engine (MangaDex, the bundled Chinese sites, any
+# site you add by URL) keep working, and the engine's data is kept for the day you turn it back on.
+EXTENSION_ENGINE=0
+
+# A bigger cache for the page images. The default is 8 GiB; on a 40 GB disk the library and the database
+# want the room too, and the cache is safe to delete (it refills).
+CACHE_MAX_BYTES=8589934592
+```
+
+Two things are not negotiated on a small box: the extension engine's ceiling must stay at least 1.25× its heap
+([the engine's memory](CONFIGURATION.md#the-extension-engine)), and the solver's browser pool is one. Raise
+either and the machine runs out of memory before the app does.
 
 ```bash
 docker compose logs -f hbook  # watch it boot

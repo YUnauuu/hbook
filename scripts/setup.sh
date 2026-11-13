@@ -16,9 +16,9 @@ COMPOSE=(docker compose --project-directory "$DIR" -f "$DIR/docker-compose.yml")
 # A server override can run a RELEASED image under its own service name. This script builds from the working
 # tree and force-recreates what it starts, so on such a host it would rebuild and restart a live install --
 # naming a service on the command line also activates its profile, so being profile-gated is not protection.
-if "${COMPOSE[@]}" config --services 2>/dev/null | grep -qxv -e hbook-app -e hbook-db -e hbook-bff -e hbook-web -e hbook-flaresolverr -e hbook-suwayomi; then
+if "${COMPOSE[@]}" config --services 2>/dev/null | grep -qxv -e hbook-app -e hbook-db -e hbook-bff -e hbook-web -e hbook-trawl -e hbook-suwayomi; then
   echo "This checkout has a docker-compose.override.yml running services setup.sh does not manage:"
-  "${COMPOSE[@]}" config --services 2>/dev/null | grep -xv -e hbook-app -e hbook-db -e hbook-bff -e hbook-web -e hbook-flaresolverr -e hbook-suwayomi | sed "s/^/  - /"
+  "${COMPOSE[@]}" config --services 2>/dev/null | grep -xv -e hbook-app -e hbook-db -e hbook-bff -e hbook-web -e hbook-trawl -e hbook-suwayomi | sed "s/^/  - /"
   echo "setup.sh is the contributor script for a plain clone. Refusing to touch a server install."
   exit 1
 fi

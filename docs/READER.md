@@ -105,16 +105,16 @@ The operator's own list (`/config/sites.json`, written by Admin → Providers �
 > A site that cannot be **resolved** is a site that is not there for this machine: no amount of
 > asking will bring it, and the server remembers that for a while rather than trying again on every
 > shelf. A site that resolves and answers with a challenge is a different case -- that one wants a
-> browser, and FlareSolverr is the browser.
+> browser, and the Cloudflare solver is the browser.
 
 ### Most of these sites need the Cloudflare solver
 
 包子漫画, 禁漫天堂 and their neighbours put a **challenge** in front of their pages: a plain GET
 answers with `{"error":"challenge_required"}` and no books in it. A challenge is answered by a
-browser, so these sites need **FlareSolverr** running:
+browser, so these sites need the **Cloudflare solver** running:
 
 ```bash
-docker run -d --name flaresolverr -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest
+docker run -d --name trawl -p 8191:8191 ghcr.io/germondai/trawl:1.11.1
 # and point the app at it
 FLARESOLVERR_URL=http://127.0.0.1:8191
 ```

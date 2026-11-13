@@ -79,13 +79,13 @@ test('the platform the setup steps open on', async () => {
  */
 test("how the engine's Cloudflare helper is wired", async () => {
   const { solverWiring } = await import('../src/lib/sources/suwayomi/engineSolver');
-  const ours = 'http://hbook-flaresolverr:8191';
+  const ours = 'http://hbook-trawl:8191';
   const on = (url: string) => ({ supported: true as const, enabled: true, url });
   assert.equal(solverWiring({ supported: false }, ours, false), 'unsupported');
   assert.equal(solverWiring({ supported: true, enabled: false, url: ours }, ours, false), 'off', 'switched off, whatever it points at');
   assert.equal(solverWiring(on(''), ours, false), 'off', 'on with no address is off');
   assert.equal(solverWiring(on(ours), ours, false), 'ok');
-  assert.equal(solverWiring(on('http://HBOOK-flaresolverr:8191/v1/'), ours, false), 'ok', 'the same solver spelled with /v1 and a slash');
+  assert.equal(solverWiring(on('http://HBOOK-trawl:8191/v1/'), ours, false), 'ok', 'the same solver spelled with /v1 and a slash');
   assert.equal(solverWiring(on('http://localhost:8191'), ours, false), 'localhost', "the engine's default: its own container, where no solver runs");
   assert.equal(solverWiring(on('http://127.0.0.1:8191'), '', false), 'localhost');
   assert.equal(solverWiring(on('http://solver.lan:8191'), ours, false), 'other');
@@ -96,11 +96,11 @@ test("how the engine's Cloudflare helper is wired", async () => {
 });
 
 test("hbook's own solver is what FLARESOLVERR_URL says, never the development stack's default", async () => {
-  // flaresolverr.ts falls back to http://hbook-flaresolverr:8191 so the built-in engines always have somewhere to
+  // flaresolverr.ts falls back to http://hbook-trawl:8191 so the built-in engines always have somewhere to
   // ask; offering to point an engine at that host would break it everywhere but one development machine.
   const { ourSolverUrl, solverHost } = await import('../src/lib/sources/suwayomi/engineSolver');
   assert.equal(ourSolverUrl({}), '');
-  assert.equal(ourSolverUrl({ FLARESOLVERR_URL: ' http://hbook-flaresolverr:8191 ' }), 'http://hbook-flaresolverr:8191');
+  assert.equal(ourSolverUrl({ FLARESOLVERR_URL: ' http://hbook-trawl:8191 ' }), 'http://hbook-trawl:8191');
   assert.equal(solverHost('http://127.0.0.1:41234/secret-token'), '127.0.0.1:41234', 'the audit never carries the path');
 });
 
@@ -113,6 +113,6 @@ test("the status route's helper address never goes to a desktop page", async () 
   assert.equal('url' in desk, false, 'no url key on desktop');
   assert.ok(!JSON.stringify(desk).includes('tok-per-launch'), 'and the token is nowhere in it');
   assert.equal(desk.wiring, 'ok');
-  const server = solverView({ supported: true, enabled: true, url: 'http://hbook-flaresolverr:8191' }, 'http://hbook-flaresolverr:8191', false);
-  assert.equal(server.url, 'http://hbook-flaresolverr:8191', 'a server admin reads where it points');
+  const server = solverView({ supported: true, enabled: true, url: 'http://hbook-trawl:8191' }, 'http://hbook-trawl:8191', false);
+  assert.equal(server.url, 'http://hbook-trawl:8191', 'a server admin reads where it points');
 });

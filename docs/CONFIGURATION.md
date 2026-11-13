@@ -306,8 +306,11 @@ container of its own that gets past the check and hands back the page, its cooki
 then fetched directly with that cookie and user agent. hbook speaks FlareSolverr's `/v1` API, so any solver that
 speaks it works. (Extension sources are fetched by the extension engine, which has its own solver setting: below.)
 
-- `FLARESOLVERR_URL`: the **main** solver. Every shipped compose file runs [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
-  as `hbook-flaresolverr` and points this at it, so there is nothing to do.
+- `FLARESOLVERR_URL`: the **main** solver. Every shipped compose file runs [trawl](https://github.com/germondai/trawl)
+  as `hbook-trawl` and points this at it, so there is nothing to do. trawl is Camoufox, a patched Firefox: it
+  speaks the same `/v1` API, keeps the sessions it has solved (a median solve of 2 s against FlareSolverr's 12),
+  and sits at about 316 MB idle against FlareSolverr's 865 MB — which is what lets the app, the database, the
+  solver and the extension engine share a 2 GB machine.
 - `SOURCE_DIRECT_FETCH` (default `0`; the reader app's compose file and start script set it to `1`): when the solver
   cannot answer, fetch the page **directly** instead of giving the source up on it. It is what a site that puts no
   challenge in front of its pages needs — most of the Chinese manga sites among them — and it is off by default
@@ -332,8 +335,8 @@ The solvers to choose from, all speaking the same API:
 
 | Solver | What to know |
 |---|---|
-| [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) | The default. Chrome, a fresh browser for every request; about 850 MB idle. Needs `shm_size: 1gb` (the shipped files set it). |
-| [trawl](https://github.com/germondai/trawl) | Camoufox (a patched Firefox), and it keeps solved sessions, so a repeat visit to a site is quick: on one install's own sites, a median of 2 s against FlareSolverr's 12, and 316 MB idle against 865. Young (created June 2026): pin a version. Its pool holds one browser unless `BROWSER_POOL_SIZE` says more, and hbook asks for four solves at once: set 2 or more, or lower `SOLVER_CONCURRENCY`. `SESSION_CACHE_DRIVER=memory` runs it without Redis. AGPL-3.0, as its own container. |
+| [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) | Not the default any more — the shipped files run trawl. Chrome, a fresh browser for every request; about 850 MB idle. Needs `shm_size: 1gb` (the shipped files set it). |
+| [trawl](https://github.com/germondai/trawl) | **The one the shipped files run** (pinned to 1.11.1). Camoufox (a patched Firefox), and it keeps solved sessions, so a repeat visit to a site is quick: on one install's own sites, a median of 2 s against FlareSolverr's 12, and 316 MB idle against 865. Young (created June 2026): pin a version. Its pool holds one browser unless `BROWSER_POOL_SIZE` says more, and hbook asks for four solves at once: set 2 or more, or lower `SOLVER_CONCURRENCY` (the shipped files set 2 and one browser). `SESSION_CACHE_DRIVER=memory` runs it without Redis. AGPL-3.0, as its own container. |
 | [Byparr](https://github.com/ThePhaseless/Byparr) | Says it is up at `/health` instead of its root; hbook reads both. |
 
 **Admin → Health** names the solver by how it greets — FlareSolverr, trawl, or another — and compares FlareSolverr's
@@ -348,10 +351,10 @@ request is still solved.
 The extension engine uses the **main** solver only: **Connect** points its own helper at `FLARESOLVERR_URL` (see
 `FLARESOLVERR_ENABLED` / `FLARESOLVERR_URL` under [Downloading](#downloading), and [extensions.md](extensions.md)).
 
-**trawl as the main solver, FlareSolverr kept as the backup** — in [`deploy/docker-compose.yml`](../deploy/docker-compose.yml),
-point `FLARESOLVERR_URL` on the `hbook` service at trawl, add `FLARESOLVERR_FALLBACK_URL` beside it, and add the
-service below next to `hbook-flaresolverr` (which stays as it is). The shipped files keep FlareSolverr alone; this is
-a choice, not a default.
+**FlareSolverr as the backup, or as the main solver** — the shipped files run **trawl alone** ([why](#the-cloudflare-solver));
+this is how to put FlareSolverr back, either beside it as a backup or on its own. In
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml), add `FLARESOLVERR_FALLBACK_URL` beside
+`FLARESOLVERR_URL` and add the service below next to `hbook-trawl` (which stays as it is):
 
 ```yaml
 services:
@@ -361,29 +364,29 @@ services:
       FLARESOLVERR_URL: http://hbook-trawl:8191
       FLARESOLVERR_FALLBACK_URL: http://hbook-flaresolverr:8191
 
-  hbook-trawl:
-    image: ghcr.io/germondai/trawl:1.8.0   # pinned: it is young and changes quickly. 1.8.0 or later (below)
-    container_name: hbook-trawl
+  hbook-flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest   # a fresh Chrome for every solve: ~865 MB idle
+    container_name: hbook-flaresolverr
     restart: unless-stopped
     shm_size: 1gb
     mem_limit: 2g
-    environment:
-      SESSION_CACHE_DRIVER: memory   # keep solved sessions in memory, no Redis
-      BROWSER_POOL_SIZE: "2"
     healthcheck:
-      # /health answers 503 until a browser is up (15 to 30 s after a start).
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/ | grep -q 'FlareSolverr is ready' || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
+    environment:
+      LOG_LEVEL: warning
     networks: [hbook_app]
 ```
 
-Then `docker compose up -d`. To go back, put `FLARESOLVERR_URL` back to `http://hbook-flaresolverr:8191` and drop
-the other line (and the service, if you like). The extension engine keeps the solver its own container names
-(FlareSolverr, in the shipped files); for extension sources to go through trawl too, set `FLARESOLVERR_URL` on the
-`hbook-suwayomi` service to `http://hbook-trawl:8191` as well. It has no backup of its own. That needs trawl
+Then `docker compose up -d`. To make FlareSolverr the **main** solver instead, put
+`FLARESOLVERR_URL: http://hbook-flaresolverr:8191` and drop the fallback line (and the trawl service, if you
+like — but then nothing answers if FlareSolverr falls over, and on a 2 GB machine there is no room for both
+plus the extension engine). The extension engine keeps the solver its own container names (trawl, in the shipped
+files); for extension sources to go through FlareSolverr too, set `FLARESOLVERR_URL` on the `hbook-suwayomi`
+service to `http://hbook-flaresolverr:8191` as well. It has no backup of its own. That needs trawl
 **1.8.0 or later**: the engine asks for a Madara site's lists and searches with a form post it sends without a
 `Content-Type`, and trawl 1.7.0 refuses every one (HTTP 400, *body requires a Content-Type header to be set*), so those
 lists fail on a Cloudflare-protected site. 1.8.0 sends the body as a form.
@@ -428,7 +431,7 @@ rarely needed:
   the bundled Suwayomi has no browser of its own and cannot get past Cloudflare by itself; these two are
   Suwayomi-Server's own settings and point it at the bundled solver. Every compose file sets them on the
   engine service since v0.37.0 (`FLARESOLVERR_ENABLED: "true"`, `FLARESOLVERR_URL:
-  http://hbook-flaresolverr:8191` in the `deploy/` files, `http://hbook-flaresolverr:8191` in the
+  http://hbook-trawl:8191` in the `deploy/` files, `http://hbook-trawl:8191` in the
   development stack), so an upgrade that recreates the engine container is the fix for
   [#54](https://github.com/YUnauuu/hbook/issues/54). If you run the engine yourself — an existing
   Suwayomi named in `SUWAYOMI_URL`, the Unraid template — set both on **that** container and recreate it, or
@@ -436,7 +439,7 @@ rarely needed:
   The admin *Test* button and Health then say, in these words: *The extension engine's own Cloudflare
   bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped compose
   files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses
-  (http://hbook-flaresolverr:8191 in the shipped files), then recreate it. The v0.37.0 compose files
+  (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files
   already set both, so an upgrade that recreates the engine is the fix there.* — the shipped names are
   examples; use whatever your engine's container and solver are called. hbook's own `FLARESOLVERR_URL`
   (in the tuning list of `.env.example`) is a different setting: it is the solver the built-in engines use.

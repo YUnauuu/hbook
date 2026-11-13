@@ -5895,7 +5895,7 @@ layout's engine also joins the app network, where the solver's name resolves), s
 engine is the fix; the Unraid template's `SUWAYOMI_URL` note, extensions.md and CONFIGURATION.md say to set
 both on any engine you run yourself, and that error string now diagnoses as a Cloudflare challenge whose admin
 fix names the engine's switch rather than hbook's solver — by the names the shipped compose files use
-(`hbook-suwayomi`, `http://hbook-flaresolverr:8191`), not the development stack's, since the admins
+(`hbook-suwayomi`, `http://hbook-trawl:8191`), not the development stack's, since the admins
 who read it are exactly the ones whose engine was not recreated from those files. The docs used to say the
 engine solved Cloudflare itself. It does not, and they no longer say so. While there: the *Test* button and
 the daily source check never read a source's slow streak, so *This source answers, but more slowly than it

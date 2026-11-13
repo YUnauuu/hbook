@@ -11,7 +11,7 @@ process.env.JWT_SECRET ||= 'test-secret-at-least-16-chars';
 process.env.DATABASE_URL ||= 'postgres://unused/unused';
 process.env.CONFIG_DIR ||= '/tmp/hbook-test-config';
 
-const OURS = 'http://hbook-flaresolverr:8191';
+const OURS = 'http://hbook-trawl:8191';
 type Deps = import('../src/lib/engineHealth').EngineCheckDeps;
 // The sentences below are written against v2.3.2243 as both the tested and the oldest engine, given here rather than
 // read from enginePin.ts: moving the pin (scripts/engine/bump.mjs) must not rewrite every expectation in this file. The

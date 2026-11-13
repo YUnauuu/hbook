@@ -40,7 +40,7 @@ services:
       # environment editor rather than leaving the localhost default.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
-      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      FLARESOLVERR_URL: http://hbook-trawl:8191
       SOURCES_DIR: /sources
       CUSTOM_SITES_FILE: /config/sites.json
       # Mihon/Tachiyomi extensions. This listing ships no extension engine; import the add-on beside it
@@ -74,25 +74,25 @@ services:
     networks:
       - hbook
 
-  # Cloudflare solver — only used when you add a source that sits behind Cloudflare.
-  hbook-flaresolverr:
-    container_name: hbook-flaresolverr
-    hostname: hbook-flaresolverr
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    # Chrome's shared memory; Docker's 64 MB default kills chromedriver mid-challenge, which reads from the
-    # app's side as the manga site blocking us.
+  # Cloudflare solver — only used when you add a source that sits behind Cloudflare. trawl (Camoufox, a
+  # patched Firefox): same API as FlareSolverr, far lighter — about 316 MB idle against 865 MB. Pinned:
+  # trawl is young and changes quickly.
+  hbook-trawl:
+    container_name: hbook-trawl
+    hostname: hbook-trawl
+    image: ghcr.io/germondai/trawl:1.11.1
+    # The browser writes its shared memory here; Docker's 64 MB default kills it mid-challenge.
     shm_size: 1gb
-    # FlareSolverr leaks over long uptimes and a bloated solver fails mid-challenge rather than dying. A cap
-    # plus `restart: unless-stopped` turns that into an automatic restart.
-    mem_limit: 2g
+    mem_limit: ${SOLVER_MEM_LIMIT:-1200m}
+    environment:
+      SESSION_CACHE_DRIVER: memory
+      BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-1}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/ | grep -q 'FlareSolverr is ready' || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/health >/dev/null || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
-    environment:
-      LOG_LEVEL: warning
+      start_period: 60s
     restart: unless-stopped
     networks:
       - hbook

@@ -15,7 +15,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { assertNotPrivateHost, fetchFollowingPublic } from '../safeFetch';
 import { BlockedAddress, isBlockedHost } from '../ssrfGuard';
 
-const mainUrl = (): string => (process.env.FLARESOLVERR_URL || 'http://hbook-flaresolverr:8191').replace(/\/$/, '');
+const mainUrl = (): string => (process.env.FLARESOLVERR_URL || 'http://hbook-trawl:8191').replace(/\/$/, '');
 
 /** The backup solver's address, or '' when there is none. The main's own address again is no backup. */
 export function backupSolverUrl(): string {

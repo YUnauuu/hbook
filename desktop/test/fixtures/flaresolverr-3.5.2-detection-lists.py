@@ -1,6 +1,6 @@
 # Verbatim: FlareSolverr v3.5.2 src/flaresolverr_service.py lines 25-54
 # https://raw.githubusercontent.com/FlareSolverr/FlareSolverr/v3.5.2/src/flaresolverr_service.py
-# (the live hbook-flaresolverr answers version 3.5.2). desktop/src/solver/detect.ts must match these lists.
+# (the live hbook-trawl answers version 3.5.2). desktop/src/solver/detect.ts must match these lists.
 ACCESS_DENIED_TITLES = [
     # Cloudflare
     'Access denied',

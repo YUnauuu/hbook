@@ -300,14 +300,14 @@ test('THE WRONG KNOB: the engine saying its own bypass is off names the engine\'
   //
   // Reintroduce by moving this rule below the generic cf_challenge one (or deleting it): the code stays
   // cf_challenge but the fix stops naming FLARESOLVERR_ENABLED and the Suwayomi container. Or by writing the
-  // development stack's `hbook-dev-suwayomi` / `hbook-dev-flaresolverr` back into the sentence: the last assertion
+  // development stack's `hbook-dev-suwayomi` / `hbook-dev-trawl` back into the sentence: the last assertion
   // fails, because that name exists on one install and the shipped compose files all say `hbook-*`.
   const d = diagnose(facts({ lastError: ENGINE_BYPASS_OFF }));
   assert.equal(d.code, 'cf_challenge', 'to readers it is still a check we could not get past');
   assert.match(d.fix, /FLARESOLVERR_ENABLED=true/, 'the admin fix must name the engine\'s own switch');
   assert.match(d.fix, /FLARESOLVERR_URL/, 'and the address knob that points the engine at a solver');
   assert.match(d.fix, /hbook-suwayomi/, 'on the engine container as the shipped compose files name it, not ours');
-  assert.doesNotMatch(d.fix, /(^|[^a-z-])hbook-dev-suwayomi|(^|[^a-z-])hbook-dev-flaresolverr/i,
+  assert.doesNotMatch(d.fix, /(^|[^a-z-])hbook-dev-suwayomi|(^|[^a-z-])hbook-dev-trawl/i,
     'the development stack\'s container names must not leak into a sentence every public install reads');
   assert.doesNotMatch(d.reason, /suwayomi|flaresolverr|FLARESOLVERR/i, 'the public sentence names no component');
   // The upstream_down rule (`^suwayomi`) sits below cf_challenge and must not have swallowed it either.

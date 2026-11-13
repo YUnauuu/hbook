@@ -401,8 +401,8 @@ test('the Umbrel package is the one under review: proxy block, PUID, digest pin,
   assert.equal(s.environment.HBOOK_PLATFORM, 'umbrel', 'the Umbrel compose does not tell the app it runs on Umbrel (HBOOK_PLATFORM: umbrel)');
   assert.match(read('deploy/umbrel/hbook/exports.sh'), /derive_entropy/, 'exports.sh does not derive the secret');
   for (const d of ['db', 'config', 'cache', 'downloads', 'backups']) assert.ok(existsSync(join(REPO, `deploy/umbrel/hbook/data/${d}/.gitkeep`)), `data/${d} is not committed; Umbrel would mount an empty root-owned path`);
-  const f = c.services.flaresolverr;
-  assert.match(f?.image ?? '', /^ghcr\.io\/flaresolverr\/flaresolverr:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/, 'the solver sidecar is not pinned by release tag and digest');
+  const f = c.services.flaresolverr ?? c.services.trawl;
+  assert.match(f?.image ?? '', /^ghcr\.io\/(flaresolverr\/flaresolverr:v|germondai\/trawl:)\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/, 'the solver sidecar is not pinned by release tag and digest');
 });
 
 test('the Umbrel package is never more than one release behind', () => {

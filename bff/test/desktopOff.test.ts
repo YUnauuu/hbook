@@ -71,7 +71,7 @@ test('env.ts still makes the push keys on a server (the desktop arm skips them)'
   assert.ok(existsSync(join(dir, 'vapid.json')), 'the keys were not persisted beside the JWT secret');
   // And none of the desktop defaults leaked in on the way.
   assert.equal(env.PUBLIC_ORIGIN, process.env.PUBLIC_ORIGIN ?? 'http://localhost:3000');
-  assert.equal(env.CACHE_MAX_BYTES, 16 * 1024 * 1024 * 1024);
+  assert.equal(env.CACHE_MAX_BYTES, 8 * 1024 * 1024 * 1024);
 });
 
 test('a typed library path is kept exactly as typed on a server (diskSpelling is desktop-only)', async () => {

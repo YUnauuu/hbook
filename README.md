@@ -26,6 +26,10 @@ docker compose up -d
 `environment:` 里加一行 `WEB_ROOT: /app/web`。别的装法（独立数据库、HTTPS、CasaOS / Unraid / Umbrel）：
 [docs/INSTALL.md](docs/INSTALL.md)。
 
+**2 GiB 的小机器也够**：随附的 compose 文件已经按小机器配好了——solver 用 trawl（约 320 MB，FlareSolverr 要
+865 MB），扩展引擎的堆 512 MB 且关掉了它自己的 WebView 浏览器，图片缓存 8 GiB。再给主机加 2 GB swap，
+整套常驻 1.5 GB 左右。步骤：[小机器](docs/INSTALL.md#on-a-small-machine-2-gb-of-ram)。
+
 ## 六个栏目
 
 | 栏目 | 是什么 |
@@ -58,6 +62,18 @@ cd bff && npm install && npm run build && cd ..
 
 脚本自己拉起 Postgres、编译、等到接口真的回话为止；数据库认不出用户时，它会打印一条现成的命令。
 前端就是 `reader/` 里的四个文件（HTML / CSS / JS 加一个 service worker），不用编译。
+
+## 桌面版
+
+hbook Desktop（beta），Windows 和 macOS 上的一个窗口：既能**本机跑**（整个应用和库都在这台机器上，不用 Docker
+和账号），也能**连你已经跑着的服务器**。
+
+- Windows (x64)：[hbook-Setup.exe](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-Setup.exe)
+- Mac (Apple silicon)：[hbook-mac-arm64.dmg](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-mac-arm64.dmg)
+- Mac (Intel)：[hbook-mac-x64.dmg](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-mac-x64.dmg)
+
+第一次打开系统会拦一下（Windows 选「更多信息 → 仍要运行」，macOS 在「系统设置 → 隐私与安全性」里点「仍要打开」）。
+细节：[桌面版说明](docs/DESKTOP.md)。
 
 ## 文档
 

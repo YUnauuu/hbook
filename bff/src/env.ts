@@ -206,7 +206,10 @@ const schema = z.object({
   VAPID_PUBLIC_KEY: z.string().default(''),
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:admin@hbook.com'),
-  CACHE_MAX_BYTES: z.coerce.number().default(16 * 1024 * 1024 * 1024),
+  // The image cache's ceiling: 8 GiB. It was 16, which is a lot on the 30-40 GB disks a self-hosted server
+  // usually has -- the library and the database want the room too, and a cache is safe to delete (it refills).
+  // The compose files set it too, so an operator sees it there as well.
+  CACHE_MAX_BYTES: z.coerce.number().default(8 * 1024 * 1024 * 1024),
   BACKUP_DIR: z.string().default('/backups'),
   BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14), // nightly dumps to retain
   ACCESS_TTL_SECONDS: z.coerce.number().default(60 * 15),

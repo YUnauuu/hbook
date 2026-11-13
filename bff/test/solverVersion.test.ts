@@ -111,9 +111,10 @@ test("the trawl the docs pin takes the extension engine's form posts: 1.8.0 or l
   // Content-Type (its CloudflareInterceptor hands the body over as `postData`), and trawl 1.7.0 refused every one with
   // HTTP 400 "body requires a Content-Type header to be set": ManhuaUS's Popular and Search failed through it while every
   // GET worked. 1.8.0 sends such a body as a form. Reintroduce by pinning 1.7.0 in docs/CONFIGURATION.md: this fails.
-  const doc = readFileSync(join(__dirname, '..', '..', 'docs', 'CONFIGURATION.md'), 'utf8');
-  const pins = [...doc.matchAll(/ghcr\.io\/germondai\/trawl:(\S+)/g)].map((m) => m[1]);
-  assert.ok(pins.length > 0, 'the docs show a trawl service to copy');
+  // The pin lives in the compose files now (the shipped files run trawl); the docs name it too.
+  const files = ['docs/CONFIGURATION.md', 'deploy/docker-compose.yml', 'deploy/docker-compose.split.yml', 'deploy/docker-compose.external-db.yml', 'docker-compose.yml'];
+  const pins = files.flatMap((file) => [...readFileSync(join(__dirname, '..', '..', file), 'utf8').matchAll(/ghcr\.io\/germondai\/trawl:([0-9][0-9A-Za-z.\-]*)/g)].map((m) => m[1]));
+  assert.ok(pins.length > 0, 'neither the docs nor a compose file show a trawl service to copy');
   for (const v of pins) {
     assert.ok(mod.parseVersion(v), `a version to compare, not "${v}"`);
     assert.equal(mod.isBehind(v, 'v1.8.0'), false, `trawl ${v} refuses the engine's form posts`);

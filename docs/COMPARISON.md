@@ -109,7 +109,7 @@ one compose file.
 | **Komga or Kavita** to serve and read | The library server, the household and the reader, installable and offline |
 | **Suwayomi, Mangarr or Tranga** to watch and grab | Follow a series; the scheduler fetches new chapters, estimates when the next is due, and can check quiet series less often |
 | **A download folder** shared between the two | Its own downloads, saved as CBZ with ComicInfo, beside your library rather than inside it |
-| **FlareSolverr** for Cloudflare | Included in the compose file and wired in; a second solver can take over when the first fails |
+| **A Cloudflare solver** (trawl) | Included in the compose file and wired in; FlareSolverr can take its place, and a second solver can take over when the first fails |
 | **A tracker app** for AniList or MyAnimeList | Progress sync and list import built in |
 
 The difference is more than tidiness. A downloader that shares a database with the reader knows which chapters you

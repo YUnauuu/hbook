@@ -1087,7 +1087,7 @@ const WORDS: Record<string, (p: P) => string | null> = {
     : tr('The Cloudflare solver stayed busy: every browser it has was in use, however long hbook waited. It catches up by itself; if it keeps happening, give it more browsers (trawl: BROWSER_POOL_SIZE), or let hbook ask fewer pages of it at once (SOLVER_CONCURRENCY).')),
   'fix.bypassOff': () => (isDesktop()
     ? tr('The extension engine isn\'t using hbook\'s built-in Cloudflare helper. Quit and reopen hbook to restart it.')
-    : tr('The extension engine\'s own Cloudflare bypass is switched off. On the Suwayomi engine\'s container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-flaresolverr:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.')),
+    : tr('The extension engine\'s own Cloudflare bypass is switched off. On the Suwayomi engine\'s container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.')),
   'fix.engineLogin': () => (isDesktop()
     ? tr('hbook\'s extension engine refused hbook\'s own login. Quit and reopen hbook to restart both.')
     : tr('The extension engine refused hbook\'s login. Set SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD to the engine\'s own basic-auth user and password (or turn its auth off), then restart hbook.')),

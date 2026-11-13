@@ -77,7 +77,7 @@ test('a bare container hostname is refused by the sync check, not left to DNS', 
   // went to FlareSolverr's browser unchecked (coverSolverGuard.test.ts). No public host is a single label, so
   // refusing one here costs nothing and closes that class of mistake for whatever comes next.
   // Reintroduce by deleting the dotless-name line in isBlockedHost: every one of these is allowed again.
-  for (const h of ['hbook-db', 'hbook-suwayomi', 'hbook-suwayomi', 'hbook-flaresolverr', 'nas', 'HBOOK-DB'])
+  for (const h of ['hbook-db', 'hbook-suwayomi', 'hbook-suwayomi', 'hbook-trawl', 'nas', 'HBOOK-DB'])
     assert.equal(isBlockedHost(h), true, `${h} must be refused`);
 });
 

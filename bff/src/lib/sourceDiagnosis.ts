@@ -245,14 +245,14 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
   // to the site itself and has to be pointed at the solver by its own env. Must sit ABOVE the generic
   // cf_challenge rule, which matches the same string on the word "cloudflare".
   // ⚠️ The sentence must stay name-agnostic. Its first version named the development stack's containers
-  // (hbook-suwayomi / hbook-flaresolverr), which exist on exactly one install; every shipped compose file says
+  // (hbook-suwayomi / hbook-trawl), which exist on exactly one install; every shipped compose file says
   // hbook-*, the Unraid template runs no engine at all, and the admins who will actually read this are
   // the ones whose engine was NOT recreated from the v0.37.0 files -- so a hard-coded name is wrong for
   // precisely the people it is for. Name the shipped names as examples and point at the value they have.
   [/cloudflare bypass currently disabled/i, () =>
     D('cf_challenge', 'This source is protected by a check we could not get past.',
       fixed('fix.bypassOff', forDesktop(
-        "The extension engine's own Cloudflare bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-flaresolverr:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.",
+        "The extension engine's own Cloudflare bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.",
         "The extension engine isn't using hbook's built-in Cloudflare helper. Quit and reopen hbook to restart it.",
       )),
       'admin')],

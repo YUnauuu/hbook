@@ -423,8 +423,8 @@ test('settings: the fresh engine\'s values, and setSettings changes only what it
   const read = async () => (await gql<any>('{ settings { flareSolverrEnabled flareSolverrUrl flareSolverrTimeout extensionRepos } }')).settings;
   assert.deepEqual(await read(), { flareSolverrEnabled: false, flareSolverrUrl: 'http://localhost:8191', flareSolverrTimeout: 60, extensionRepos: [] });
   const SET = 'mutation($on:Boolean,$url:String){ setSettings(input:{settings:{flareSolverrEnabled:$on,flareSolverrUrl:$url}}){ settings { flareSolverrEnabled flareSolverrUrl } } }';
-  assert.deepEqual((await gql<any>(SET, { on: true, url: 'http://hbook-flaresolverr:8191' })).setSettings.settings,
-    { flareSolverrEnabled: true, flareSolverrUrl: 'http://hbook-flaresolverr:8191' });
+  assert.deepEqual((await gql<any>(SET, { on: true, url: 'http://hbook-trawl:8191' })).setSettings.settings,
+    { flareSolverrEnabled: true, flareSolverrUrl: 'http://hbook-trawl:8191' });
   // null leaves a setting alone, and the engine checks no URL.
   assert.deepEqual((await gql<any>(SET, { on: null, url: 'not a url' })).setSettings.settings, { flareSolverrEnabled: true, flareSolverrUrl: 'not a url' });
   assert.equal(fake.graphqlCalls('setSettings').length, 2);

@@ -85,11 +85,14 @@ test('a wedged extension engine is visible to docker, not just to the app', () =
   }
 });
 
+/** The solver service, whichever solver it is: the shipped files run trawl, FlareSolverr can take its place. */
+const SOLVER_KEY = /^ {2}([a-z-]*(?:flaresolverr|trawl)):$/m;
+
 /** The body of the Cloudflare solver's service, read the same way as the engine's. */
 function solverBlock(file: string): string {
   const src = readFileSync(join(REPO, file), 'utf8');
-  const start = src.search(/^ {2}[a-z-]*flaresolverr:$/m);
-  assert.ok(start >= 0, `${file} has no flaresolverr service`);
+  const start = src.search(SOLVER_KEY);
+  assert.ok(start >= 0, `${file} has no solver service`);
   const rest = src.slice(src.indexOf('\n', start) + 1);
   const end = rest.search(/^ {0,2}[a-z][a-z-]*:$/m);
   return rest.slice(0, end < 0 ? undefined : end);
@@ -216,7 +219,7 @@ test('LOG_LEVEL reaches the app in every deploy file', () => {
  * image's startup script maps exactly FLARESOLVERR_ENABLED and FLARESOLVERR_URL into server.conf (verified
  * against the running v2.3.2243 image, lines 124-125), so these two lines are the whole fix.
  *
- * The URL must name the solver service of THAT file (hbook-flaresolverr in the dev file, hbook-flaresolverr
+ * The URL must name the solver service of THAT file (hbook-trawl in the dev file, hbook-trawl
  * in deploy/), and the engine must share a network with it -- the split file had the engine on the database
  * network only, where the solver's name does not resolve and the setting would have been theatre.
  *
@@ -228,8 +231,8 @@ test('the bundled engine is pointed at the bundled solver', () => {
     const block = instructions(suwayomiBlock(file));
     assert.match(block, /FLARESOLVERR_ENABLED:\s*"true"/,
       `${file}: the engine's Cloudflare bypass is off, so every Cloudflare-protected extension source fails its search`);
-    const solver = src.match(/^ {2}([a-z-]*flaresolverr):$/m)?.[1];
-    assert.ok(solver, `${file} has no flaresolverr service for the engine to use`);
+    const solver = src.match(SOLVER_KEY)?.[1];
+    assert.ok(solver, `${file} has no solver service for the engine to use`);
     assert.match(block, new RegExp(`FLARESOLVERR_URL:\\s*http://${solver}:8191`),
       `${file}: FLARESOLVERR_URL must name this file's own solver service (${solver}) on its port`);
     // Same network, or the name above does not resolve. The solver's block is read the same way.
@@ -331,7 +334,7 @@ test("the CasaOS add-on engine joins the listing and uses the listing's solver",
   const [net] = engine.networks ?? [];
   assert.equal(addon.networks?.[net]?.external, true, `the add-on creates its own "${net}" network instead of joining the listing's`);
   assert.equal(addon.networks[net].name, listingNet, "the add-on joins a network the listing does not create");
-  const solver = Object.keys(listing.services).find((n) => n.endsWith('flaresolverr'));
+  const solver = Object.keys(listing.services).find((n) => n.endsWith('flaresolverr') || n.endsWith('trawl'));
   assert.equal(engine.environment.FLARESOLVERR_ENABLED, 'true', "the add-on's Cloudflare bypass is off");
   assert.equal(engine.environment.FLARESOLVERR_URL, `http://${solver}:8191`, "the add-on is not pointed at the listing's solver");
   assert.equal(engine.environment.WEB_UI_ENABLED, 'false', "the add-on serves the engine's own web page");

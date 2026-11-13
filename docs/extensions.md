@@ -373,13 +373,13 @@ heap: raise `-Xmx` and the ceiling by the same amount.
 - **Cloudflare is the engine's problem, and the engine cannot solve it alone.** These sources never go through
   hbook's own FlareSolverr calls, because the engine, not hbook, talks to the site. But Suwayomi has no
   browser of its own: it hands challenged requests to a FlareSolverr it has been told about, and that is off
-  by default. The compose files set `FLARESOLVERR_ENABLED=true` and `FLARESOLVERR_URL=http://hbook-flaresolverr:8191`
-  (`hbook-flaresolverr` in the development stack) on the engine's container so it shares the bundled solver.
+  by default. The compose files set `FLARESOLVERR_ENABLED=true` and `FLARESOLVERR_URL=http://hbook-trawl:8191`
+  (`hbook-trawl` in the development stack) on the engine's container so it shares the bundled solver.
   If you run the engine yourself, set those two on it too; otherwise every Cloudflare-protected extension
   source fails its search with `Cloudflare bypass currently disabled` and the admin Test button says so, in
   these words: *The extension engine's own Cloudflare bypass is switched off. On the Suwayomi engine's
   container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and
-  FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-flaresolverr:8191 in the
+  FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the
   shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates
   the engine is the fix there.*
 - **The engine's page cache is kept empty.** The engine keeps a copy of every page it serves, with no limit, in

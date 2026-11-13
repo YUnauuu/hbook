@@ -28,10 +28,10 @@ services:
     # this ceiling turns what the heap cap does not cover (Java's native memory, and the Chromium and Xvfb this image
     # runs) into a restart. That part came to 770 MB beside a 630 MB heap with 45 extensions (#275): keep the ceiling
     # at least 1.25 GB above -Xmx.
-    mem_limit: 2048m
+    mem_limit: 1800m
     environment:
       TZ: ${TZ:-Etc/UTC}
-      JAVA_TOOL_OPTIONS: "-Xmx768m -XX:+UseSerialGC"
+      JAVA_TOOL_OPTIONS: "-Xmx512m -XX:+UseSerialGC -Dsuwayomi.tachidesk.config.server.kcefEnabled=false"
       # Two malloc arenas instead of glibc's up to eight per CPU: what a thread frees stays in its own arena, and
       # two held 120 MB less than 94 under the same load (#275). Read by the C library, not the startup script.
       MALLOC_ARENA_MAX: "2"
@@ -43,7 +43,7 @@ services:
       # The listing's solver. Suwayomi has no browser of its own, and without this a site behind Cloudflare
       # fails with "Cloudflare bypass currently disabled".
       FLARESOLVERR_ENABLED: "true"
-      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      FLARESOLVERR_URL: http://hbook-trawl:8191
     volumes:
       - /DATA/AppData/hbook-suwayomi:/home/suwayomi/.local/share/Tachidesk
     expose:

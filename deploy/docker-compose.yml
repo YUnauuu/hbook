@@ -41,7 +41,15 @@ services:
       # No DATABASE_URL: that is the switch. Set one here and the embedded database is not started.
       LIBRARY_BACKEND: ${LIBRARY_BACKEND:-owned}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
-      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      # The Cloudflare solver. The env var keeps its name because the API is the FlareSolverr API; the
+      # container behind it is trawl now (see hbook-trawl below).
+      FLARESOLVERR_URL: http://hbook-trawl:8191
+      # How many solves may be in flight at once. Four is right for a machine with a browser to spare;
+      # two is right for a 2 GB one, where the solver has one browser and a solve takes seconds.
+      SOLVER_CONCURRENCY: ${SOLVER_CONCURRENCY:-2}
+      # The image cache. 8 GiB, not the 16 GiB the app defaults to: on a 40 GB disk the library and the
+      # database want room too, and a cache is safe to delete (it refills).
+      CACHE_MAX_BYTES: ${CACHE_MAX_BYTES:-8589934592}
       SOURCES_DIR: /sources
       CUSTOM_SITES_FILE: /config/sites.json
       # Generated and persisted to /config on first boot when left empty.
@@ -85,36 +93,40 @@ services:
 
   # Cloudflare solver. Most manga aggregators sit behind Cloudflare, so the fetching half needs this.
   #
-  # `:latest` is not self-updating -- Docker keeps whatever layer is on disk until you `docker compose pull`.
-  # hbook never updates this container itself; it does check the solver's health hourly and tells you when
-  # it stops answering or starts failing mid-challenge, and Admin -> Health says when a newer release exists.
-  # If you run Watchtower and would rather the solver kept pace with Cloudflare on its own, add:
-  #     labels: [ "com.centurylinklabs.watchtower.enable=true" ]
-  # Off by default: opting somebody into unattended updates of a dependency is not ours to decide.
-  hbook-flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    container_name: hbook-flaresolverr
+  # Cloudflare solver: trawl (Camoufox, a patched Firefox). It speaks the same API as FlareSolverr does --
+  # hbook asks it for a solve and gets a page back, the same way -- and it is far lighter: about 316 MB
+  # idle against FlareSolverr's 865 MB, measured on the same install, with a median solve of 2 s against
+  # 12 s because it keeps the sessions it has already solved. That is what lets the whole stack -- app,
+  # database, solver and extension engine -- live on a 2 GB machine.
+  #
+  # The version is PINNED: trawl is young and changes quickly, and a solver that changes under the app is a
+  # solver that breaks under the app. `docker compose pull` and a new pin is the upgrade.
+  hbook-trawl:
+    image: ghcr.io/germondai/trawl:1.11.1
+    container_name: hbook-trawl
     restart: unless-stopped
-    # Chrome writes its shared-memory segments here, and Docker's default /dev/shm is 64 MB. Under that,
-    # chromedriver dies mid-challenge and FlareSolverr reports "Service /app/chromedriver unexpectedly
-    # exited" or fails to reach its own session -- which looks, from the app's side, exactly like the manga
-    # site blocking us. Measured on one install: seven such failures in 24 hours across four sources.
+    # The browser writes its shared-memory segments here, and Docker's default /dev/shm is 64 MB. Under that,
+    # the browser dies mid-challenge and the solver reports a session it cannot reach -- which looks, from
+    # the app's side, exactly like the manga site blocking us.
     shm_size: 1gb
-    # The leak is the other half of the problem. FlareSolverr grew to 2.5 GB over 62 days of uptime on one
-    # install, and a bloated solver starts failing mid-challenge rather than dying cleanly, which reads from
-    # the app's side as the SITES being broken. A cap plus `restart: unless-stopped` turns an unbounded leak
-    # into an automatic restart: idle it sits around 150 MB, so 2 GB is generous headroom for a real solve.
-    mem_limit: 2g
-    # It had no healthcheck at all, so `docker ps` said "Up 2 months" while it was crashing on every request.
-    # The root endpoint answers with a readiness sentence, which is the only honest signal it offers.
+    # The ceiling: one browser sits around 320 MB and a solve takes a few hundred more. The cap turns an
+    # unbounded leak into a restart (the restart policy above handles it) instead of letting it eat the
+    # host -- the FlareSolverr image grew to 2.5 GB over 62 days on one install.
+    mem_limit: ${SOLVER_MEM_LIMIT:-1200m}
+    environment:
+      # Solved sessions live in memory: no Redis beside it, on a machine this size.
+      SESSION_CACHE_DRIVER: memory
+      # One browser, not four: another browser is another ~320 MB. hbook asks for at most
+      # SOLVER_CONCURRENCY solves at a time (2 above), so the rest wait their turn.
+      BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-1}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/ | grep -q 'FlareSolverr is ready' || exit 1"]
+      # /health answers 503 until a browser is up (15 to 30 s after a start), which is the only honest
+      # signal it offers.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/health >/dev/null || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
-    environment:
-      LOG_LEVEL: warning
+      start_period: 60s
     networks: [hbook_app]
     expose:
       - "8191"
@@ -133,19 +145,19 @@ services:
     restart: unless-stopped
     # The engine is a JVM, and a JVM with no limit sizes its heap from the HOST's memory -- a quarter of it:
     # 15.7 GiB on a 62 GB machine, measured 2026-09-25 against this image -- so without a cap a small NAS is at
-    # its mercy (discussion #72). JAVA_TOOL_OPTIONS below caps the heap at 768 MB with the serial collector, as
+    # its mercy (discussion #72). JAVA_TOOL_OPTIONS below caps the heap at 512 MB with the serial collector, as
     # the desktop app does (desktop/src/engine.js). This ceiling has to hold the rest as well: Java's own native
     # memory, and the Chromium (the engine's WebView) and Xvfb that this image runs and the desktop app turns
     # off. Measured for #275, with 45 extensions on 12 cores: 1.4 GB after two days, 630 MB of it heap. Under
     # the old 1.5 GB ceiling it kept going only by swapping; a host with no swap (Unraid's default) kills it
     # there. The ceiling still turns a runaway into a restart, which the restart policy above handles.
     # SUWAYOMI_MEM_LIMIT and SUWAYOMI_JAVA_OPTS raise both; keep the ceiling at least 1.25 GB above -Xmx.
-    mem_limit: ${SUWAYOMI_MEM_LIMIT:-2048m}
+    mem_limit: ${SUWAYOMI_MEM_LIMIT:-1800m}
     environment:
       TZ: ${TZ:-UTC}
       # The heap cap itself. The image's startup script runs a bare `java -jar` with no options of its own, so
       # JAVA_TOOL_OPTIONS -- which every JVM reads when it starts -- is the way in.
-      JAVA_TOOL_OPTIONS: "${SUWAYOMI_JAVA_OPTS:--Xmx768m -XX:+UseSerialGC}"
+      JAVA_TOOL_OPTIONS: "${SUWAYOMI_JAVA_OPTS:--Xmx512m -XX:+UseSerialGC -Dsuwayomi.tachidesk.config.server.kcefEnabled=false}"
       # Two malloc arenas instead of glibc's up to eight per CPU. Each thread that allocates gets an arena of its
       # own, and what it frees stays there: in #275's engine 94 arenas held 428 MB, and side by side under the
       # same load two held 120 MB less (measured 2026-10-16). Read by the C library, not the startup script.
@@ -159,7 +171,7 @@ services:
       # site makes it throw "Cloudflare bypass currently disabled" unless it is pointed at a FlareSolverr,
       # and it ships with that off. The image maps exactly these two variables into its server.conf.
       FLARESOLVERR_ENABLED: "true"
-      FLARESOLVERR_URL: http://hbook-flaresolverr:8191
+      FLARESOLVERR_URL: http://hbook-trawl:8191
     volumes:
       - hbook_suwayomi:/home/suwayomi/.local/share/Tachidesk
     networks: [hbook_app]

@@ -2,7 +2,8 @@
 #
 # hbook —— 一键启动。
 #
-# 做五件事：确认数据库在、停掉上一个实例、编译、用对的环境变量起服务、等到它真的能回话为止。
+# 做六件事：确认数据库在、看一眼内存和 swap、停掉上一个实例、编译、用对的环境变量起服务、
+等到它真的能回话为止。
 #
 #   ./start-reader.sh              重启（默认）
 #   ./start-reader.sh --port 8080  换个端口
@@ -38,10 +39,15 @@ DATABASE_URL="${DATABASE_URL:-postgres://hbook:hbook@127.0.0.1:5432/hbook}"
 WEB_ROOT="${WEB_ROOT:-$ROOT/reader}"
 NOVEL_SOURCES_PATH="${NOVEL_SOURCES_PATH:-$ROOT/novel-sources}"
 # The Cloudflare solver. Most of the Chinese manga sites put a challenge in front of their pages, and
-# a challenge cannot be answered without a browser. Run FlareSolverr (docker run -p 8191:8191
-# ghcr.io/flaresolverr/flaresolverr:latest) and point this at it; without it, the sites that answer
+# a challenge cannot be answered without a browser. Run one -- trawl is the light one (docker run -p 8191:8191
+# ghcr.io/germondai/trawl:1.11.1) -- and point this at it; without it, the sites that answer
 # a plain GET still work and the ones behind a challenge do not.
 FLARESOLVERR_URL="${FLARESOLVERR_URL:-http://127.0.0.1:8191}"
+# How many solves may be in flight at once. Two, not four: on a small machine each one is a browser, and
+# the queue is better than the out-of-memory killer.
+SOLVER_CONCURRENCY="${SOLVER_CONCURRENCY:-2}"
+# The image cache's ceiling: 8 GiB. The library and the database want the room too.
+CACHE_MAX_BYTES="${CACHE_MAX_BYTES:-8589934592}"
 LOG="${LOG:-}"
 PIDFILE=""
 
@@ -161,6 +167,26 @@ if ! db_up; then
 fi
 
 # ---------------------------------------------------------------------------------------------
+# 小机器：内存和 swap
+#
+# 1-2 GiB 的机器上内存是紧的。没有 swap 的话，一紧起来内核会挑 Postgres 下手——它正在写，
+# 那就是丢事务——所以这里看一眼。没有就提醒加 swap（主机上的事，要 root）。
+# ---------------------------------------------------------------------------------------------
+mem_total_kb=$(awk '/^MemTotal/{print $2}' /proc/meminfo 2>/dev/null | head -1)
+swap_total_kb=$(awk '/^SwapTotal/{print $2}' /proc/meminfo 2>/dev/null | head -1)
+case "$mem_total_kb" in ''|*[!0-9]*) mem_total_kb=0 ;; esac
+case "$swap_total_kb" in ''|*[!0-9]*) swap_total_kb=0 ;; esac
+if [ "$swap_total_kb" -lt 262144 ]; then
+  warn "这台机器只有 $((swap_total_kb / 1024)) MiB swap。内存一紧，内核会杀掉正在写的 Postgres（丢事务）。加 2G："
+  printf '   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile\n'
+  printf "   echo '/swapfile none swap sw 0 0' >> /etc/fstab\n\n"
+fi
+if [ "$mem_total_kb" -gt 0 ] && [ "$mem_total_kb" -lt 2097152 ]; then
+  warn "这台机器只有 $((mem_total_kb / 1024)) MiB 内存。开着 Docker 的话至少要 2 GiB："
+  printf '   关掉扩展引擎（EXTENSION_ENGINE=0）、把 solver 换成 trawl、给主机加 swap。\n\n'
+fi
+
+# ---------------------------------------------------------------------------------------------
 # 停
 # ---------------------------------------------------------------------------------------------
 if [ "$DO_STOP" = 1 ]; then
@@ -222,6 +248,8 @@ if command -v setsid >/dev/null 2>&1; then
     WEB_ROOT="$WEB_ROOT" \
     NOVEL_SOURCES_PATH="$NOVEL_SOURCES_PATH" \
     SOURCE_DIRECT_FETCH="${SOURCE_DIRECT_FETCH:-1}" \
+    SOLVER_CONCURRENCY="$SOLVER_CONCURRENCY" \
+    CACHE_MAX_BYTES="$CACHE_MAX_BYTES" \
     DATABASE_URL="$DATABASE_URL" \
     FLARESOLVERR_URL="$FLARESOLVERR_URL" \
     node dist/server.js >"$LOG" 2>&1 &
@@ -233,6 +261,8 @@ else
     WEB_ROOT="$WEB_ROOT" \
     NOVEL_SOURCES_PATH="$NOVEL_SOURCES_PATH" \
     SOURCE_DIRECT_FETCH="${SOURCE_DIRECT_FETCH:-1}" \
+    SOLVER_CONCURRENCY="$SOLVER_CONCURRENCY" \
+    CACHE_MAX_BYTES="$CACHE_MAX_BYTES" \
     DATABASE_URL="$DATABASE_URL" \
     FLARESOLVERR_URL="$FLARESOLVERR_URL" \
     node dist/server.js >"$LOG" 2>&1 &
