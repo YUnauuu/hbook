@@ -33,11 +33,16 @@ const API = (process.env.GITHUB_API_URL || 'https://api.github.com/').replace(/\
 
 const cache = new Map<string, { at: number; version: string | null }>();
 
-/** `v3.5.0` / `3.5.0` -> [3,5,0]. Null for anything that is not three plain numbers. */
+/**
+ * `v3.5.0` / `3.5.0` -> [3,5,0]. `0.1` -> [0,1,0]: hbook's own version is two parts (v0.1), and a version the
+ * update check cannot read is a version the update check says nothing about.
+ * Null for anything that is not plain numbers.
+ */
 export function parseVersion(v: string | null | undefined): number[] | null {
   if (!v) return null;
-  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  const m = /^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(v.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)];
 }
 
 /**

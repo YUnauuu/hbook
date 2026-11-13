@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.104.0 — 2026-11-05
+## v0.1 — 2026-11-13
 
 **This release is hbook: the Uchiyomi reader server, renamed, with a novel side added from scratch.**
 

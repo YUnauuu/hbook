@@ -13,7 +13,7 @@ services:
 
   title-extractor:
     profiles: [title-art]
-    image: ${TITLE_EXTRACTOR_IMAGE:-ghcr.io/yunauuu/hbook:title-extractor-v0.104.0}
+    image: ${TITLE_EXTRACTOR_IMAGE:-ghcr.io/yunauuu/hbook:title-extractor-v0.1}
     restart: unless-stopped
     env_file: .env.title-extractor
     environment:

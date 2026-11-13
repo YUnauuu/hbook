@@ -16,7 +16,7 @@ test('it reads the real version out of the real package.json', () => {
   resetAppVersion();
   const pkg = JSON.parse(readFileSync(join(REPO, 'bff', 'package.json'), 'utf8'));
   assert.equal(appVersion(), pkg.version);
-  assert.match(appVersion() ?? '', /^\d+\.\d+\.\d+/);
+  assert.match(appVersion() ?? '', /^\d+\.\d+/);
 });
 
 test('it is memoised, because it cannot change while the process lives', () => {

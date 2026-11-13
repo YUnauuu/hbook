@@ -23,7 +23,7 @@ export function packageJsonPath(): string {
 }
 
 /**
- * The running version, e.g. `0.27.0`. Null when it cannot be determined.
+ * The running version, e.g. `0.27.0` or hbook's own `0.1`. Null when it cannot be determined.
  *
  * ⚠️ Never throws, and null is a legitimate answer rather than an error. A missing or malformed
  * package.json means "no opinion": the update check simply has nothing to compare and says so. Taking the
@@ -34,7 +34,7 @@ export function appVersion(): string | null {
   cached = null;
   try {
     const raw = JSON.parse(readFileSync(packageJsonPath(), 'utf8')) as { version?: unknown };
-    if (typeof raw.version === 'string' && /^\d+\.\d+\.\d+/.test(raw.version.trim())) cached = raw.version.trim();
+    if (typeof raw.version === 'string' && /^\d+\.\d+(\.\d+)?/.test(raw.version.trim())) cached = raw.version.trim();
   } catch {
     /* not packaged the way we expect -- see above, this is not an error */
   }

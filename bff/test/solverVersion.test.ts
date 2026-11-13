@@ -32,6 +32,7 @@ test('versions are compared as numbers, not as text', () => {
   assert.equal(mod.isBehind('3.10.0', 'v3.5.0'), false, '3.10.0 is newer than 3.5.0');
   assert.equal(mod.isBehind('3.5.0', 'v3.10.0'), true);
   assert.deepEqual(mod.parseVersion('v3.10.2'), [3, 10, 2]);
+  assert.deepEqual(mod.parseVersion('0.1'), [0, 1, 0], "hbook's own two-part version");
 });
 
 test('anything unparseable means no opinion, never "out of date"', () => {
@@ -39,7 +40,7 @@ test('anything unparseable means no opinion, never "out of date"', () => {
   // `dev` tag or an empty greeting must never produce a scary banner.
   for (const [a, b] of [
     [null, 'v3.5.0'], ['3.4.0', null], ['', 'v3.5.0'], ['dev', 'v3.5.0'],
-    ['3.4', 'v3.5.0'], ['3.4.0', 'nightly'], [undefined, undefined],
+    ['3.x', 'v3.5.0'], ['3.4.0', 'nightly'], [undefined, undefined],
   ] as Array<[string | null | undefined, string | null | undefined]>) {
     assert.equal(mod.isBehind(a, b), false, `isBehind(${a}, ${b}) must be false`);
   }
