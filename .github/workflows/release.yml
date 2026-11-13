@@ -55,7 +55,9 @@ jobs:
         service: [bff, web, aio, title-extractor]
         arch: [amd64, arm64]
         include:
-          - { service: bff, image: ghcr.io/yunauuu/hbook-bff, context: ./bff,  file: ./bff/Dockerfile }
+          # The bff image carries the novel side's book-source collection, so its context is the REPO ROOT
+          # (bff/Dockerfile copies bff/ and novel-sources/ from it) -- not the bff folder.
+          - { service: bff, image: ghcr.io/yunauuu/hbook-bff, context: .,        file: ./bff/Dockerfile }
           - { service: web, image: ghcr.io/yunauuu/hbook-web, context: ./web,  file: ./web/Dockerfile }
           # The single-container build: the same API serving the web app itself. Its context is the repo
           # root because it builds both halves.
