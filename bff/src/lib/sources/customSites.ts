@@ -11,6 +11,7 @@ import { editionLang } from '../lang';
 import { makeMadara } from './engines/madara';
 import { makeManganato } from './engines/manganato';
 import { makeMangaThemesia } from './engines/mangathemesia';
+import { makeJmcomic } from './engines/jmcomic';
 import { makeAutoSite } from './engines/auto';
 
 /**
@@ -77,6 +78,9 @@ function build(s: Site): SourceAdapter | null {
   if (s.engine === 'madara') return makeMadara(cfg);
   if (s.engine === 'manganato') return makeManganato(cfg);
   if (s.engine === 'mangathemesia') return makeMangaThemesia(cfg);
+  // "jmcomic": the 禁漫天堂 family (18comic.vip, jmcomic.me, ...). Not a WordPress theme at all -- see
+  // engines/jmcomic.ts for why these sites needed an engine of their own.
+  if (s.engine === 'jmcomic') return makeJmcomic(cfg);
   // "auto": the engine is not known, so the app works it out by trying them (engines/auto.ts). A list of
   // sites written down before their theme was known -- or before it changed -- is the common case.
   if (s.engine === 'auto') return makeAutoSite(cfg);

@@ -13,7 +13,7 @@ const SRC = join(__dirname, '..', 'src');
 const read = (...p: string[]) => readFileSync(join(SRC, ...p), 'utf8');
 
 test('every engine offers popular alongside latest', () => {
-  for (const f of ['madara.ts', 'manganato.ts', 'mangathemesia.ts']) {
+  for (const f of ['madara.ts', 'manganato.ts', 'mangathemesia.ts', 'jmcomic.ts']) {
     const text = read('lib', 'sources', 'engines', f);
     assert.match(text, /async popular\(/, `${f} has no popular listing`);
     assert.match(text, /async latest\(/, `${f} lost its latest listing`);
@@ -36,6 +36,11 @@ test('each engine asks for its own ranking, not ours', () => {
   const md = read('lib', 'sources', 'mangadex.ts');
   const mp = md.slice(md.indexOf('async popular('));
   assert.match(mp, /order\[followedCount\]=desc/, 'MangaDex popular must sort by followers');
+
+  // The JMComic family sorts by a key in the address: `o=mr` is its newest, `o=mv` its most viewed.
+  const jm = read('lib', 'sources', 'engines', 'jmcomic.ts');
+  assert.match(jm.slice(jm.indexOf('async popular(')), /o=mv/, 'JMComic popular must ask for the most-viewed list');
+  assert.match(jm.slice(jm.indexOf('async latest(')), /o=mr/, 'JMComic latest must ask for the newest list');
 });
 
 test('the Manganato family keeps its candidate-address fallback', () => {

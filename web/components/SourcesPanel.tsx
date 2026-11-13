@@ -653,7 +653,7 @@ type Smoke = { ok: boolean; timedOut?: boolean; checks: { name: string; ok: bool
  */
 function AddSite({ onAdded }: { onAdded: () => Promise<unknown> }) {
   const toast = useToast();
-  const [eng, setEng] = useState<'auto' | 'madara' | 'manganato' | 'mangathemesia'>('auto');
+  const [eng, setEng] = useState<'auto' | 'madara' | 'manganato' | 'mangathemesia' | 'jmcomic'>('auto');
   const [name, setName] = useState('');
   const [base, setBase] = useState('');
   const [adding, setAdding] = useState(false);
@@ -692,7 +692,7 @@ function AddSite({ onAdded }: { onAdded: () => Promise<unknown> }) {
       </div>
       {help && (
         <p id="sources-add-site-help" className="mt-1 max-w-prose text-[11px] leading-relaxed text-fog-500">
-          {tr('Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia or Manganato engines, at once and with no restart.')}
+          {tr('Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia, Manganato or JMComic engines, at once and with no restart.')}
         </p>
       )}
       <form className="mt-2 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void add(); }}>
@@ -701,6 +701,7 @@ function AddSite({ onAdded }: { onAdded: () => Promise<unknown> }) {
           <option value="madara">{tr('Madara (WordPress)')}</option>
           <option value="mangathemesia">{tr('MangaThemesia')}</option>
           <option value="manganato">{tr('Manganato')}</option>
+          <option value="jmcomic">{tr('JMComic (禁漫天堂)')}</option>
         </select>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('Name')} aria-label={tr('Name')} className="field min-w-[110px] flex-1" />
         <input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://site.com" aria-label={tr('Address')} dir="ltr"

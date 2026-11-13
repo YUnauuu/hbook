@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.2 — 2026-11-13
+
+### The Chinese manga sites, and an engine that can read them
+
+- **A fourth site engine, for the 禁漫天堂 (JMComic) family** — 18comic.vip, jmcomic.me, jmcomic1.me and the
+  mirrors they rotate through. The three engines hbook had (Madara, MangaThemesia, Manganato) are all WordPress
+  themes, and the Chinese comic sites that outlived the last few years mostly stopped being WordPress. This one
+  is not: it is server-rendered, so the search results, the series page with its chapter list, and the reader
+  with every page of it are all in the HTML — nothing needs a browser to be read. It is picked by itself when
+  the site is added by address (Admin → Sources → Add a site by address → **JMComic (禁漫天堂)**), or chosen there
+  by hand.
+- **The shipped site list, cut down to what actually answers.** Of the 36 Chinese sites hbook shipped, 24 no
+  longer resolve at all — measured from a server on 2026-11-13 — and of the ones that answered, none ran any of
+  the three WordPress themes. A dead domain in that list is worse than a missing one: it is a source in the list
+  that can never answer, and every search pays for it. What is left is the JMComic family, with the engine above.
+- **The mirror a site names is not the host you configured.** The JMComic family calls one of its own domains
+  canonical and rotates it every few months, so every page address it hands out is put back on the host the
+  operator configured; the pictures, which live on a CDN of their own, are left where they are.
+
 ## v0.1 — 2026-11-13
 
 **This release is hbook: the Uchiyomi reader server, renamed, with a novel side added from scratch.**

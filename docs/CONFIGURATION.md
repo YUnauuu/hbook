@@ -239,7 +239,7 @@ will use, is the one-click extension catalogue described under
 [Mihon / Tachiyomi extensions](../README.md#features) and in [docs/extensions.md](extensions.md).
 
 hbook bundles a few **generic engines** (parsers for the common manga-site families: Madara /
-MangaThemesia / Manganato) but **no specific sites for them**. Along this route, nothing fetches anything
+MangaThemesia / Manganato / JMComic) but **no specific sites for them**. Along this route, nothing fetches anything
 until *you* add a site:
 
 **Admin → Sources → Add sources → Add a site by address:** pick the engine, paste a site's homepage URL, done. It

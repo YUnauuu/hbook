@@ -25,6 +25,10 @@ export function engineOf(h: string): string | null {
   if (has(/wp-manga/i) || has(/themes\/madara/i)) return 'madara';
   // Manganato / Mangakakalot family
   if (has(/class="story_name"/i) || has(/content-homepage-item/i) || has(/panel-content-homepage/i) || has(/\/search\/story\//i)) return 'manganato';
+  // 禁漫天堂 (JMComic): not a WordPress theme at all -- a hand-built family the Chinese sites that outlived
+  // WordPress mostly run on (see engines/jmcomic.ts). Its own words: a series page carries `book-name`, a
+  // chapter list carries `h2_series`, and a card carries both `thumb-overlay` and `label-category`.
+  if (has(/id="book-name"/i) || has(/h2_series/i) || (has(/thumb-overlay/i) && has(/label-category/i))) return 'jmcomic';
   return null;
 }
 

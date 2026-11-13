@@ -2,7 +2,7 @@
   "_meta": {
     "language": "pt-BR",
     "note": "Machine-assisted translation, reviewed for tone but not by a native speaker. Corrections are very welcome: edit this file and open a pull request. Keys are the English source strings, so a missing entry falls back to English.",
-    "strings": 4579
+    "strings": 4580
   },
   "1 check found something": "1 verificação encontrou algo",
   "1 member": "1 membro",
@@ -238,6 +238,8 @@
   "Manage": "Gerenciar",
   "MangaThemesia": "MangaThemesia",
   "Manganato": "Manganato",
+  "Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia, Manganato or JMComic engines, at once and with no restart.": "Cole o endereço da página inicial de um site: o motor dele é detectado sozinho, ou escolha-o. Funciona com sites nos motores Madara, MangaThemesia, Manganato ou JMComic, na hora e sem reiniciar.",
+  "JMComic (禁漫天堂)": "JMComic (禁漫天堂)",
   "Mark all read": "Marcar tudo como lido",
   "Mark previous as read": "Marcar anteriores como lidos",
   "Mark read": "Marcar como lido",
@@ -3058,7 +3060,6 @@
   "Could not add that site. Check the address, or pick its engine.": "Não foi possível adicionar esse site. Confira o endereço, ou escolha o motor dele.",
   "Add a site by address": "Adicionar um site pelo endereço",
   "About adding a site": "Sobre adicionar um site",
-  "Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia or Manganato engines, at once and with no restart.": "Cole o endereço da página inicial de um site: o motor dele é detectado sozinho, ou escolha-o. Funciona com sites nos motores Madara, MangaThemesia ou Manganato, na hora e sem reiniciar.",
   "Engine": "Motor",
   "Adding…": "Adicionando…",
   "{name} works: search, chapters and pages all answered": "{name} funciona: busca, capítulos e páginas responderam",

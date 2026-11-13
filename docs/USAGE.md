@@ -2197,8 +2197,8 @@ yourself, two ways, both under **Admin → Sources → Add sources** (`/admin/?t
 rail, then **Sources**). Since v0.54.0 it is one tab for every source, where Providers and Extensions were two; their
 old addresses, `?tab=Providers` and `?tab=Extensions`, lead there.
 
-- **A site by its address** (below). hbook bundles generic **engines** for three common manga-site families
-  (**Madara**, **MangaThemesia**, and **Manganato**), and most manga sites run one of them.
+- **A site by its address** (below). hbook bundles generic **engines** for four common manga-site families
+  (**Madara**, **MangaThemesia**, **Manganato**, and **JMComic**), and most manga sites run one of them.
 - **Mihon / Tachiyomi extensions**, from an extension repository you add
   ([below](#extensions-mihon--tachiyomi), step by step in [extensions.md](extensions.md#add-an-extension-repository--step-by-step)).
 
@@ -2223,7 +2223,7 @@ never take its chapters, and changing its language re-picks the chapters of ever
 
 ### Will a site work?
 
-hbook can read a site if it runs one of the three bundled engines. You don't need to know which (Auto-detect
+hbook can read a site if it runs one of the four bundled engines. You don't need to know which (Auto-detect
 handles it), but here's how to recognize them by their URLs/layout:
 
 | Engine | Tell-tale signs |
@@ -2231,6 +2231,7 @@ handles it), but here's how to recognize them by their URLs/layout:
 | **Madara** | A WordPress manga theme. Series pages look like `…/manga/<name>/`, chapters like `…/manga/<name>/chapter-12/`. Extremely common for manhwa/manhua. |
 | **MangaThemesia** | Series at `…/manga/<name>/` or `…/series/<name>/`; the homepage is a grid of cover "cards"; the reader is one long vertical scroll. |
 | **Manganato family** | Big general-manga catalogs; the search page lives at `…/search/story/<query>`. |
+| **JMComic family** | The 禁漫天堂 sites (18comic.vip, jmcomic.me and their mirrors). Not a WordPress theme at all: series at `…/album/<id>`, the reader at `…/photo/<id>`, and the search at `…/search/photos?search_query=…`. |
 
 Not sure? Just paste the URL and add it. Worst case, Auto-detect replies that it can't tell, and then you pick an
 engine manually from the dropdown, or conclude the site isn't supported (next box).
@@ -4190,7 +4191,7 @@ Auth) is not supported by the app yet, while sign-in portals such as Authelia an
 itself, download the extension engine first, from the top of **Admin → Sources**.
 
 **A source/site won't add.** Paste the site's **base URL** (e.g. `https://example.com`), not a series page.
-hbook auto-detects the engine (Madara, MangaThemesia, Manganato); Cloudflare-protected sites are handled
+hbook auto-detects the engine (Madara, MangaThemesia, Manganato, JMComic); Cloudflare-protected sites are handled
 automatically by the bundled FlareSolverr. *Blocked by the site* or *Rate-limited* on a source's row means it
 is in a cooldown — wait a bit, or try another source.
 

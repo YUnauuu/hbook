@@ -1483,7 +1483,7 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   app.get('/api/admin/sources/custom', async () => ({ content: await readSites() }));
   app.post('/api/admin/sources/custom', async (req, reply) => {
-    const b = z.object({ engine: z.enum(['auto', 'madara', 'manganato', 'mangathemesia']), name: z.string().min(1).max(60), base: z.string().url() }).safeParse(req.body);
+    const b = z.object({ engine: z.enum(['auto', 'madara', 'manganato', 'mangathemesia', 'jmcomic']), name: z.string().min(1).max(60), base: z.string().url() }).safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'bad_request', message: 'Pick an engine, a name, and a valid https URL.' });
     // Named first: a name that is taken is said at once, not after the homepage has been fetched through the solver.
     const id = slug(b.data.name) || slug(new URL(b.data.base).hostname.replace(/^www\./, ''));

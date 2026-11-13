@@ -1,7 +1,7 @@
 {
   "name": "hbook-desktop",
   "productName": "hbook",
-  "version": "0.1",
+  "version": "0.2",
   "description": "hbook as a Windows/macOS app: the same server and web app, with the library on this PC.",
   "private": true,
   "type": "commonjs",

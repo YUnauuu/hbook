@@ -87,13 +87,18 @@ failed on a reset socket has not been asked at all.
 
 MangaDex publishes every language on one site, so its Chinese shelves are what its Chinese
 translations amount to -- a few dozen titles. The rest comes from the Chinese sites themselves, and
-the app ships with a list of them (`bff/manga-sites.json`): 拷贝漫画, 包子漫画, 漫画人, 漫踪,
-MANGAMOL, 咚漫, 漫窝, 禁漫天堂, and thirty more.
+the app ships with a list of them (`bff/manga-sites.json`). The list is short on purpose: it was
+cut down to the sites that still answer and that hbook can actually read. Of the thirty-six it used
+to ship, twenty-four no longer resolved at all (measured from a server on 2026-11-13), and the ones
+that answered ran neither WordPress theme hbook knew. What is left is the 禁漫天堂 family -- 18comic.vip,
+jmcomic.me and jmcomic1.me -- which is not a WordPress theme at all and needed an engine of its own
+(`bff/src/lib/sources/engines/jmcomic.ts`). A dead domain in that list is worse than a missing one:
+it is a source in the list that can never answer.
 
 Their engine is written as `auto`: the app reads the site's own homepage once, works out which of
-the three themes it runs (Madara, Manganato, MangaThemesia), and keeps the one that answers with
-books. A site whose theme has changed under it is therefore not a site that has to be re-added --
-it is a site that finds itself again.
+the four families it runs (Madara, Manganato, MangaThemesia, JMComic), and keeps the one that
+answers with books. A site whose theme has changed under it is therefore not a site that has to be
+re-added -- it is a site that finds itself again.
 
 The operator's own list (`/config/sites.json`, written by Admin → Providers → Add a site) is read
 **after** the bundled one, so a site in both is the operator's version.

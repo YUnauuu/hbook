@@ -57,6 +57,7 @@ test('THE WIRING: every engine resolves a stored ref against the configured base
   const { makeMadara } = await import('../src/lib/sources/engines/madara');
   const { makeManganato } = await import('../src/lib/sources/engines/manganato');
   const { makeMangaThemesia } = await import('../src/lib/sources/engines/mangathemesia');
+  const { makeJmcomic } = await import('../src/lib/sources/engines/jmcomic');
 
   const asked: string[] = [];
   globalThis.fetch = (async (_u: any, init: any) => {
@@ -71,6 +72,7 @@ test('THE WIRING: every engine resolves a stored ref against the configured base
     ['madara', makeMadara({ id: 'm1', name: 'M1', base: 'https://new.example' })],
     ['manganato', makeManganato({ id: 'm2', name: 'M2', base: 'https://new.example' })],
     ['mangathemesia', makeMangaThemesia({ id: 'm3', name: 'M3', base: 'https://new.example' })],
+    ['jmcomic', makeJmcomic({ id: 'm4', name: 'M4', base: 'https://new.example' })],
   ];
 
   for (const [name, a] of engines) {

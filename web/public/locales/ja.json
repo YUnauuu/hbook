@@ -2,7 +2,7 @@
   "_meta": {
     "language": "ja",
     "note": "Machine-assisted translation, reviewed for tone but not by a native speaker. Corrections are very welcome: edit this file and open a pull request. Keys are the English source strings, so a missing entry falls back to English.",
-    "strings": 4579
+    "strings": 4580
   },
   "1 check found something": "1 件のチェックで問題を検出",
   "1 member": "メンバー 1 人",
@@ -238,6 +238,8 @@
   "Manage": "管理",
   "MangaThemesia": "MangaThemesia",
   "Manganato": "Manganato",
+  "Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia, Manganato or JMComic engines, at once and with no restart.": "サイトのトップページのアドレスを貼り付けてください。エンジンは自動で見つかります（選ぶこともできます）。Madara、MangaThemesia、Manganato、JMComic のエンジンで動くサイトに、再起動なしですぐ使えます。",
+  "JMComic (禁漫天堂)": "JMComic (禁漫天堂)",
   "Mark all read": "すべて既読にする",
   "Mark previous as read": "前の話を既読にする",
   "Mark read": "既読にする",
@@ -3058,7 +3060,6 @@
   "Could not add that site. Check the address, or pick its engine.": "そのサイトを追加できませんでした。アドレスを確認するか、エンジンを選んでください。",
   "Add a site by address": "アドレスでサイトを追加",
   "About adding a site": "サイトの追加について",
-  "Paste a site’s homepage address: its engine is found by itself, or pick it. Works for sites on the Madara, MangaThemesia or Manganato engines, at once and with no restart.": "サイトのトップページのアドレスを貼り付けてください。エンジンは自動で見つかります（選ぶこともできます）。Madara、MangaThemesia、Manganato のエンジンで動くサイトに、再起動なしですぐ使えます。",
   "Engine": "エンジン",
   "Adding…": "追加中…",
   "{name} works: search, chapters and pages all answered": "{name} は正常です。検索・話・ページのすべてが応答しました",

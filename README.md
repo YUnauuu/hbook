@@ -6,8 +6,8 @@
 
 ## 能做什么
 
-- **漫画**：MangaDex、Mihon / Tachiyomi 扩展（由 Suwayomi 引擎跑）、`bff/manga-sites.json` 里的 36 个中文站点
-  （站点类型在运行时自动认），也能在后台按地址加自己的站。
+- **漫画**：MangaDex、Mihon / Tachiyomi 扩展（由 Suwayomi 引擎跑）、`bff/manga-sites.json` 里的中文站点
+  （禁漫天堂这一族，站点类型在运行时自动认），也能在后台按地址加自己的站。
 - **小说**：Legado（阅读）格式的书源规则，规则引擎是本项目自己写的。
 - **放在一起**：同一个搜索框、同一个 18+ 开关。
 

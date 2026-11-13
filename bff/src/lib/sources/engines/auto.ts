@@ -20,20 +20,22 @@ import type { SourceAdapter, SourceChapter, SourceSeries } from '../types';
 import { makeMadara } from './madara';
 import { makeManganato } from './manganato';
 import { makeMangaThemesia } from './mangathemesia';
+import { makeJmcomic } from './jmcomic';
 import { engineOf } from '../detect';
 import { fetchPublicHop } from '../../publicConnection';
 import { currentStopSignal, deadlineRemaining } from '../flaresolverr';
 
-export type AutoEngine = 'madara' | 'manganato' | 'mangathemesia';
+export type AutoEngine = 'madara' | 'manganato' | 'mangathemesia' | 'jmcomic';
 
 /** The engines, in the order they are tried. Madara first: it is the most common by a wide margin. */
 const MAKERS: Record<AutoEngine, (cfg: { id: string; name: string; base: string; order?: number; lang?: string }) => SourceAdapter> = {
   madara: makeMadara,
   manganato: makeManganato,
   mangathemesia: makeMangaThemesia,
+  jmcomic: makeJmcomic,
 };
 
-const ORDER: AutoEngine[] = ['madara', 'manganato', 'mangathemesia'];
+const ORDER: AutoEngine[] = ['madara', 'manganato', 'mangathemesia', 'jmcomic'];
 
 /**
  * A site that is asked at address, with the engine worked out by reading it.
@@ -83,7 +85,7 @@ export function makeAutoSite(cfg: { id: string; name: string; base: string; orde
       if (!r.ok) return null;
       const html = await r.text();
       const which = engineOf(html);
-      if (which === 'madara' || which === 'manganato' || which === 'mangathemesia') {
+      if (which === 'madara' || which === 'manganato' || which === 'mangathemesia' || which === 'jmcomic') {
         guessed = which;
         return which;
       }
