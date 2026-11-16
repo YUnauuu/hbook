@@ -264,13 +264,13 @@ fi
 
 if [ "$EMBEDDED" = "1" ]; then
   echo "· embedded database: no Postgres container, DATABASE_URL unset, /data mounted"
+  # The app WITH accounts: the walk signs in, reads a profile and opens the admin console. The
+  # image's default is the six-section reader at /app/reader (no accounts, no sign-in form), which is
+  # what this stack used to serve -- so the walk looked for a password field that was never there, and
+  # died on "No element found for selector: input[type=password]".
   docker run -d --name "$APP" --network "$NET" -p "127.0.0.1:$PORT:3000" \
     -e JWT_SECRET='e2e-secret-at-least-16-chars' \
     -e LIBRARY_BACKEND=owned \
-    # The app WITH accounts: the walk signs in, reads a profile and opens the admin console. The
-    # image's default is the six-section reader at /app/reader (no accounts, no sign-in form), which
-    # is what this stack used to serve -- so the walk looked for a password field that was never
-    # there, and died on "No element found for selector: input[type=password]".
     -e WEB_ROOT=/app/web \
     -e FAKE_SOURCE_URLS="$FAKES" \
     -e FAKE_SOURCE_NSFW="$ADULT_SOURCE" \
@@ -285,11 +285,11 @@ else
   # with "the database system is starting up" and the walk had no instance to drive.
   for _ in $(seq 1 60); do docker exec "$DB" pg_isready -q -h 127.0.0.1 2>/dev/null && break; sleep 1; done
 
+  # The app WITH accounts -- see the note on the embedded stack above.
   docker run -d --name "$APP" --network "$NET" -p "127.0.0.1:$PORT:3000" \
     -e DATABASE_URL="postgres://postgres:e2e@$DB:5432/hbook" \
     -e JWT_SECRET='e2e-secret-at-least-16-chars' \
     -e LIBRARY_BACKEND=owned \
-    # The app WITH accounts -- see the note on the embedded stack above.
     -e WEB_ROOT=/app/web \
     -e FAKE_SOURCE_URLS="$FAKES" \
     -e FAKE_SOURCE_NSFW="$ADULT_SOURCE" \
