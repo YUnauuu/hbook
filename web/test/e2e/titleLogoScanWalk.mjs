@@ -12,7 +12,9 @@ const target = new URL(BASE);
 const NET = process.env.E2E_NET || 'hbook-e2e';
 const OUT = process.env.OUT || 'test/e2e/shots-title-logo-scan';
 assert.ok(['localhost', '127.0.0.1'].includes(target.hostname) && target.protocol === 'http:', 'use a disposable localhost fixture');
-assert.match(NET, /^uchi[a-z0-9-]*(?:e2e|codex|test)[a-z0-9-]*$/, 'use an up.sh test stack');
+// The stack up.sh makes: a throwaway network, never anybody's server. The name carried the project's old one
+// ("uchi") when the project was renamed; up.sh's own default is hbook-e2e, so both spellings are this guard.
+assert.match(NET, /^(?:uchi|hbook)[a-z0-9-]*(?:e2e|codex|test)[a-z0-9-]*$/, 'use an up.sh test stack');
 const [app] = JSON.parse(execFileSync('docker', ['inspect', NET], { encoding: 'utf8' }));
 assert.equal(app.HostConfig.NetworkMode, NET, 'the test app belongs to the named fixture network');
 assert.ok(app.NetworkSettings.Ports['3000/tcp']?.some((p) => p.HostIp === '127.0.0.1' && p.HostPort === target.port), 'BASE must point at the named test container');
