@@ -38,7 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build the BFF image
-        run: docker build -t hbook-bff:ci ./bff
+        # The REPO ROOT is the context, not ./bff: bff/Dockerfile copies bff/ and novel-sources/ out of it, and
+        # the release workflow has built it this way since v0.1 (24efbb6). With ./bff as the context the build
+        # fails on "bff/package.json: not found" -- which is what this job has been doing since that commit.
+        run: docker build -f bff/Dockerfile -t hbook-bff:ci .
 
   build-web:
     name: Build Web

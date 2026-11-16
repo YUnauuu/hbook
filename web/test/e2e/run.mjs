@@ -97,16 +97,37 @@ try {
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 60000 });
   // The form appears at hydration, after networkidle2. This only ever passed because shot() added enough
   // latency to lose the race; i18n.mjs, without a screenshot first, lost it deterministically.
-  await page.waitForSelector('input[type=password]', { timeout: 30000 }).catch(() => {});
+  //
+  // ⚠️ The app opens on EITHER the sign-in screen or the app itself, and which one is the server's answer, not
+  // this walk's: the app boots, asks who it is, and shows the form only if the answer is "nobody". A walk that
+  // needs to DRIVE the app must therefore cope with both -- and i18n.mjs already does (it waits for the topbar
+  // or the form, and signs in only when the form is there). This one typed into the form unconditionally, so on
+  // a run where the app was already open it died on "No element found for selector: input[type=password]" --
+  // which is how this job has been red since the repo's first CI run. What it prints below says which of the
+  // two it found, so the next red run says why.
+  await page.waitForFunction(
+    () => !!document.querySelector('[data-topbar]') || !!document.querySelector('input[type=password]'),
+    { timeout: 30_000 },
+  ).catch(() => {});
   await shot('login');
-  const inputs = await page.$$('input');
-  if (!inputs.length) bad('the login page has no form');
-  else {
-    await inputs[0].type(USER);
-    await page.type('input[type=password]', PASS);
-    await page.keyboard.press('Enter');
-    await sleep(4000);
-    (await page.$('input[type=password]')) ? bad('still on the login form after valid credentials') : ok('signed in');
+  const opened = await page.evaluate(() => ({
+    url: location.href,
+    app: !!document.querySelector('[data-topbar]'),
+    form: !!document.querySelector('input[type=password]'),
+  }));
+  console.log(`    [page] ${opened.url} -- ${opened.app ? 'the app itself' : opened.form ? 'the sign-in form' : 'neither'}`);
+  if (!opened.app) {
+    const inputs = await page.$$('input');
+    if (!inputs.length) bad('the login page has no form');
+    else {
+      await inputs[0].type(USER);
+      await page.type('input[type=password]', PASS);
+      await page.keyboard.press('Enter');
+      await sleep(4000);
+      (await page.$('input[type=password]')) ? bad('still on the login form after valid credentials') : ok('signed in');
+    }
+  } else {
+    ok('the app was already open');
   }
 
   /**
