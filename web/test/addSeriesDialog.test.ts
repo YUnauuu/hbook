@@ -159,8 +159,7 @@ test('Open in library navigates by the id the server gave, never by a title gues
   assert.doesNotMatch(src, /\?\? p\.content\[0\]/, 'the first search result is opened again -- a confident wrong navigation');
   assert.match(fn, /const hit = p\.content\.find\(\(s\) => normTitle\(s\.metadata\?\.title \|\| s\.name\) === normTitle\(done\.title\)\);/,
     'the fallback no longer requires an exact normalised match');
-  // No match: Library -> Downloads, pointed at this add's tile (v0.49.0), on both builds -- desktopSurfaces.test.ts
-  // pins that no build falls back to the Offline tab. Reintroduce `: isDesktop() ? '/library/' : '/downloads/'`:
+  // No match: Library -> Downloads, pointed at this add's tile (v0.49.0). Reintroduce a fallback to the Offline tab:
   // "a fresh add lands on the device Offline tab" fails.
   assert.match(fn, /router\.push\(hit \? `\/series\/\?id=\$\{hit\.id\}` : downloadsHref\(done\.folder\)\);/, 'a fresh add lands on the device Offline tab');
   assert.match(fn, /catch \{ router\.push\(downloadsHref\(done\.folder\)\); \}/, 'a failed lookup lands on the device Offline tab');
