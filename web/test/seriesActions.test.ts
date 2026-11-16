@@ -99,12 +99,9 @@ test('the notes door: saved pages, else notes, else "Add a note" -- and neutral 
   assert.equal(seriesActionGroups({ ...MEMBER, notes: { moments: 2, notes: 0 } })[0].items[0].label, '2 saved pages');
 });
 
-test('the Offline key: never in hbook Desktop, never on a series with nothing to save', () => {
-  // Reintroduce the key on desktop (drop `!x.desktop`): the chapters are files on that computer already, and a copy
-  // in the window's storage stores every one twice -- "the desktop app shows Offline" fails.
-  assert.equal(offlineKeyShown({ nothingYet: false, desktop: false }), true);
-  assert.equal(offlineKeyShown({ nothingYet: false, desktop: true }), false, 'the desktop app shows Offline');
-  assert.equal(offlineKeyShown({ nothingYet: true, desktop: false }), false, 'a series with nothing to save shows Offline');
+test('the Offline key: never on a series with nothing to save', () => {
+  assert.equal(offlineKeyShown({ nothingYet: false }), true);
+  assert.equal(offlineKeyShown({ nothingYet: true }), false, 'a series with nothing to save shows Offline');
 });
 
 test('More as a menu: each group named above its first item, icons before the words, Remove apart', () => {
@@ -145,7 +142,7 @@ test('the page: four keys under the button, More by width, the sheet closed befo
   assert.ok(keys.length > 100, 'the key row is not where this test looks');
   const order = ['<FavouriteKey ', 'label={tr(\'Offline\')}', 'label={tr(\'List\')}', '<MoreKey '].map((k) => keys.indexOf(k));
   assert.ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])), `the keys are not Favourite, Offline, List, More: ${order}`);
-  assert.match(keys, /\{offlineKeyShown\(\{ nothingYet, desktop: isDesktop\(\) \}\) && \(/, 'the Offline key is not offlineKeyShown\'s');
+  assert.match(keys, /\{offlineKeyShown\(\{ nothingYet \}\) && \(/, 'the Offline key is not offlineKeyShown\'s');
   assert.match(keys, /name=\{downloadingAll \? tr\('Saving…'\) : tr\('Save all offline'\)\} onClick=\{downloadAll\}/, 'the Offline key is not Save all offline');
   assert.match(keys, /label=\{tr\('List'\)\} title=\{tr\('Add to list'\)\} onClick=\{\(\) => setCollecting\(true\)\}/, 'List does not open Add to list');
   // The old stack is gone from under the cover.

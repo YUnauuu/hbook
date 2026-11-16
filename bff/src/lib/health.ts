@@ -43,7 +43,6 @@ import { countsAsMissing, downloadCensus, fsTypeOf, type Census } from './downlo
 import { applyIgnores, keepIgnoresAlive, loadIgnores, noIgnores, type Finding, type IgnorableCheck, type IgnoreCtx } from './healthIgnore';
 import { chapterFileRel } from './downloader';
 import { slowedSources } from './pace';
-import { forDesktop, isDesktop } from './desktop';
 import { archiveHoles, archiveTakes, type ArchiveHoles } from './archiveBoundaries';
 import { renumberRunning, type NumberingNote } from './numbering';
 import { detailOf, joined, noteOf, own, say, saidOf, summaryOf, type Part, type Said } from './said';
@@ -1836,12 +1835,11 @@ async function latestOf(p: SolverPing): Promise<string | null> {
 /**
  * One solver's row when there are two (v0.55.3, FLARESOLVERR_FALLBACK_URL): titled by what it is, the main or the
  * backup, with its state and its address. Answering, it is listed for reference (`info`), with its kind, its version
- * and a newer release when there is one; not answering, it is a finding. The desktop app never has a backup, and its
- * helper's address carries its token: no address is printed there.
+ * and a newer release when there is one; not answering, it is a finding.
  */
 async function solverRow(p: SolverAt, role: 'main' | 'backup'): Promise<HealthItem> {
   const head = say(role === 'main' ? 'solver.main' : 'solver.backup');
-  const where = isDesktop() ? null : joined('dot', say('text', { text: p.url }));
+  const where = joined('dot', say('text', { text: p.url }));
   if (!p.ok) return { title: head.text, titleSaid: saidOf(head), ...detailOf([say('solver.notAnswering', { error: p.error || null }), where]) };
   const latest = await latestOf(p);
   return {
@@ -1870,18 +1868,14 @@ export async function solverHealth(): Promise<HealthCheck> {
       id: 'solver',
       title: 'Cloudflare solver',
       status: blaming.length ? 'problem' : 'warn',
-      // ⚠️ Desktop: the helper's address carries its access token as the path, so it is named, never
-      // printed (a screenshot in a bug report would hand the token to anyone who reads it) -- nor sent as a
-      // parameter for the page to print.
-      ...summaryOf([say('solver.down', { url: isDesktop() ? undefined : url, error }), backupQuiet]),
+      ...summaryOf([say('solver.down', { url, error }), backupQuiet]),
       ...noteOf([say('solver.downNote')]),
       // The solver itself is the first item, not just the sources blaming it. Every other check on this page
       // holds "no items means ok", and a solver that is simply absent has nothing to list -- so without this
       // it would report a warning with an empty body, which reads as a page bug rather than a finding.
       items: [
         ...(rows.length ? rows : [{
-          title: forDesktop(url, 'Cloudflare helper'),
-          ...(isDesktop() ? { titleSaid: saidOf(say('solver.helper')) } : {}),
+          title: url,
           ...detailOf([say('solver.notAnswering', { error })]),
         }]),
         // No "Reset solver sessions" chip while it is down. The reset clears what THIS process remembers
@@ -1905,8 +1899,8 @@ export async function solverHealth(): Promise<HealthCheck> {
       ? [say('solver.backupSolving')]
       : [blaming.length
         ? say('solver.blaming', { n: blaming.length })
-        // Named by its kind (v0.55.3), except on the desktop app: its helper greets as FlareSolverr and is hbook's own.
-        : say('solver.ready', { version: ping.version ?? null, latest: behind ? latest : null, kind: isDesktop() ? undefined : ping.kind }),
+        // Named by its kind (v0.55.3).
+        : say('solver.ready', { version: ping.version ?? null, latest: behind ? latest : null, kind: ping.kind }),
       backupQuiet]),
     ...noteOf(mainQuiet
       ? [say('solver.backupNote'), blaming.length > 0 && joined('sentence', say('solver.failingNote'))]
@@ -2170,8 +2164,7 @@ async function downloadsMissing(ctx: IgnoreCtx = noIgnores()): Promise<HealthChe
  * Where one library root sits inside the other, by path (v0.52.0, #134), or null when they are side by side: the
  * download folder inside the library (`root: 'library'`, `folder` its place under it, '' when the two are one folder)
  * or the library inside the download folder (`root: 'downloads'`). Pure, for the configured roots after realpath.
- * Case counts, as it does on the server's disks; the desktop app refuses nested roots before the server starts
- * (lib/desktop.ts rootsOverlap).
+ * Case counts, as it does on the server's disks.
  */
 export function nestedRoots(library: string, downloads: string, impl: typeof path = path): { root: 'library' | 'downloads'; folder: string } | null {
   const under = (child: string, parent: string): string | null => {

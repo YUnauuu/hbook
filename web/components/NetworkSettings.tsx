@@ -36,7 +36,7 @@ export const useNetwork = () => useQuery({ queryKey: ['admin-network'], queryFn:
 
 /** The address the server sees you at, and whether that is at home: one sentence. */
 export function seenText(n: NetworkState): string {
-  if (n.localNetworks.value === 'none') return tr('No network is home, so profiles without a password open only in the desktop app.');
+  if (n.localNetworks.value === 'none') return tr('No network is home, so profiles without a password cannot open.');
   const ip = iso(n.ip ?? '?');
   return n.zone === 'local' ? tr('The server sees you at {ip}, at home.', { ip }) : tr('The server sees you at {ip}, outside your home network.', { ip });
 }

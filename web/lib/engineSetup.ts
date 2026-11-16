@@ -13,14 +13,14 @@
 import { keys, t as tr } from './i18n';
 import { relativeTime } from './format';
 
-export type Platform = 'compose' | 'unraid' | 'casaos' | 'umbrel' | 'other' | 'desktop';
+export type Platform = 'compose' | 'unraid' | 'casaos' | 'umbrel' | 'other';
 
-/** The chips, in the order people are likely to be on them. The desktop app shows its own card (EngineInstall). */
+/** The chips, in the order people are likely to be on them. */
 export const PLATFORM_CHIPS: readonly Platform[] = ['compose', 'unraid', 'casaos', 'umbrel', 'other'];
 
 /** Product names read the same in every language; only "Somewhere else" is a sentence to translate. */
 export const PLATFORM_NAMES: Record<Exclude<Platform, 'other'>, string> = {
-  compose: 'Docker Compose', unraid: 'Unraid', casaos: 'CasaOS', umbrel: 'Umbrel', desktop: 'hbook Desktop',
+  compose: 'Docker Compose', unraid: 'Unraid', casaos: 'CasaOS', umbrel: 'Umbrel',
 };
 export const platformLabel = (p: Platform): string => (p === 'other' ? tr('Somewhere else') : PLATFORM_NAMES[p]);
 
@@ -72,7 +72,7 @@ export function headline(s: Pick<EngineReport, 'configured' | 'reachable' | 'off
  */
 export function defaultPlatform(s: Pick<EngineReport, 'platform'>): Platform {
   const p = s.platform as Platform | undefined;
-  return p && (PLATFORM_CHIPS.includes(p) || p === 'desktop') ? p : 'compose';
+  return p && PLATFORM_CHIPS.includes(p) ? p : 'compose';
 }
 
 /** The pinned engine. bff/test/enginePins.test.ts holds this equal to every other pin. */
@@ -121,9 +121,6 @@ export const STEP_TEXT = keys(
   'Then set {name} on hbook to the engine’s address and restart hbook:',
   'Check that the engine is running and that hbook can reach the address in {name}.',
   'Stop the engine, then empty {name} on hbook and restart hbook.',
-  // Desktop
-  'hbook Desktop downloads the engine itself, once, from this tab.',
-  'The engine runs only while hbook is open. There is no switch for it: one that was never downloaded costs nothing.',
 );
 export type StepText = (typeof STEP_TEXT)[number];
 
@@ -220,8 +217,6 @@ export function onSteps(p: Platform, h: Headline): Step[] {
       ];
     case 'umbrel':
       return [{ text: 'Not available on Umbrel: an Umbrel app can’t add an optional second container. MangaDex and sites you add by address work without it.' }];
-    case 'desktop':
-      return [{ text: 'hbook Desktop downloads the engine itself, once, from this tab.' }];
     case 'other':
       if (down) return [{ text: 'Check that the engine is running and that hbook can reach the address in {name}.', vars: { name: URL_VAR } }];
       return [
@@ -254,8 +249,6 @@ export function offSteps(p: Platform): Step[] {
       return [{ text: 'On the Docker tab, stop {name} (or remove it), then empty {setting} on the hbook container and apply.', vars: { name: ENGINE, setting: URL_VAR } }];
     case 'casaos':
       return [{ text: 'In CasaOS, stop the {name} app (or remove it), then empty {setting} in hbook’s settings.', vars: { name: ENGINE, setting: URL_VAR } }];
-    case 'desktop':
-      return [{ text: 'The engine runs only while hbook is open. There is no switch for it: one that was never downloaded costs nothing.' }];
     case 'umbrel':
     case 'other':
       return [{ text: 'Stop the engine, then empty {name} on hbook and restart hbook.', vars: { name: URL_VAR } }];
@@ -272,7 +265,6 @@ export function dataPlace(p: Platform): string | null {
     case 'unraid': return `/mnt/user/appdata/${ENGINE}`;
     case 'casaos': return `/DATA/AppData/${ENGINE}`;
     case 'other': return '/home/suwayomi/.local/share/Tachidesk';
-    case 'desktop': return 'engine';
     case 'umbrel': return null;
   }
 }

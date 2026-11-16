@@ -63,8 +63,8 @@ test('the admin list ends with the version, on a computer and on a phone alike',
   // v0.72.0: the one query every reader of the report on Admin shares (lib/healthBySeries.ts healthQuery).
   assert.match(line, /useQuery\(healthQuery\)/, 'the version line asks for an update of its own');
   assert.doesNotMatch(admin, /api\.github\.com|releases\/latest/, 'the page asks GitHub itself');
-  // Desktop: the app's own version, the one the person installed.
-  assert.match(line, /const running: string \| null = bridge\(\)\?\.version \|\| stats\?\.version \|\| null;/, 'Desktop does not show the app\'s version');
+  // The server's own version, the one this hbook runs.
+  assert.match(line, /const running: string \| null = stats\?\.version \|\| null;/, 'the version line does not read the server\'s');
   assert.match(line, /<VersionFacts running=\{running\} update=\{updateState\(health\?\.checks\)\} \/>/);
   const facts = slice(admin, 'function VersionFacts(', 'function Overview(');
   assert.match(facts, /<bdi>hbook \{shownVersion\(running\)\}<\/bdi>/, 'the version is not isolated from an Arabic neighbour');

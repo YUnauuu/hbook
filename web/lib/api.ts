@@ -3,7 +3,6 @@
 
 import { withAdult } from './adult';
 import { readOfflineIdentity } from './offlineIdentity';
-import { desktopShell, noteServerDesktop } from './desktop';
 
 /**
  * What a refresh attempt actually learned.
@@ -77,11 +76,6 @@ export async function refreshSession(): Promise<SessionResult> {
   if (!refreshing) {
     refreshing = fetch('/auth/refresh', { method: 'POST', credentials: 'include' })
       .then(async (r): Promise<SessionResult> => {
-        // hbook Desktop: a refresh cookie that is gone or no longer matches (60 days, a cleared cookie
-        // store, a restored backup) is exchanged again in the SAME singleton, so the sign-in screen never
-        // appears there. Only in the shell's own window: the marker is the one thing a browser tab on the
-        // same port cannot have, and without the shell's header the exchange would only 401 anyway.
-        if (r.status === 401 && desktopShell()) return desktopExchange();
         if (r.status === 401 || r.status === 403) {
           // `local_only`: a profile that opens at home, refreshed from outside it -- the sign-in screen says so. Every
           // other refusal is the bare answer it always was.
@@ -92,7 +86,6 @@ export async function refreshSession(): Promise<SessionResult> {
         const j = await r.json();
         accessToken = j.accessToken;
         if (j.user?.id) currentUserId = j.user.id;
-        noteServerDesktop(j.desktop);
         return { kind: 'authed', user: j.user, refreshExpiresAt: j.refreshExpiresAt };
       })
       .catch((): SessionResult => ({ kind: 'unreachable' }))
@@ -101,28 +94,6 @@ export async function refreshSession(): Promise<SessionResult> {
       });
   }
   return refreshing;
-}
-
-/**
- * The desktop sign-in: `POST /auth/desktop`, answered exactly like a sign-in (body + cookies).
- *
- * The page never holds the secret. The shell's main process adds `X-hbook-Desktop` to this one request
- * below the page (contract 2), so there is nothing here to send but the request itself.
- *
- * ⚠️ 401, 403 and 404 are `rejected` -- the server answered and the answer was no (a wrong or missing secret,
- * a foreign Origin, not from this machine). Anything else that is not ok is `unreachable`, which the desktop
- * splash retries: that is the server restarting, not a verdict. Reintroduce by returning `unreachable` for a
- * 401 and the window retries a refused exchange forever instead of showing DesktopReconnect.
- */
-async function desktopExchange(): Promise<SessionResult> {
-  const r = await fetch('/auth/desktop', { method: 'POST', credentials: 'include' });
-  if (r.status === 401 || r.status === 403 || r.status === 404) return { kind: 'rejected' };
-  if (!r.ok) return { kind: 'unreachable' };
-  const j = await r.json();
-  accessToken = j.accessToken;
-  if (j.user?.id) currentUserId = j.user.id;
-  noteServerDesktop(j.desktop);
-  return { kind: 'authed', user: j.user, refreshExpiresAt: j.refreshExpiresAt };
 }
 
 interface Opts {

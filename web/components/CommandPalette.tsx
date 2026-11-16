@@ -13,7 +13,6 @@ import { useToast } from './Toast';
 import { Img } from './ui';
 import { IcSearch, IcSparkle, IcRefresh, IcBell, IcDownload, IcCloudDownload, IcGrid, IcMoments, IcSettings, IcUser, IcImport, IcBookmark } from './icons';
 import { t as tr } from '@/lib/i18n';
-import { hiddenOnDesktop, isDesktop, DESKTOP_HIDDEN } from '@/lib/desktop';
 import { effectsReduced } from '@/lib/effects';
 import { arrival, findDestinations, whereText, type Destination } from '@/lib/destinations';
 import { openInConsole } from '@/lib/consoleOnScreen';
@@ -120,7 +119,7 @@ export function CommandPalette({ open, seed = '', onClose }: { open: boolean; se
     // The sidebar's Lists (UI refresh), here too: a phone has no sidebar, and Profile's "See all" was the only way in.
     { key: 'lists', label: tr('Lists'), icon: <IcBookmark width={16} height={16} />, run: () => go('/collections') },
     // What the SERVER is fetching (v0.49.0), beside this device's copies: two different promises, two entries.
-    // Kept on desktop, where it is the only "downloads" there is.
+    // Kept, where it is the only "downloads" there is.
     ...(mayDownload ? [{ key: 'server-downloads', label: tr('Server downloads'), hint: tr('what the server is fetching'), icon: <IcCloudDownload width={16} height={16} />, run: () => go(downloadsHref()) }] : []),
     { key: 'downloads', label: tr('Offline downloads'), icon: <IcDownload width={16} height={16} />, run: () => go('/downloads') },
     // Genres are a filter now, not a page. The palette still gets you there in one keystroke.
@@ -129,13 +128,13 @@ export function CommandPalette({ open, seed = '', onClose }: { open: boolean; se
       key: 'refresh', label: tr('Refresh library'), hint: tr('scan for new chapters'), icon: <IcRefresh width={16} height={16} />,
       run: async () => { onClose(); toast(tr('Refreshing…'), 'info', { busy: true, key: 'refresh' }); await triggerRefresh(); toast(tr('Refresh started'), 'success', { key: 'refresh' }); },
     },
-  ] as Action[]).filter((a) => !hiddenOnDesktop(DESKTOP_HIDDEN.paletteKeys, a.key)), [go, onClose, toast, mayDownload]); // no Offline downloads on desktop (lib/desktop.ts)
+  ] as Action[]), [go, onClose, toast, mayDownload]);
 
   const query = q.trim().toLowerCase();
   const shownActions = query.length < 2 ? actions : actions.filter((a) => a.label.toLowerCase().includes(query) || a.key.includes(query));
   // v0.55.4: the pages and settings the query names, for two characters or more, admins' only for admins and none of
-  // Desktop's missing ones there (lib/destinations.ts).
-  const places = useMemo(() => findDestinations(q, { admin: isAdmin, desktop: isDesktop() }), [q, isAdmin]);
+  // The ones this server may not have there (lib/destinations.ts).
+  const places = useMemo(() => findDestinations(q, { admin: isAdmin }), [q, isAdmin]);
   // one flat keyboard list: series first, then pages and settings, then actions
   const rows = useMemo(
     () => [

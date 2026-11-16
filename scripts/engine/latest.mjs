@@ -5,7 +5,7 @@
 //
 // Prints one JSON object -- {pin, stable, preview, matrix, notes} -- and, with --github-output, writes `matrix` (the
 // probe job's rows) and `summary` to that file. The rows:
-//   * pin: the engine every install runs today (desktop/src/engine-pin.json), always -- the control. If it fails, it is
+//   * pin: the engine every install runs today (scripts/engine/pin.json), always -- the control. If it fails, it is
 //     the canary (or the image under that tag) that changed, not the new engine;
 //   * stable: the newest Suwayomi-Server release, when it is not the pin; or the version asked for (--version);
 //   * preview: the newest Suwayomi-Server-preview release, report only (--preview, default true).
@@ -34,7 +34,7 @@ export async function resolveEngines(o = {}) {
   const api = (o.api ?? 'https://api.github.com').replace(/\/+$/, '');
   const registry = (o.registry ?? 'https://ghcr.io').replace(/\/+$/, '');
   const now = o.now ? Date.parse(o.now) : Date.now();
-  const pin = JSON.parse(readFileSync(o.pin ?? join(ROOT, 'desktop', 'src', 'engine-pin.json'), 'utf8')).version;
+  const pin = JSON.parse(readFileSync(o.pin ?? join(ROOT, 'scripts', 'engine', 'pin.json'), 'utf8')).version;
   const gh = { accept: 'application/vnd.github+json', 'user-agent': 'hbook-engine-canary', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}) };
   const getJson = async (url, headers = gh) => {
     const r = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });

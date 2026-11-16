@@ -1112,8 +1112,8 @@ signed in on that browser to an identity at the provider. The whole mode is unde
 
 **Signing up** (the form since v0.61.0). `POST /auth/register` `{username, password, displayName?, deviceId?,
 deviceName?}` works only while **Admin → Settings → Server → Open registration** is on — `GET /auth/config` says so as
-`allowRegistration`, which the sign-in screen reads to offer *Create an account*, and which is always false on
-hbook Desktop — and is otherwise **403** `registration_disabled`. It makes a member (role `user`), with the
+`allowRegistration`, which the sign-in screen reads to offer *Create an account* — and is otherwise **403**
+`registration_disabled`. It makes a member (role `user`), with the
 new-member defaults (`newMemberDefaults` under [Admin](#admin)), and signs them in exactly as `/auth/login` does: the same body, cookies and session, named by `deviceId`/`deviceName` like a sign-in's.
 A name that differs from an existing one only in case is taken (**409** `username_taken`, as is the name itself),
 and two sign-ups racing for one name end in one account and a 409, never a 500. **400** is `bad_request` (a name
@@ -1731,7 +1731,7 @@ the server has talk at all, so the switch is offered only there). A comment is p
 comment or a reaction is refused with **403** `{ "error": "incognito" }`. Only its author edits a comment; its author
 or an admin deletes it (an admin's removal is audited). A new comment sends a push to the members who commented on that
 chapter before and may still open the series, unless they switched Comments and reactions off. `GET /api/series/:id/comments` lists the chapters with talk as
-`{bookId, comments, reactions, top}`. None of these exist on hbook Desktop.
+`{bookId, comments, reactions, top}`.
 
 **Account settings.** `GET /api/settings` answers the caller's whole forwards-compatible object; `PUT /api/settings`
 takes top-level keys directly and merges them into that object (an object value is replaced whole). Unknown keys stay
@@ -2131,8 +2131,8 @@ sign-in through the provider with `OIDC_ALLOW_SIGNUP`, in SSO-only mode too. `PA
 default, allows them). A library id no library has is dropped, and a library removed later leaves the list: a list left
 empty means none, never every library. GET answers the same object. The account is made with them, in the transaction
 that makes it, and a default that cannot be read makes no account. They are not for the accounts an admin chooses: the
-first admin (`POST /api/setup`, or SSO-only mode's first sign-in), one made by `POST /api/admin/users`, and the desktop
-app's own all start with everything. An account the provider makes an admin (`OIDC_ADMIN_GROUP`) carries them too:
+first admin (`POST /api/setup`, or SSO-only mode's first sign-in) and one made by `POST /api/admin/users` all start
+with everything. An account the provider makes an admin (`OIDC_ADMIN_GROUP`) carries them too:
 unrestricted while it is an admin, it has them the day the group sync makes it a member. Saving them changes no account
 that exists.
 
@@ -3014,14 +3014,14 @@ has not seen yet before switching it, so a language switch on such a source is n
 `GET /api/admin/extensions/status` is also what Admin → Extensions' setup screen reads (v0.49.0, #72). With no
 engine to talk to it answers `{ configured: false, reachable: false, off, platform, linkedSeries }`: `off` is
 `switch` (`EXTENSION_ENGINE=0` while `SUWAYOMI_URL` names the bundled container) or `unset` (no address),
-`platform` is the install the steps open on (`desktop`, `compose`, `unraid`, `casaos`, `umbrel` or `unknown`,
+`platform` is the install the steps open on (`compose`, `unraid`, `casaos`, `umbrel` or `unknown`,
 from `HBOOK_PLATFORM`, Unraid's `HOST_OS` and the compose files' `EXTENSION_ENGINE`), and `linkedSeries`
 counts the series added through an extension. With one it adds `engine` (host and port), `platform`, `retry`
 (`{ attempts, since, nextAt }` while the registration retry runs: every 5 minutes after the first few, until
 the engine answers; otherwise `null`), `lastTry` and `lastTryOk` (the last attempt to reach the engine, whoever
 made it -- this call's own look included -- and whether it answered; v0.49.1), `linkedSeries` and, when the engine
 answers, `solver` (`{ supported, enabled, wiring, connectable, url }`, `wiring` one of `ok`, `off`, `localhost`,
-`other`, `unsupported`; `url` is never sent on desktop, where it carries the in-app helper's token). When the engine
+`other`, `unsupported`). When the engine
 answers but the last registration missed it, the call registers its sources before replying, which is what
 makes the setup screen's **Check again** a plain refetch. `POST /api/admin/extensions/solver` points the
 engine's own Cloudflare helper at the solver hbook uses (`FLARESOLVERR_URL`) and switches it on -- only when
@@ -3573,7 +3573,7 @@ For a server reachable from the internet, the provider can be the only way in (s
 
 The server refuses to start in a configuration that cannot work — a typo in `AUTH_MODE`, no provider, linking by
 username, or a new server with no way to make its first admin — and says which in its log. Sessions already
-signed in keep working; hbook Desktop ignores the mode.
+signed in keep working.
 
 Not sure of your subject? Start the server with `OIDC_ADMIN_GROUP` alone, or sign in once: a new server that refuses a
 first sign-in logs the subject it came with, ready to copy into `OIDC_BOOTSTRAP_ADMIN_SUB`. (In Authentik, the

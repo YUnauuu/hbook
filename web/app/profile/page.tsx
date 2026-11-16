@@ -25,7 +25,6 @@ import { ProfileConnections } from '@/components/ProfileConnections';
 import { ProfileAccount } from '@/components/ProfileAccount';
 import { PROFILE_SETTINGS } from '@/lib/settingsIndex.profile';
 import { t as tr } from '@/lib/i18n';
-import { isDesktop } from '@/lib/desktop';
 
 /**
  * The profile console (v0.88.0): the person's cinematic hero, then ONE list -- You and Insights as pictures, then
@@ -95,7 +94,6 @@ function ProfileInner() {
   // Read once: the card is scrolled to on arrival, never again on a re-render or a page change.
   const [focusTracking] = useState<boolean>(() => params.get('card') === 'tracking');
   const [goalOpen, setGoalOpen] = useState(false);
-  const desktop = isDesktop();
   const settings = useProfileSettingsViews();
 
   const year = new Date().getFullYear();
@@ -147,8 +145,6 @@ function ProfileInner() {
     ...settings.views,
     connections: { icon: <IcLink width={18} height={18} />, tint: 'bg-cyan-500/15 text-cyan-300',
       summary: tr('Trackers, reading apps and API tokens'), pane: <ProfileConnections focusTracking={focusTracking} /> },
-    // hbook Desktop has no Account page (the registry's `web`): no password, no 2FA, no other sessions, and the app
-    // signs itself in (lib/desktop.ts). `?tab=account` there opens You.
     account: { icon: <IcKey width={18} height={18} />, tint: 'bg-rose-500/15 text-rose-300',
       summary: tr('Password, two-factor and sessions'), pane: <ProfileAccount /> },
   };
@@ -156,7 +152,7 @@ function ProfileInner() {
   return (
     <div className="min-h-screen-d px-4 lg:px-0" data-profile-console>
       <ConsoleLayout index={PROFILE_SETTINGS} label={tr('Profile')} views={views} home="you"
-        conds={{ web: !desktop, 'local-accounts': true, extensions: false, pointer: settings.pointer, talk: !desktop && !!user?.talk }}
+        conds={{ 'local-accounts': true, extensions: false, pointer: settings.pointer, talk: !!user?.talk }}
         hero={(mode) => (
           <ProfileHero mode={mode} stats={stats} anchorId={anchorId} onDeckBook={home?.onDeck?.[0]?.id} shelf={shelf}
             onGoal={() => setGoalOpen(true)} onQuickGoal={saveGoal} />
@@ -475,8 +471,7 @@ function FootRows({ isAdmin }: { isAdmin: boolean }) {
       {isAdmin && <ConsoleFootRow href="/admin/" icon={<IcSettings width={18} height={18} />} label={tr('Admin')} />}
       <ConsoleFootRow href="https://ko-fi.com/angeloshaheen" external
         icon={<span className="text-base leading-none">☕</span>} label={tr('Support hbook')} />
-      {/* Not on desktop: the app signs itself back in at once, so "Sign out" there would do nothing visible. */}
-      {!isDesktop() && <ConsoleFootRow onClick={logout} icon={<IcLogOut width={18} height={18} />} label={tr('Sign out')} tone="danger" />}
+      <ConsoleFootRow onClick={logout} icon={<IcLogOut width={18} height={18} />} label={tr('Sign out')} tone="danger" />
     </div>
   );
 }

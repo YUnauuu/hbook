@@ -567,24 +567,3 @@ test('every view that prints a download\'s reason words it: Library → Download
   }
 });
 
-// ⚠️ LAST: noteServerDesktop is sticky for the life of the module, and every test above reads the server's words.
-test('on the desktop app, every platform wording says hbook, never a container, an env var or a compose file', async () => {
-  // Reintroduce by returning the server's sentence from 'fix.solverCrash' on desktop: "shm_size" fails it.
-  const { noteServerDesktop } = await import('../lib/desktop');
-  noteServerDesktop(true);
-  const DOCKERISH = /PUID|PGID|chown|docker|compose|(?<!process)\.env\b|container|\buid\b|shm_size|FLARESOLVERR_|SUWAYOMI_|10002/i;
-  const DESKTOP = [
-    'solver.down', 'solver.downNote', 'solver.failingNote', 'cap.note', 'cap.title', 'cap.detail', 'frozen.overLimit',
-    'fix.solverCrash', 'fix.solverDown', 'fix.bypassOff', 'fix.engineLogin', 'fix.engineDown', 'fix.solverBroken',
-    // v0.55.3: the desktop helper is never busy and has no backup, but its words would still be a restart, and the
-    // backup's two lines name no container.
-    'fix.solverBusy', 'autofix.clears.mainSolverDown', 'autofix.clears.backupSolverDown',
-    // v0.52.0 (#134): the desktop app chooses its folders; nothing is mounted there.
-    'nested.note',
-  ];
-  for (const code of DESKTOP) {
-    const line = saidText({ code, params: { n: 2, cap: 25, source: 'sw:1', url: 'http://127.0.0.1:1/token', error: null } });
-    assert.ok(line && !DOCKERISH.test(line), `${code} on desktop: ${line}`);
-    assert.ok(!line.includes('token'), `${code} prints the helper's address on desktop`);
-  }
-});

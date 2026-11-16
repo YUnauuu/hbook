@@ -12,7 +12,7 @@ before(async () => { m = await import('../src/lib/authMode'); });
 afterEach(() => { delete process.env.AUTH_MODE; delete process.env.AUTH_RESCUE_ADMIN; });
 
 const facts = (o: Partial<import('../src/lib/authMode').AuthFacts> = {}) => ({
-  mode: 'oidc-only', desktop: false, oidc: true, linkByUsername: false, bootstrapSub: '', adminGroup: 'admins', hasUsers: false, ...o,
+  mode: 'oidc-only', oidc: true, linkByUsername: false, bootstrapSub: '', adminGroup: 'admins', hasUsers: false, ...o,
 });
 
 test('SSO-only mode starts only in a configuration that can work', () => {
@@ -32,9 +32,8 @@ test('a typo in AUTH_MODE stops the server rather than leave the password routes
   // Reintroduce by reading an unknown value as local: the operator believes the routes closed, and they are open.
   assert.match(m.authModeProblems(facts({ mode: 'oidc_only' })).join(), /AUTH_MODE is "oidc_only": use local or oidc-only/);
   for (const ok of ['', 'local', 'LOCAL', ' oidc-only ']) assert.deepEqual(m.authModeProblems(facts({ mode: ok, adminGroup: 'g' })), [], ok);
-  // Local mode asks nothing of single sign-on, and hbook Desktop ignores the mode.
+  // Local mode asks nothing of single sign-on.
   assert.deepEqual(m.authModeProblems(facts({ mode: 'local', oidc: false, adminGroup: '' })), []);
-  assert.deepEqual(m.authModeProblems(facts({ desktop: true, oidc: false, adminGroup: '' })), []);
 });
 
 test('AUTH_MODE is read when asked, and the rescue door exists only in SSO-only mode', () => {

@@ -11,7 +11,6 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog, msgOf } from '@/components/ConfirmDialog';
 import { IcCloudDownload, IcPlus, IcRefresh } from '@/components/icons';
 import { Row, Section, SETTINGS_GRID, SwitchRow } from '@/components/settings';
-import { isDesktop } from '@/lib/desktop';
 import { connectProblem, testProblem, testSaid, tokenFromPaste, tokenSource, type TestResult } from '@/lib/trackerHelp';
 import { PLAN_ON_ADD_TEXT, planOnAddOf } from '@/lib/trackerPlan';
 
@@ -31,15 +30,11 @@ import { PLAN_ON_ADD_TEXT, planOnAddOf } from '@/lib/trackerPlan';
  * of the settings consoles.
  */
 export function ProfileConnections({ focusTracking }: { focusTracking: boolean }) {
-  // hbook Desktop (lib/desktop.ts) keeps the trackers -- they are outbound -- but not OPDS or API tokens:
-  // both exist so another device can sign in to this library, and the desktop app listens on this computer
-  // only. The server answers 404 for both there.
-  const desktop = isDesktop();
   return (
     <div className={SETTINGS_GRID}>
       <TrackerSection focus={focusTracking} />
-      {!desktop && <OpdsSection />}
-      {!desktop && <TokensSection />}
+      <OpdsSection />
+      <TokensSection />
     </div>
   );
 }

@@ -2,7 +2,7 @@
   "_meta": {
     "language": "fr",
     "note": "Machine-assisted translation, reviewed for tone but not by a native speaker. Corrections are very welcome: edit this file and open a pull request. Keys are the English source strings, so a missing entry falls back to English.",
-    "strings": 4580
+    "strings": 4576
   },
   "1 check found something": "1 vérification a trouvé quelque chose",
   "1 member": "1 membre",
@@ -1861,7 +1861,6 @@
   "hbook has no Cloudflare helper of its own to share yet: set FLARESOLVERR_URL on hbook, then connect it here.": "hbook n’a pas encore son propre assistant Cloudflare à partager : définissez FLARESOLVERR_URL sur hbook, puis connectez-le ici.",
   "Its Cloudflare helper setting could not be read just now. Connect points it at the helper hbook uses and switches it on; nothing restarts.": "Le réglage de son assistant Cloudflare n’a pas pu être lu à l’instant. « Connecter » le fait pointer vers l’assistant qu’utilise hbook et l’active ; rien ne redémarre.",
   "Its Cloudflare helper setting could not be read just now.": "Le réglage de son assistant Cloudflare n’a pas pu être lu à l’instant.",
-  "This engine version does not report its Cloudflare setting, so hbook cannot switch it on from here.": "Cette version du moteur n’indique pas son réglage Cloudflare : hbook ne peut donc pas l’activer depuis ici.",
   "This engine version does not report its Cloudflare setting, so hbook cannot switch it on: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on the engine's own container, or update the engine.": "Cette version du moteur n’indique pas son réglage Cloudflare : hbook ne peut donc pas l’activer. Définissez FLARESOLVERR_ENABLED=true et FLARESOLVERR_URL sur le conteneur du moteur lui-même, ou mettez le moteur à jour.",
   "This engine version does not report its Cloudflare setting.": "Cette version du moteur n’indique pas son réglage Cloudflare.",
   "Answering (v{version})": "Répond (v{version})",
@@ -2258,8 +2257,6 @@
   "Run the engine where hbook can reach it, with its data in a volume that stays. These are the settings the shipped files use:": "Faites tourner le moteur là où hbook peut le joindre, avec ses données dans un volume persistant. Voici les réglages des fichiers fournis :",
   "Check that the engine is running and that hbook can reach the address in {name}.": "Vérifiez que le moteur tourne et qu’hbook joint l’adresse indiquée dans {name}.",
   "Stop the engine, then empty {name} on hbook and restart hbook.": "Arrêtez le moteur, puis videz {name} sur hbook et redémarrez hbook.",
-  "hbook Desktop downloads the engine itself, once, from this tab.": "hbook Desktop télécharge lui-même le moteur, une seule fois, depuis cet onglet.",
-  "The engine runs only while hbook is open. There is no switch for it: one that was never downloaded costs nothing.": "Le moteur ne tourne que pendant qu’hbook est ouvert. Il n’a pas d’interrupteur : un moteur jamais téléchargé ne coûte rien.",
   "No extension engine is set up": "Aucun moteur d’extensions configuré",
   "Extension engine": "Moteur d’extensions",
   "Points the extension engine’s own Cloudflare helper at the one hbook uses and switches it on, so extensions on Cloudflare-protected sites can get through.": "Pointe l’assistant Cloudflare propre au moteur d’extensions vers celui qu’utilise hbook et l’active, pour que les extensions des sites protégés par Cloudflare passent.",
@@ -3785,7 +3782,6 @@
   "In {file}, set the engine’s image to {image}, then run {command}.": "Dans {file}, remplacez l’image du moteur par {image}, puis lancez {command}.",
   "On the Docker tab, edit {service}, set its Repository to {image} and apply. Its data stays in {path}.": "Dans l’onglet Docker, modifiez {service}, remplacez son Repository par {image} et appliquez. Ses données restent dans {path}.",
   "In CasaOS, edit the {service} app, set its image to {image} and save. Its data stays in {path}.": "Dans CasaOS, modifiez l’app {service}, remplacez son image par {image} et enregistrez. Ses données restent dans {path}.",
-  "Quit and reopen hbook. If Admin → Sources then offers to download the extension engine, download it: that is the version this hbook was tested with.": "Quittez puis rouvrez hbook. Si Administration → Sources propose alors de télécharger le moteur d’extensions, téléchargez-le : c’est la version avec laquelle cet hbook a été testé.",
   "Run {image} in place of the engine you have, on the same data.": "Lancez {image} à la place de votre moteur actuel, sur les mêmes données.",
   "Engine version": "Version du moteur",
   "{version} is newer than the version this hbook was tested with ({tested}).": "{version} est plus récente que la version avec laquelle cet hbook a été testé ({tested}).",
@@ -4292,7 +4288,7 @@
   "Accounts come from {name}, but a profile without a password can be made here: it opens on the home network only.": "Les comptes viennent de {name}, mais un profil sans mot de passe peut être créé ici : il ne s’ouvre que sur le réseau domestique.",
   "Create profile": "Créer le profil",
   "Home network": "Réseau domestique",
-  "No network is home, so profiles without a password open only in the desktop app.": "Aucun réseau n’est le réseau domestique : les profils sans mot de passe ne s’ouvrent que dans l’application de bureau.",
+  "No network is home, so profiles without a password cannot open.": "Aucun réseau n’est le réseau domestique : les profils sans mot de passe ne peuvent pas s’ouvrir.",
   "Set by {name} in the environment: change it there.": "Défini par {name} dans l’environnement : modifiez-le là.",
   "Profiles without a password open only from the home network. From anywhere else, an account needs its password.": "Les profils sans mot de passe ne s’ouvrent que depuis le réseau domestique. Depuis ailleurs, un compte a besoin de son mot de passe.",
   "How the server sees you": "Comment le serveur vous voit",

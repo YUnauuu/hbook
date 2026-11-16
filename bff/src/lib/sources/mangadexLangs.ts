@@ -3,7 +3,7 @@
 // English is the `mangadex` adapter and always on. Every other language MangaDex is offered in (lib/lang.ts
 // MANGADEX_LANGS) is off until an admin turns it on in Admin → Providers; server_settings.mangadex_langs lists
 // those, and each is an adapter of its own (sources/mangadex.ts makeMangadex). The setting lives in the database,
-// not in an environment variable, so it works the same on a server, on the desktop app and on Umbrel, and it is
+// not in an environment variable, so it works the same on a server and on Umbrel, and it is
 // applied live: the settings PATCH saves the list and calls syncMangadexSources, and no restart is involved.
 import { q } from '../db';
 import { MANGADEX_LANGS, canonLang } from '../lang';

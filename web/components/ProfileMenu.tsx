@@ -6,7 +6,6 @@ import { useAuth } from '@/lib/auth';
 import { t as tr } from '@/lib/i18n';
 import { INCOGNITO_TEXT } from '@/lib/incognito';
 import { adultShown, setAdultShown } from '@/lib/adult';
-import { isDesktop } from '@/lib/desktop';
 import { arrival } from '@/lib/destinations';
 import { openInConsole } from '@/lib/consoleOnScreen';
 import { useReduceEffects } from '@/lib/useReduceEffects';
@@ -68,10 +67,9 @@ export function QuickSettings({ onClose, onSwitch }: { onClose: () => void; onSw
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-ink-800/70 pt-3">
         <a href="/profile/?tab=general" onClick={go('/profile/?tab=general')} data-profile-settings-link className={link}>{tr('Profile settings')}</a>
-        {/* Another profile on this device (components/ProfileSwitcher.tsx), on desktop too: this PC's people take turns. */}
+        {/* Another profile on this device (components/ProfileSwitcher.tsx): this PC's people take turns. */}
         {onSwitch && <button type="button" onClick={onSwitch} className={link}>{tr('Switch profile')}</button>}
-        {/* Not on desktop: the app signs itself back in at once, so "Sign out" there would do nothing visible (as on the profile rail). */}
-        {!isDesktop() && <button type="button" onClick={() => { onClose(); void logout(); }} className="rounded-lg px-2 py-1.5 text-sm text-red-300 hover:bg-red-500/10">{tr('Sign out')}</button>}
+        <button type="button" onClick={() => { onClose(); void logout(); }} className="rounded-lg px-2 py-1.5 text-sm text-red-300 hover:bg-red-500/10">{tr('Sign out')}</button>
       </div>
     </div>
   );

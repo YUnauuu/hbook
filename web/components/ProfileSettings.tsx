@@ -28,7 +28,6 @@ import {
 } from '@/components/settings';
 import type { PageView } from '@/components/ConsoleLayout';
 import { ModeArt, RepeatedArt, ThemeArt, ToneArt, WideArt } from '@/components/settingsArt';
-import { inDesktopWindow, isDesktop } from '@/lib/desktop';
 import { useIncognito } from '@/components/IncognitoBanner';
 import { INCOGNITO_TEXT } from '@/lib/incognito';
 import { COMMENTS_TEXT, talkWantedOf } from '@/lib/comments';
@@ -46,9 +45,6 @@ import { useReduceEffects } from '@/lib/useReduceEffects';
  * category's line in the list says what is set in it.
  */
 export function useProfileSettingsViews(): { views: Record<string, PageView>; pointer: boolean } {
-  // hbook Desktop (lib/desktop.ts): no This device -- no offline copies (the chapters are already on this disk;
-  // copying them into the window's storage would store every one twice), no push service, and the app is installed.
-  const desktop = isDesktop();
   const pointer = useHoverPointer();
   const { user } = useAuth();
   const { lang } = useT();
@@ -65,7 +61,7 @@ export function useProfileSettingsViews(): { views: Record<string, PageView>; po
   const setReader = (p: Partial<ReaderPrefs>) => { const n = { ...prefs, ...p }; setPrefs(n); savePrefs(n); };
 
   const [usage, setUsage] = useState({ usage: 0, quota: 0 });
-  useEffect(() => { if (!desktop) storageEstimate().then(setUsage); }, [desktop]);
+  useEffect(() => { storageEstimate().then(setUsage); }, []);
 
   const so = (user?.settings?.smartOffline ?? {}) as { enabled?: boolean };
   const views: Record<string, PageView> = {
@@ -431,7 +427,7 @@ function ReadingSection({ prefs, set }: { prefs: ReaderPrefs; set: (p: Partial<R
           on={prefs.autoMode} onChange={(autoMode) => set({ autoMode })} />
         <ChoiceRow id="reader-theme" label={tr('Theme')} value={prefs.theme} onChange={(theme) => set({ theme })}
           options={(['amoled', 'paper', 'sepia', 'gray'] as const).map((t) => ({ value: t, label: tr(THEME_LABEL[t]), art: <ThemeArt theme={t} /> }))} />
-        {!isDesktop() && user?.talk && (
+        {user?.talk && (
           <SwitchRow id="comments" label={tr(COMMENTS_TEXT[0])} help={tr(COMMENTS_TEXT[1])} on={talkWanted} onChange={saveTalk} />
         )}
       </RowGroup>
@@ -566,11 +562,7 @@ function urlB64ToUint8(s: string): Uint8Array {
  * installed.
  */
 function DeviceSection() {
-  // hbook Desktop's window onto a server (its server mode -- standalone hides this whole category) has no push
-  // service: Electron ships none, so the switch could only ever fail with "The browser did not grant it." There
-  // the row says where new-chapter alerts come from instead (V2 review, v0.45.0).
-  const [inApp] = useState(() => inDesktopWindow());
-  const [supported] = useState(() => !inApp && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  const [supported] = useState(() => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
   const [enabledSrv, setEnabledSrv] = useState(false);
   const [key, setKey] = useState('');
   const [on, setOn] = useState(false);
@@ -641,8 +633,7 @@ function DeviceSection() {
   useEffect(() => {
     setCanInstall(!!(window as any).__yomiInstall);
     setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
-    // hbook Desktop's window (either mode) is an installed app already: nothing to install from it.
-    setStandalone(window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true || inDesktopWindow());
+    setStandalone(window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true);
   }, []);
 
   const install = async () => {
@@ -659,15 +650,11 @@ function DeviceSection() {
 
   return (
     <RowGroup id="device" title={tr('Alerts and app')}>
-      {enabledSrv && (inApp ? (
-        <Row id="chapter-alerts" stacked label={tr('New-chapter alerts')}>
-          <p className="max-w-prose text-sm text-fog-400">{tr('The desktop app cannot receive push notifications. Your server can still send new chapters to your phone, Home Assistant or Discord through a notification target, which an admin sets up under Admin → Settings → Notifications.')}</p>
-        </Row>
-      ) : (
+      {enabledSrv && (
         <SwitchRow id="chapter-alerts" device label={tr('New-chapter alerts')}
           help={supported ? tr('Get a push notification when one of your favorites gets a new chapter, or when someone comments on a chapter you commented on.') : tr('Not supported on this browser.')}
           on={on} disabled={!supported} onChange={toggle} />
-      ))}
+      )}
       {/* Already installed: the row is about installing, so it unmounts rather than congratulating you. */}
       {!standalone && (
         <Row id="install" stacked label={tr('Install hbook')}>

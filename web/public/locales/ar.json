@@ -2,7 +2,7 @@
   "_meta": {
     "language": "ar",
     "note": "Machine-assisted translation, reviewed for tone but not by a native speaker. Corrections are very welcome: edit this file and open a pull request. Keys are the English source strings, so a missing entry falls back to English.",
-    "strings": 4580
+    "strings": 4576
   },
   "1 check found something": "فحص واحد وجد شيئًا",
   "1 member": "عضو واحد",
@@ -1861,7 +1861,6 @@
   "hbook has no Cloudflare helper of its own to share yet: set FLARESOLVERR_URL on hbook, then connect it here.": "ليس لدى hbook بعدُ مساعد Cloudflare خاص به ليشاركه: اضبط FLARESOLVERR_URL في hbook، ثم اربطه من هنا.",
   "Its Cloudflare helper setting could not be read just now. Connect points it at the helper hbook uses and switches it on; nothing restarts.": "تعذّرت قراءة إعداد مساعد Cloudflare الخاص به الآن. «اتصال» يوجّهه إلى المساعد الذي يستخدمه hbook ويشغّله؛ ولا يُعاد تشغيل أي شيء.",
   "Its Cloudflare helper setting could not be read just now.": "تعذّرت قراءة إعداد مساعد Cloudflare الخاص به الآن.",
-  "This engine version does not report its Cloudflare setting, so hbook cannot switch it on from here.": "هذا الإصدار من المحرّك لا يُفصح عن إعداد Cloudflare الخاص به، لذا لا يستطيع hbook تشغيله من هنا.",
   "This engine version does not report its Cloudflare setting, so hbook cannot switch it on: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on the engine's own container, or update the engine.": "هذا الإصدار من المحرّك لا يُفصح عن إعداد Cloudflare الخاص به، لذا لا يستطيع hbook تشغيله: اضبط FLARESOLVERR_ENABLED=true وFLARESOLVERR_URL في حاوية المحرّك نفسها، أو حدّث المحرّك.",
   "This engine version does not report its Cloudflare setting.": "هذا الإصدار من المحرّك لا يُفصح عن إعداد Cloudflare الخاص به.",
   "Answering (v{version})": "يستجيب (v{version})",
@@ -2258,8 +2257,6 @@
   "Run the engine where hbook can reach it, with its data in a volume that stays. These are the settings the shipped files use:": "شغّل المحرّك حيث يستطيع hbook الوصول إليه، مع بياناته في وحدة تخزين دائمة. هذه هي الإعدادات التي تستخدمها الملفات المرفقة:",
   "Check that the engine is running and that hbook can reach the address in {name}.": "تحقّق من أن المحرّك يعمل ومن أن hbook يصل إلى العنوان الموجود في {name}.",
   "Stop the engine, then empty {name} on hbook and restart hbook.": "أوقف المحرّك، ثم أفرغ {name} في hbook وأعد تشغيل hbook.",
-  "hbook Desktop downloads the engine itself, once, from this tab.": "ينزّل hbook Desktop المحرّك بنفسه، مرة واحدة، من هذا التبويب.",
-  "The engine runs only while hbook is open. There is no switch for it: one that was never downloaded costs nothing.": "لا يعمل المحرّك إلا ما دام hbook مفتوحًا. لا يوجد مفتاح لإيقافه: المحرّك الذي لم يُنزَّل قط لا يكلّف شيئًا.",
   "No extension engine is set up": "لا يوجد محرّك إضافات مُعَدّ",
   "Extension engine": "محرّك الإضافات",
   "Points the extension engine’s own Cloudflare helper at the one hbook uses and switches it on, so extensions on Cloudflare-protected sites can get through.": "يوجّه مساعد Cloudflare الخاص بمحرّك الإضافات إلى المساعد الذي يستخدمه hbook ويشغّله، لكي تتمكن إضافات المواقع المحمية بـ Cloudflare من العبور.",
@@ -3785,7 +3782,6 @@
   "In {file}, set the engine’s image to {image}, then run {command}.": "في {file}، اضبط صورة المحرّك على {image}، ثم شغّل {command}.",
   "On the Docker tab, edit {service}, set its Repository to {image} and apply. Its data stays in {path}.": "في تبويب Docker، عدّل {service}، واضبط الحقل Repository على {image} ثم طبّق. تبقى بياناته في {path}.",
   "In CasaOS, edit the {service} app, set its image to {image} and save. Its data stays in {path}.": "في CasaOS، عدّل التطبيق {service}، واضبط صورته على {image} ثم احفظ. تبقى بياناته في {path}.",
-  "Quit and reopen hbook. If Admin → Sources then offers to download the extension engine, download it: that is the version this hbook was tested with.": "أغلق hbook وأعد فتحه. فإن عرضت صفحة الإدارة ← المصادر بعدها تنزيل محرّك الإضافات، فنزّله: فهذا هو الإصدار الذي اختُبر عليه hbook هذا.",
   "Run {image} in place of the engine you have, on the same data.": "شغّل {image} بدلًا من محرّكك الحالي، على البيانات نفسها.",
   "Engine version": "إصدار المحرّك",
   "{version} is newer than the version this hbook was tested with ({tested}).": "{version} أحدث من الإصدار الذي اختُبر عليه hbook هذا ({tested}).",
@@ -4292,7 +4288,7 @@
   "Accounts come from {name}, but a profile without a password can be made here: it opens on the home network only.": "تأتي الحسابات من {name}، لكن يمكن إنشاء ملف شخصي دون كلمة مرور هنا: يُفتح على الشبكة المنزلية فقط.",
   "Create profile": "إنشاء الملف الشخصي",
   "Home network": "الشبكة المنزلية",
-  "No network is home, so profiles without a password open only in the desktop app.": "لا توجد شبكة منزلية، لذا تُفتح الملفات الشخصية بلا كلمة مرور في تطبيق سطح المكتب فقط.",
+  "No network is home, so profiles without a password cannot open.": "لا توجد شبكة منزلية، لذا لا يمكن فتح الملفات الشخصية بلا كلمة مرور.",
   "Set by {name} in the environment: change it there.": "مضبوط عبر {name} في البيئة: غيّره هناك.",
   "Profiles without a password open only from the home network. From anywhere else, an account needs its password.": "تُفتح الملفات الشخصية بلا كلمة مرور من الشبكة المنزلية فقط. ومن أي مكان آخر، يحتاج الحساب إلى كلمة مروره.",
   "How the server sees you": "كيف يراك الخادم",

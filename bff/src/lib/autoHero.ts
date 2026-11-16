@@ -47,7 +47,6 @@ import { getSource } from './sources';
 import { runtime } from './runtime';
 import { checkRunning } from './sourceWatchdog';
 import { getOrFetch, type FetchedImage } from './imageCache';
-import { firstRunFloor } from './desktop';
 import { ADULT_RATING, visibleToAll } from './visibility';
 import { FIRST_PAGE } from './seriesArt';
 import { AUTO_DETAILS } from './autoDetailsSql';
@@ -883,5 +882,5 @@ export function startHeroWarmup(log: { info(msg: string): void; warn(msg: string
     }
     setTimeout(tick, 24 * 3600_000).unref();
   };
-  setTimeout(tick, firstRunFloor(20 * 60_000, 'autoHero')).unref();
+  setTimeout(tick, 20 * 60_000).unref();
 }

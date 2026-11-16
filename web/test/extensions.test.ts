@@ -405,10 +405,10 @@ test('the strip says no more than its marks when all is well', () => {
   assert.match(ready, /data-engine-counts>\{engineMeta\(status\)\}<\/p>/);
   // One filled key: Connect.
   assert.equal((ready.match(/btn-key-primary/g) ?? []).length, 1, 'the strip has a filled key besides Connect');
-  // Turning it off is behind the engine's ⋯, a menu the keyboard reaches; desktop has none.
-  assert.match(ready, /useContextMenu\(\(\) => \(desktop \? \[\] : \[\{ label: tr\('Turning it off'\), onSelect: \(\) => setShowOff\(true\) \}\]\), \{ label: tr\('Extension engine'\) \}\)/,
+  // Turning it off is behind the engine's ⋯, a menu the keyboard reaches.
+  assert.match(ready, /useContextMenu\(\(\) => \[\{ label: tr\('Turning it off'\), onSelect: \(\) => setShowOff\(true\) \}\], \{ label: tr\('Extension engine'\) \}\)/,
     'Turning it off is not in the engine\'s ⋯ menu');
-  assert.match(ready, /\{!desktop && \(\s*<button type="button" onClick=\{\(e\) => menu\.openFrom\(e\.currentTarget\)\} aria-label=\{tr\('More'\)\}[^>]*aria-haspopup="menu" aria-expanded=\{menu\.open\}/);
+  assert.match(ready, /<button type="button" onClick=\{\(e\) => menu\.openFrom\(e\.currentTarget\)\} aria-label=\{tr\('More'\)\}[^>]*aria-haspopup="menu" aria-expanded=\{menu\.open\}/);
   assert.match(ready, /\{menu\.element\}/);
   // Over the limit: the line turns amber and the way under it is said under the strip.
   assert.match(ready, /className=\{`mt-1 [^`]*\$\{over \? 'text-amber-300' : 'text-fog-500'\}`\} data-engine-counts>/);

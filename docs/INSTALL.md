@@ -5,11 +5,6 @@
 The two-command quick start lives in the [README](../README.md). This page is everything else: the one-click
 app stores, what each container is for, keeping it up to date, and putting it behind a domain.
 
-> 💻 **Want it on your own Windows PC or Mac instead of a server?** That is **hbook Desktop (beta)**: an
-> installer, no Docker. It also works the other way round: installed on a PC or Mac, it can **connect to the
-> server** you set up here and show it in its own window. Everything about it — downloads, the first launch,
-> both modes — is in **[the desktop guide](DESKTOP.md)**. The rest of this page is about the server.
-
 ## Other layouts
 
 <details>
@@ -75,7 +70,6 @@ beside your manga instead:
 ```
 
 Move the downloaded chapters across, restart (`docker compose up -d`), and remove the copies that have no source.
-The desktop app chooses its two folders itself, and will not start with one inside the other.
 
 ## One-click installs
 
@@ -219,12 +213,6 @@ services:
 Point the proxy at **`hbook` port 3000**. Once it reaches the app over a shared Docker network you no
 longer need the published host port, and deleting the `ports:` entry stops the app also being served over
 plain HTTP alongside your HTTPS domain.
-
-**Reading from the desktop app.** hbook Desktop's *Connect to my server* opens this server in its own
-window on a Windows PC or Mac ([how](DESKTOP.md#4-connect-to-your-own-server)). Give it the same address as
-`PUBLIC_ORIGIN`, with no path: hbook has to be at the root of its address. A self-signed certificate works
-(the app asks once and remembers it), and so do sign-in portals in front of the app (Authelia, Authentik…); a
-proxy's own password prompt (HTTP Basic Auth) does not, yet.
 
 > Using the development stack from a clone instead? Its services are named `hbook-*`, with networks
 > `hbook_app` and `hbook_internal`.

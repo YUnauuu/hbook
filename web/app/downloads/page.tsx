@@ -12,7 +12,6 @@ import { ART } from '@/lib/art';
 import { IcTrash, IcPlay, IcWifiOff, IcRefresh } from '@/components/icons';
 import { t as tr } from '@/lib/i18n';
 import { useRouter } from 'next/navigation';
-import { isDesktop, serverReachableHint } from '@/lib/desktop';
 import { canDownload, useAuth } from '@/lib/auth';
 import { downloadsHref } from '@/lib/libraryView';
 
@@ -27,13 +26,6 @@ export default function DownloadsPage() {
   const toast = useToast();
   const router = useRouter();
   const { user, status } = useAuth();
-  // Desktop hides the Offline tab and "Save offline" (the chapters are on this disk already), so this page there
-  // is an empty "No downloads yet" pointing at controls the app does not show. A deep link to it -- the reader's
-  // end-of-downloads button, an old bookmark -- goes to what "downloads" means on a desktop: what the app
-  // fetched onto this PC, Library -> Downloads (v0.49.0; the library itself before there was such a view).
-  const desktop = isDesktop();
-  useEffect(() => { if (desktop) router.replace('/library/?view=downloads'); }, [desktop, router]);
-
   const refresh = async () => {
     setItems(await listDownloads());
     setUsage(await storageEstimate());
@@ -41,15 +33,13 @@ export default function DownloadsPage() {
   };
   useEffect(() => {
     refresh();
-    setOnline(serverReachableHint());
+    setOnline(typeof navigator === 'undefined' || navigator.onLine !== false);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
-
-  if (desktop) return null;
 
   const remove = async (bookId: string) => {
     await deleteDownload(bookId);

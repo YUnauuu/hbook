@@ -63,22 +63,10 @@ cd bff && npm install && npm run build && cd ..
 脚本自己拉起 Postgres、编译、等到接口真的回话为止；数据库认不出用户时，它会打印一条现成的命令。
 前端就是 `reader/` 里的四个文件（HTML / CSS / JS 加一个 service worker），不用编译。
 
-## 桌面版
-
-hbook Desktop（beta），Windows 和 macOS 上的一个窗口：既能**本机跑**（整个应用和库都在这台机器上，不用 Docker
-和账号），也能**连你已经跑着的服务器**。
-
-- Windows (x64)：[hbook-Setup.exe](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-Setup.exe)
-- Mac (Apple silicon)：[hbook-mac-arm64.dmg](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-mac-arm64.dmg)
-- Mac (Intel)：[hbook-mac-x64.dmg](https://github.com/YUnauuu/hbook/releases/latest/download/hbook-mac-x64.dmg)
-
-第一次打开系统会拦一下（Windows 选「更多信息 → 仍要运行」，macOS 在「系统设置 → 隐私与安全性」里点「仍要打开」）。
-细节：[桌面版说明](docs/DESKTOP.md)。
-
 ## 文档
 
 [使用](docs/USAGE.md) · [安装](docs/INSTALL.md) · [阅读器](docs/READER.md) · [小说](docs/NOVELS.md) ·
-[桌面版](docs/DESKTOP.md) · [配置](docs/CONFIGURATION.md) · [扩展](docs/extensions.md) ·
+[配置](docs/CONFIGURATION.md) · [扩展](docs/extensions.md) ·
 [API](docs/api.md) · [迁移](docs/MIGRATING.md) —— 都是英文的。
 
 ## 致谢与许可

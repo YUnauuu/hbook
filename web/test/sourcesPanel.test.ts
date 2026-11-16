@@ -416,11 +416,9 @@ test('a source the engine\'s limit left out is not broken: no Replace on its she
   const over = src('sw:2522', { name: 'Manga Ball (EN)', kind: 'extension', standing: 'not_loaded', state: 'ok', main: 12, overLimit: { limit: 25 } });
   assert.deepEqual(sheetKeys(over, OVERVIEW.attention), [], 'a source over the limit offers Replace');
   assert.deepEqual(sheetKeys({ ...over, overLimit: null }, OVERVIEW.attention), ['replace'], 'not loaded for another reason, Replace stays');
-  assert.equal(limitLine(over, false), 'The engine’s limit of 25 sources is full. Turn off a source you don’t use, or raise SUWAYOMI_MAX_SOURCES.');
-  assert.equal(limitLine({ overLimit: { limit: 1 } }, false), 'The engine’s limit of 1 source is full. Turn off a source you don’t use, or raise SUWAYOMI_MAX_SOURCES.');
-  assert.equal(limitLine(over, true), 'The engine’s limit of 25 sources is full. Turn off a source you don’t use.',
-    'the desktop app is told to raise a variable it has no file for');
-  assert.equal(limitLine(src('sw:9', { standing: 'not_loaded' }), false), null, 'a source not loaded for another reason has no such line');
+  assert.equal(limitLine(over), 'The engine’s limit of 25 sources is full. Turn off a source you don’t use, or raise SUWAYOMI_MAX_SOURCES.');
+  assert.equal(limitLine({ overLimit: { limit: 1 } }), 'The engine’s limit of 1 source is full. Turn off a source you don’t use, or raise SUWAYOMI_MAX_SOURCES.');
+  assert.equal(limitLine(src('sw:9', { standing: 'not_loaded' })), null, 'a source not loaded for another reason has no such line');
   // Drawn: no key at all (it is not loaded, so neither Test nor Turn off), the line under its state, and none of it amber
   // but the state's own mark.
   const html = withQueries(createElement(SourceSheet, {

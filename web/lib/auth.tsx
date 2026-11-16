@@ -9,7 +9,6 @@ import { applyReduceEffects, restoreReduceEffects } from './effects';
 import { applyTone, restoreTone } from './tone';
 import { flushOutbox } from './downloads';
 import { setAdultShown } from './adult';
-import { isDesktop, serverReachableHint, untilReachable } from './desktop';
 import { t as tr } from './i18n';
 import type { AvatarFrame } from './badges';
 
@@ -23,7 +22,7 @@ interface User {
   totpEnabled?: boolean;
   /** Linked to an identity at the OIDC provider (v0.63.0): Profile → Account offers Link to … until it is. */
   sso?: boolean;
-  /** What kind of profile this is (bff lib/profiles.ts): `desktop-owner` is hbook Desktop's own account. */
+  /** What kind of profile this is (bff lib/profiles.ts). */
   kind?: string;
   perms?: Record<string, boolean>;
   avatar?: Avatar;
@@ -60,8 +59,6 @@ interface AuthCtx {
   setAvatar: (avatar: Avatar) => void;
   /** Written the moment 2FA is enabled or disabled, see the note beside its definition. */
   setTotpEnabled: (v: boolean) => void;
-  /** hbook Desktop (lib/desktop.ts): one person, signed in by the app, nothing for other devices. */
-  desktop: boolean;
   /** Try the session again -- DesktopReconnect's button. True when it came back. */
   reconnect: () => Promise<boolean>;
   /** Switch this device to a profile that opens at home, without its password (bff POST /auth/switch). */
@@ -72,8 +69,6 @@ interface AuthCtx {
   pickProfile: (profileId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Sign in as someone else, keeping this account remembered on this device when it is (bff POST /auth/leave). */
   leave: () => Promise<void>;
-  /** hbook Desktop: from a profile switched to on this PC back to its owner (the shell's POST /auth/desktop). */
-  backToOwner: () => Promise<boolean>;
   /** Why the server last signed this device out, by its code: `local_only` is a profile that opens at home, from outside. */
   signedOutWhy: string | null;
 }
@@ -280,16 +275,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // A definitive negative. `navigator.onLine === false` cannot be wrong in this direction, and without
       // this short-circuit a captive portal or a DNS black hole holds the splash screen -- and therefore the
       // whole app -- for however long `fetch` takes to give up, which on a plane is most of a minute.
-      // Never taken on desktop, where the server is this computer (serverReachableHint, lib/desktop.ts).
-      if (saved && !serverReachableHint()) {
+      if (saved && typeof navigator !== 'undefined' && navigator.onLine === false) {
         adoptOffline(saved);
         void revalidate(); // onLine can still lie the other way; harmless when it fails
         return;
       }
 
-      // Desktop keeps the splash and asks again while its server starts (lib/desktop.ts); it is never
-      // `offline`. Everywhere else this is one request, exactly as before.
-      const r = await untilReachable(refreshSession, () => alive);
+      const r = await refreshSession();
       if (!alive) return;
       if (r.kind === 'authed') adoptAuthed(r.user, r.refreshExpiresAt);
       else if (r.kind === 'rejected') { setSignedOutWhy(r.reason ?? null); await clearLocalSession(); }
@@ -437,22 +429,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resumeProfile = (profileId: string) => changeProfile('/auth/resume', profileId);
   const pickProfile = (profileId: string) => changeProfile('/auth/profile-login', profileId);
 
-  /**
-   * hbook Desktop: back to the owner from a profile switched to on this PC. The shell's own handshake signs the owner
-   * in again (POST /auth/desktop, the header added below the page; lib/api.ts desktopExchange), taking up the session the
-   * profile was opened from; then the app starts over as the owner, as after a switch in another tab. Queued reading
-   * goes first, while the profile's session still answers.
-   */
-  const backToOwner = async (): Promise<boolean> => {
-    await flushOutbox().catch(() => 0);
-    const r = await fetch('/auth/desktop', { method: 'POST', credentials: 'include' }).catch(() => null);
-    if (!r?.ok) return false;
-    await forgetAccountData();
-    setAdultShown(false);
-    window.location.reload();
-    return true;
-  };
-
   /** Sign in as someone else: an account this device remembers is put aside rather than ended (bff POST /auth/leave). */
   const leave = async () => {
     try { await api('/auth/leave', { method: 'POST' }); } catch {}
@@ -488,7 +464,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // setup that rotated that secret while the recovery codes were still on screen.
   const setTotpEnabled = (v: boolean) => setUser((u) => (u ? { ...u, totpEnabled: v } : u));
 
-  // DesktopReconnect's Retry: the refresh, and on the desktop app the exchange behind it (lib/api.ts).
+  // the reconnect's Retry: the refresh (lib/api.ts).
   const reconnect = async (): Promise<boolean> => {
     const r = await refreshSession();
     if (r.kind !== 'authed') return false;
@@ -497,7 +473,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ status, user, isAdmin: user?.role === 'admin', login, firstRunSetup, register, logout, setSettings, setAvatar, setTotpEnabled, switchProfile, resumeProfile, pickProfile, leave, backToOwner, signedOutWhy, desktop: isDesktop(), reconnect }}>
+    <Ctx.Provider value={{ status, user, isAdmin: user?.role === 'admin', login, firstRunSetup, register, logout, setSettings, setAvatar, setTotpEnabled, switchProfile, resumeProfile, pickProfile, leave, signedOutWhy, reconnect }}>
       {children}
     </Ctx.Provider>
   );

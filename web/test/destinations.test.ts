@@ -119,32 +119,16 @@ test('it covers every page of both consoles, every setting, the profile\'s cards
   assert.ok(tasks.includes('admin-cat-maintenance') && tasks.includes('admin-tasks'), `Tasks does not find Maintenance and its tasks first: ${tasks.join(', ')}`);
 });
 
-test('admins only where the page is theirs, and nothing hbook Desktop does not have', () => {
-  // Reintroduce `admin: false` on an admin page, or forget `desktopHidden` on Members: named here. Reintroduce the
-  // filter without the admin check: "a member is shown the admin's settings" fails.
+test('admins only where the page is theirs', () => {
+  // Reintroduce `admin: false` on an admin page: named here. Reintroduce the filter without the admin check:
+  // "a member is shown the admin's settings" fails.
   for (const d of DESTINATIONS) {
     assert.equal(!!d.admin, d.href.startsWith('/admin/'), `${d.key}: admin-only is wrong for ${d.href}`);
-    const u = new URL(d.href, 'http://x');
-    const tab = u.searchParams.get('tab') ?? '';
-    // The pages Desktop has none of: their registry's `web` (lib/settingsIndex*.ts).
-    const index = u.pathname === '/admin/' ? ADMIN_SETTINGS : u.pathname === '/profile/' ? PROFILE_SETTINGS : null;
-    if (index?.categories.find((c) => c.id === tab)?.when?.includes('web')) {
-      assert.ok(d.desktopHidden, `${d.key}: ${tab} is not on Desktop, and neither may its destination be`);
-    }
-  }
-  // Desktop hides these settings and cards too (lib/desktop.ts, ProfileSettings, ProfileConnections, AdminSettings).
-  for (const key of ['admin-registration', 'admin-mihon-missing', 'admin-install-count', 'admin-translate', 'profile-downloads', 'profile-cat-device',
-    'profile-chapter-alerts', 'opds', 'api-tokens']) {
-    assert.ok(DESTINATIONS.find((d) => d.key === key)?.desktopHidden, `${key} shows on Desktop, which has no such thing`);
   }
   const member = (q: string) => findDestinations(q, { ...viewer, admin: false, limit: 50 }).map((d) => d.key);
   assert.deepEqual(member('settings'), ['profile-settings'], 'a member is shown the admin\'s settings');
   assert.deepEqual(member('import'), [], 'a member is shown the import');
   assert.ok(findDestinations('settings', { ...viewer, limit: 50 }).some((d) => d.key === 'admin-settings'), 'an admin is not shown Admin → Settings');
-  const desk = (q: string) => findDestinations(q, { ...viewer, desktop: true, limit: 50 }).map((d) => d.key);
-  assert.ok(!desk('members').includes('admin-members'), 'Desktop is offered Members');
-  assert.ok(!desk('api').includes('api-tokens'), 'Desktop is offered API tokens');
-  assert.ok(desk('notice').includes('admin-notice-chapters'), 'Desktop loses what it does have');
 });
 
 test('a query finds by the label in the reader\'s language or in English, then by its words, best first', () => {
@@ -213,7 +197,7 @@ test('getting there: another page is a push, another tab of this page a whole lo
 test('the palette lists them after the series under their own heading, and goes there the way arrival() says', () => {
   // Reintroduce the palette without destinations, or `router.push` for every row: these fail by name.
   const pal = code(read('components/CommandPalette.tsx'));
-  assert.match(pal, /const places = useMemo\(\(\) => findDestinations\(q, \{ admin: isAdmin, desktop: isDesktop\(\) \}\), \[q, isAdmin\]\);/, 'the palette does not ask for destinations');
+  assert.match(pal, /const places = useMemo\(\(\) => findDestinations\(q, \{ admin: isAdmin \}\), \[q, isAdmin\]\);/, 'the palette does not ask for destinations');
   assert.match(pal, /\.\.\.results\.map\(\(s\) => \(\{ kind: 'series' as const, series: s \}\)\),\s*\.\.\.places\.map\(\(p\) => \(\{ kind: 'place' as const, place: p \}\)\),\s*\.\.\.shownActions\.map/,
     'the destinations are not between the series and the actions');
   assert.match(pal, /\{rows\[i - 1\]\?\.kind !== 'place' && <p [^>]*>\{tr\('Pages and settings'\)\}<\/p>\}/, 'the destinations have no heading of their own');
@@ -233,7 +217,7 @@ test('the palette lists them after the series under their own heading, and goes 
 test('the phone search page lists the same destinations under its series', () => {
   // Reintroduce the page without them: "the phone cannot find a setting" fails.
   const page = code(read('app/search/page.tsx'));
-  assert.match(page, /const places = useMemo\(\(\) => findDestinations\(debounced, \{ admin: isAdmin, desktop: isDesktop\(\), limit: 8 \}\), \[debounced, isAdmin\]\);/, 'the phone cannot find a setting');
+  assert.match(page, /const places = useMemo\(\(\) => findDestinations\(debounced, \{ admin: isAdmin, limit: 8 \}\), \[debounced, isAdmin\]\);/, 'the phone cannot find a setting');
   assert.match(page, /\{places\.length > 0 && \(\s*<section data-search-places [^>]*>[\s\S]*?\{tr\('Pages and settings'\)\}[\s\S]*?\{places\.map\(\(p\) => <PlaceRow key=\{p\.key\} place=\{p\} href=\{p\.href\} \/>\)\}/,
     'the destinations are not listed under the series');
   assert.ok(page.indexOf('data-search-places') > page.indexOf('<SeriesTile'), 'the destinations come before the series');

@@ -3,7 +3,7 @@
 // Every route resolves the chapter -- or, for the series page's counts, the series -- through the content backend under
 // the caller's own ViewCtx, so a member without the library, or under an age cap the series is over, gets the same 404
 // as for a chapter that does not exist: talk about a series is never a way to learn that it exists. Registered on
-// hbook Desktop too, where lib/desktop.ts DESKTOP_HIDDEN_ROUTES answers 404 for all of them: one person has nobody to
+// one person has nobody to
 // talk to.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';

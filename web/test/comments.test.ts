@@ -82,17 +82,17 @@ test('Comments and reactions off: nothing asked, nothing drawn, for this account
   const hook = lib.slice(lib.indexOf('export function useTalkOn'));
   assert.match(hook, /const wanted = talkWantedOf\(user\?\.settings\);/);
   assert.match(hook, /useChapterTalk\(probe, wanted\)/, 'nothing is asked while it is off');
-  assert.match(hook, /return on && wanted && !isDesktop\(\);/, 'and nothing is drawn, before the first answer too');
+  assert.match(hook, /return on && wanted;/, 'and nothing is drawn, before the first answer too');
   // the series page likewise: no counts, no sheet from a push's link, and no request.
   const series = read('app/series/page.tsx');
-  assert.match(series, /enabled: !!id && !isDesktop\(\) && talkWanted,/);
+  assert.match(series, /enabled: !!id && talkWanted,/);
   assert.match(series, /const talkOn = !!talkData\?\.on && talkWanted;/);
   // The switch: in Reading, only where the household has talk, saved to the account, and every talk asked again.
   const settings = read('components/ProfileSettings.tsx');
-  assert.match(settings, /\{!isDesktop\(\) && user\?\.talk && \(\s*<SwitchRow id="comments" label=\{tr\(COMMENTS_TEXT\[0\]\)\} help=\{tr\(COMMENTS_TEXT\[1\]\)\} on=\{talkWanted\} onChange=\{saveTalk\} \/>/);
+  assert.match(settings, /\{user\?\.talk && \(\s*<SwitchRow id="comments" label=\{tr\(COMMENTS_TEXT\[0\]\)\} help=\{tr\(COMMENTS_TEXT\[1\]\)\} on=\{talkWanted\} onChange=\{saveTalk\} \/>/);
   assert.match(settings, /api\('\/api\/settings', \{ method: 'PUT', json: \{ comments: next \} \}\)/);
   assert.match(settings, /invalidateQueries\(\{ queryKey: \['comments'\] \}\)/);
   assert.match(settings, /invalidateQueries\(\{ queryKey: \['series-comments'\] \}\)/);
   const profile = read('app/profile/page.tsx');
-  assert.match(profile, /talk: !desktop && !!user\?\.talk/, 'the row and its search entry follow the household');
+  assert.match(profile, /talk: !!user\?\.talk/, 'the row and its search entry follow the household');
 });

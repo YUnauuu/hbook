@@ -8,11 +8,8 @@
 //
 // This module turns the stored evidence (plus a live probe, when someone has just gone and looked) into a
 // code, a sentence anyone may read, and a fix only an admin should see. It is deliberately pure: no db, no
-// fetch, no imports beyond a type and lib/desktop.ts (which imports nothing of ours). That is what lets its
-// test run without a database and assert against the verbatim strings production actually holds.
-//
-// The fixes that send an admin to a container, a compose file or an env var go through `forDesktop`: the
-// desktop app has none of those, and its answer is hbook's own built-in helper and a restart.
+// fetch, no imports beyond a type. That is what lets its test run without a database and assert against the
+// verbatim strings production actually holds.
 //
 // v0.49.1: the web says both halves in the reader's language. A reason is its code's (REASONS); a fix carries a
 // code of its own (FixCode, with the stage or host that fills it) beside its English, which web/lib/said.ts
@@ -20,7 +17,6 @@
 import type { SourceStatus } from './sourceHealth';
 import type { Stage } from './sourceEvidence';
 import type { Said } from './said';
-import { forDesktop } from './desktop';
 import { REFUSAL_HEAD } from './sources/suwayomi/enginePin';
 
 export type DiagnosisCode =
@@ -147,7 +143,7 @@ export const EMPTY_SUSPECT = 3;
 /**
  * Every fix, by code. A fix that names the stage it failed at (`stage`), the host a site moved to (`host`), the
  * transport's error (`transport`) or the latest-page budget (`seconds`) carries it as a parameter; one with a
- * desktop wording keeps one code, and the web picks the words the way the server picked them (isDesktop).
+ * wording keeps one code, and the web picks the words the way the server picked them.
  */
 export type FixCode =
   | 'fix.solverCrash' | 'fix.solverDown' | 'fix.solverTimeout' | 'fix.bypassOff' | 'fix.engineLogin' | 'fix.engineDown'
@@ -204,20 +200,14 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
 
   [/chromedriver.*exited|devtoolsactiveport|session not created/i, () =>
     D('solver_crash', NEEDS_ADMIN,
-      fixed('fix.solverCrash', forDesktop(
-        "The Cloudflare solver's browser crashed. Chrome in Docker needs far more than the default 64 MB of shared memory: set shm_size: 1gb on the flaresolverr service and recreate it.",
-        "The browser inside hbook's built-in Cloudflare helper crashed. Quit and reopen hbook to restart it.",
-      )),
+      fixed('fix.solverCrash', "The Cloudflare solver's browser crashed. Chrome in Docker needs far more than the default 64 MB of shared memory: set shm_size: 1gb on the flaresolverr service and recreate it."),
       'admin')],
 
   // trawl (v0.55.3) still starting its browsers answers "Browser pool initializing, retry in a few seconds", and an address
   // that answers with something that is not a solver's JSON is ours (sources/flaresolverr.ts): no solver is there.
   [/httpconnectionpool|max retries exceeded|newconnectionerror|failed to establish a new connection|browser pool initializing|did not answer with its json/i, () =>
     D('solver_down', NEEDS_ADMIN,
-      fixed('fix.solverDown', forDesktop(
-        'The Cloudflare solver is not answering. Check the container is up and FLARESOLVERR_URL is right. It also leaks memory, so it wants a periodic restart.',
-        "hbook's built-in Cloudflare helper is not answering. Quit and reopen hbook to restart it.",
-      )),
+      fixed('fix.solverDown', 'The Cloudflare solver is not answering. Check the container is up and FLARESOLVERR_URL is right. It also leaks memory, so it wants a periodic restart.'),
       'admin')],
 
   // trawl's own (v0.55.3): "Tier 3 failed (cloudflare-challenge-timeout)", its browser's wait on the wall running out.
@@ -232,10 +222,7 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
   // with the solver's own capacity as the fix. The words are ours, so no rule below can read them as the site's.
   [/\bsolver busy\b/i, () =>
     D('solver_timeout', NEEDS_ADMIN,
-      fixed('fix.solverBusy', forDesktop(
-        'The Cloudflare solver stayed busy: every browser it has was in use, however long hbook waited. It catches up by itself; if it keeps happening, give it more browsers (trawl: BROWSER_POOL_SIZE), or let hbook ask fewer pages of it at once (SOLVER_CONCURRENCY).',
-        "hbook's built-in Cloudflare helper stayed busy with other pages. It catches up by itself. Quit and reopen hbook if it keeps happening.",
-      )),
+      fixed('fix.solverBusy', 'The Cloudflare solver stayed busy: every browser it has was in use, however long hbook waited. It catches up by itself; if it keeps happening, give it more browsers (trawl: BROWSER_POOL_SIZE), or let hbook ask fewer pages of it at once (SOLVER_CONCURRENCY).'),
       'admin')],
 
   // Suwayomi's own CloudflareInterceptor throws exactly these words when the ENGINE's FlareSolverr
@@ -251,10 +238,7 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
   // precisely the people it is for. Name the shipped names as examples and point at the value they have.
   [/cloudflare bypass currently disabled/i, () =>
     D('cf_challenge', 'This source is protected by a check we could not get past.',
-      fixed('fix.bypassOff', forDesktop(
-        "The extension engine's own Cloudflare bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.",
-        "The extension engine isn't using hbook's built-in Cloudflare helper. Quit and reopen hbook to restart it.",
-      )),
+      fixed('fix.bypassOff', "The extension engine's own Cloudflare bypass is switched off. On the Suwayomi engine's container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there."),
       'admin')],
 
   // The engine itself did not answer, or its own HTTP layer refused us. ABOVE every site rule: "suwayomi 403" is
@@ -264,14 +248,8 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
     const auth = /^suwayomi 40[13]\b/.test(c.err ?? '');
     return D('upstream_down', 'The extension server did not answer.',
       auth
-        ? fixed('fix.engineLogin', forDesktop(
-          "The extension engine refused hbook's login. Set SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD to the engine's own basic-auth user and password (or turn its auth off), then restart hbook.",
-          "hbook's extension engine refused hbook's own login. Quit and reopen hbook to restart both.",
-        ))
-        : fixed('fix.engineDown', forDesktop(
-          'This is the Suwayomi extension server, not the site. Check that container.',
-          "This is hbook's extension engine, not the site. Quit and reopen hbook to restart it.",
-        )), 'admin');
+        ? fixed('fix.engineLogin', "The extension engine refused hbook's login. Set SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD to the engine's own basic-auth user and password (or turn its auth off), then restart hbook.")
+        : fixed('fix.engineDown', 'This is the Suwayomi extension server, not the site. Check that container.'), 'admin');
   }],
 
   // The engine answered and REFUSED the query (client.ts EngineRefusedError): an engine this hbook does not match,
@@ -282,10 +260,7 @@ const RULES: Array<[RegExp, (c: RuleCtx) => Diagnosis]> = [
   // refusing the query is not the extension failing" in sourceDiagnosis.test.ts reads extension_error.
   [new RegExp(`^suwayomi: ${REFUSAL_HEAD.source.slice(1)}`), () =>
     D('engine_incompatible', "The extension engine does not match this version of hbook.",
-      fixed('fix.engineIncompatible', forDesktop(
-        "The extension engine refused hbook's request: it is older or newer than the version this hbook works with. Health → Extension engine says which, and how to change it.",
-        "hbook's extension engine refused hbook's request. Quit and reopen hbook, and download the extension engine again if Admin → Sources offers it.",
-      )),
+      fixed('fix.engineIncompatible', "The extension engine refused hbook's request: it is older or newer than the version this hbook works with. Health → Extension engine says which, and how to change it."),
       'admin')],
 
   // The engine did not answer in time: our wait, on the engine, says nothing about the site behind it.
@@ -449,10 +424,7 @@ export function diagnose(f: HealthFacts, probe?: Probe, baseUrl?: string): Diagn
         const hit = RULES.find(([re]) => re.test(err))?.[1]({ err });
         if (hit && hit.code.startsWith('solver_')) return hit;
         return D('solver_down', NEEDS_ADMIN,
-          fixed('fix.solverBroken', forDesktop(
-            'The site answers fine from this server, so the Cloudflare solver is the broken part. Check that container.',
-            "The site answers fine from this computer, so hbook's built-in Cloudflare helper is the broken part. Quit and reopen hbook to restart it.",
-          )),
+          fixed('fix.solverBroken', 'The site answers fine from this server, so the Cloudflare solver is the broken part. Check that container.'),
           'admin');
       }
       if (probe.httpStatus === 200 && probe.looksHtml && suspect) {

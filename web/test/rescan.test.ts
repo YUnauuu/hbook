@@ -167,7 +167,7 @@ test('the Tasks row starts the preview, and the panel under it carries the plan,
   // Reintroduce by rendering the generic "Run now" for the rescan row, or by toasting "Started" for it: the
   // assertions below name which.
   const page = code(read('app/admin/page.tsx'));
-  const tasks = page.slice(page.indexOf('function Tasks()'), page.indexOf('function DesktopBackups()'));
+  const tasks = page.slice(page.indexOf('function Tasks()'), page.indexOf('function Activity()'));
   assert.match(tasks, /\{t\.id === 'rescan' && \(\s*<div className="col-span-full row-start-3 min-w-0 lg:row-start-2">\s*<RescanPanel running=\{!!t\.running\} \/>/,
     'the rescan row has no panel under it');
   assert.match(tasks, /t\.id === 'rescan' \? tr\('Start'\) : tr\('Run now'\)/, 'the rescan row does not say Start');

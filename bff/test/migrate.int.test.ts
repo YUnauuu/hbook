@@ -1219,8 +1219,8 @@ test('migrate: the profile columns only add, and v0.95.0 keeps writing its rows'
     'refresh_tokens.session_id': [null, 'YES'], 'refresh_tokens.parent_session': [null, 'YES'], 'refresh_tokens.via': [null, 'YES'],
   }, 'users.local_open (or another profile column) is not declared as the design set it');
 
-  // A profile that opens at home is never an admin, the desktop app's own account aside; and deleting the account
-  // that manages a profile leaves the profile. In a transaction that is rolled back.
+  // A profile that opens at home is never an admin; and deleting the account that manages a profile leaves the
+  // profile. In a transaction that is rolled back.
   await withClient(async (c) => {
     await c.query('BEGIN');
     try {
@@ -1229,7 +1229,6 @@ test('migrate: the profile columns only add, and v0.95.0 keeps writing its rows'
          VALUES ($1, $1, 'x', $2, $3, $4, $5) RETURNING id`, [name, role, kind, open, managedBy]);
       const guardian = (await add('t-prof-guardian', 'user', 'password', false)).rows[0].id;
       const kid = (await add('t-prof-kid', 'user', 'none', true, guardian)).rows[0].id;
-      await add('t-prof-desktop', 'admin', 'desktop', true);
       await c.query('SAVEPOINT s');
       await assert.rejects(add('t-prof-admin', 'admin', 'none', true), /users_local_open_not_admin/, 'an admin opened at home');
       await c.query('ROLLBACK TO SAVEPOINT s');

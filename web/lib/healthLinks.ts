@@ -7,7 +7,6 @@
 // chapter's page and the row lit up (`?ch=`, read by app/series/page.tsx).
 import { t as tr } from './i18n';
 import { extensionSettingsHref, extSourceIdOf } from './sourcePrefs';
-import { isDesktop } from './desktop';
 import type { HealthItem } from './types';
 
 /** A series page, optionally turned to one chapter. `ch` is a chapter NUMBER, never an id. */
@@ -50,10 +49,10 @@ export function healthLinks(check: string, it: HealthItem): HealthLink[] {
       if (it.seriesId && it.numbers?.length) return [{ href: seriesHref(it.seriesId, Math.min(...it.numbers)) }];
       break;
     // v0.52.0 (#134): the finding is about how two folders are mounted, not a series, and the install guide's Volumes
-    // section shows the fix. The desktop app chooses its folders itself and has no compose file to point at.
+    // section shows the fix.
     // Reintroduce by dropping this case: "a folder scanned twice links to the install guide" in healthLinks.test.ts.
     case 'folders-twice':
-      return isDesktop() ? [] : [{ href: INSTALL_VOLUMES, label: tr('Volumes, in the install guide') }];
+      return [{ href: INSTALL_VOLUMES, label: tr('Volumes, in the install guide') }];
     // Impossible numbers are chapters the library holds: the first one named.
     case 'outliers':
       if (it.seriesId && it.numbers?.length) return [{ href: seriesHref(it.seriesId, it.numbers[0]) }];

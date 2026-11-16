@@ -102,7 +102,7 @@ test('the key shows whenever any card has a finding -- one the repair cannot tou
   const key = slice(code('components/FixEverythingDialog.tsx'), 'export function FixEverythingKey(', 'export function FixEverythingDialog(');
   assert.match(key, /if \(!af \|\| !showFixEverything\(checks, \{ live: view === 'run', unread \}\)\) return null;/, 'the key does not follow the rule');
   assert.match(key, /className="btn-key btn-key-primary" data-fix-everything="">/, 'the idle key is not the filled one');
-  const health = slice(code('app/admin/page.tsx'), 'function Health()', 'function DesktopUpdateNote()');
+  const health = slice(code('app/admin/page.tsx'), 'function Health()', '');
   assert.match(health, /<FixEverythingKey checks=\{checks\} onOpen=\{\(\) => setFixing\(true\)\} \/>/, 'the key is not on Health');
   assert.match(health, /tr\('Re-check'\)\}\s*<\/button>\s*(?:\{\}\s*)?<FixEverythingKey/, 'the key is not beside Re-check');
   assert.doesNotMatch(code('components/HealthActions.tsx'), /FixAllIssues/, 'Fix all issues\' row is still there');
@@ -325,7 +325,7 @@ test('each Needs-you item has its one key: its page, its card, or Admin → Sett
   for (const m of items) assert.doesNotMatch(m[2], /<p dir="auto"/, `${m[1]}: a sentence takes its direction from its first letter`);
   assert.doesNotMatch(dialog(ended(run({ summary: summary({ done: EIGHT }) }))), /<span dir="auto" class="min-w-0 break-words">/, 'a line of what it did takes its direction from its first letter');
   // The card key closes the dialog, opens the card and scrolls to it, clear of the top bar.
-  const health = slice(code('app/admin/page.tsx'), 'function Health()', 'function DesktopUpdateNote()');
+  const health = slice(code('app/admin/page.tsx'), 'function Health()', '');
   // v0.72.0: from the By series view it goes back to the cards first -- a card is only there By check.
   assert.match(health, /setFixing\(false\);\s*if \(view !== 'checks'\) pickView\('checks'\);\s*setOpen\(id\);\s*requestAnimationFrame\(\(\) => document\.querySelector\(`\[data-health-check="\$\{CSS\.escape\(id\)\}"\]`\)\?\.scrollIntoView/);
   assert.match(health, /data-health-check=\{c\.id\} className=\{`[^`]*\bscroll-mt-4\b[^`]*\blg:scroll-mt-20\b/, 'the card scrolls under the top bar');
@@ -471,7 +471,7 @@ test('the last-run line under the header: the nightly says so, a live run or non
   assert.equal(lastFixLine({ run: run({ status: 'running' }), last: nightly }), null, 'the live strip says a run that goes');
   assert.equal(lastFixLine({ run: null, last: null }), null, 'no run has ended yet');
   assert.equal(lastFixLine(undefined), null);
-  const health = slice(code('app/admin/page.tsx'), 'function Health()', 'function DesktopUpdateNote()');
+  const health = slice(code('app/admin/page.tsx'), 'function Health()', '');
   assert.match(health, /<LastFixLine \/>\s*<SafeRepairLine checks=\{checks\} \/>/);
 });
 

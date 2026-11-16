@@ -16,7 +16,6 @@ import { createRequire } from 'node:module';
 import Fastify, { type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import { env } from '../env';
 import { q, one } from './db';
-import { isDesktop } from './desktop';
 
 /**
  * Client IP, as Fastify resolved it under `trustProxy` (server.ts, trustsPeer).
@@ -337,13 +336,12 @@ export function viaCloudflare(req: FastifyRequest): boolean {
 }
 
 /**
- * zoneOf against the home in force. The desktop app's server is this computer's alone: always at home. With every peer
+ * zoneOf against the home in force. With every peer
  * trusted as a proxy (TRUST_PROXY=true) anyone can say any address, so nobody is; through Cloudflare nobody is
  * (viaCloudflare); and through a proxy the trusted proxies name only by loopback/linklocal/uniquelocal, nobody is either
  * (unnamedHop). Reintroduce by dropping any: its case in clientZone.test.ts reads a visitor from outside as at home.
  */
 export function clientZone(req: FastifyRequest): Zone {
-  if (isDesktop()) return 'local';
   const c = networkConfig();
   if (trustProxySetting(c.trustedProxies.value) === true) return 'remote';
   if (viaCloudflare(req)) return 'remote';

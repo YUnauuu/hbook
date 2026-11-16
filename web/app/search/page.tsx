@@ -10,7 +10,6 @@ import { PlaceRow } from '@/components/CommandPalette';
 import { openPalette } from '@/lib/palette';
 import { t as tr } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
-import { isDesktop } from '@/lib/desktop';
 import { findDestinations } from '@/lib/destinations';
 
 function useDebounced<T>(value: T, ms: number) {
@@ -42,9 +41,9 @@ function SearchInner() {
     queryFn: () => api<Page<Series>>('/api/series/search', { json: { query: debounced, size: 60 } }),
   });
   // v0.55.4: the pages and settings the query names, as the palette lists them (a phone has no palette): under the
-  // series, admins' only for admins, none of Desktop's missing ones there (lib/destinations.ts).
+  // series, admins' only for admins (lib/destinations.ts).
   const { isAdmin } = useAuth();
-  const places = useMemo(() => findDestinations(debounced, { admin: isAdmin, desktop: isDesktop(), limit: 8 }), [debounced, isAdmin]);
+  const places = useMemo(() => findDestinations(debounced, { admin: isAdmin, limit: 8 }), [debounced, isAdmin]);
 
   const remember = (term: string) => {
     if (!term) return;

@@ -12,8 +12,6 @@ bash scripts/shots/run.sh --yes --record                 # the tour video instea
 # the fixture shots (Admin → Sources) against a throwaway instance -- see "Shots that use a fixture"
 SHOT_NET=<its docker network> SHOT_BASE=http://<its container>:3000 \
   bash scripts/shots/run.sh --yes --login <user>:<password> --only admin-extensions,crop-extensions
-# the desktop app's own pages, from the real Electron app
-SHOT_SERVER=http://127.0.0.1:<port> xvfb-run -a node scripts/shots/desktop.mjs
 ```
 
 Output lands in `docs/shots/` as WebP. With `--site-dir` it also writes smaller copies into the marketing
@@ -75,12 +73,6 @@ provided. They are listed here so nobody later mistakes them for mockups.
   back; and unlike the older shots these fail loudly when an element is missing. They need no library, so take
   them against a throwaway instance with `--login` (no database is touched), never by creating an account on
   someone's server.
-- **`desktop-library-folder`** (from `desktop.mjs`) — the folder page's path is set through the page's own
-  `show()` to what a Windows PC computes (`C:\Users\you\hbook Library`, 412 GB free) instead of the Linux
-  build host's home folder. Everything else on the desktop pages is what the app showed: a certificate made at
-  run time for `manga.home.arpa` (RFC 8375's home-network name, mapped to 127.0.0.1 inside Chromium, so no real
-  host is involved), whose fingerprint the script checks against `openssl` before it takes the picture.
-
 - **Every shot taken on a real library, and the tour** — `neutralNames()` in `fixtures.mjs`. A real library
   names where its chapters come from: `series` showed a real site and two scanlation groups in its supply line,
   and the tour showed the same line, a scanlator's credits page and the live extension catalogue. So the library
@@ -94,17 +86,6 @@ provided. They are listed here so nobody later mistakes them for mockups.
   `namesIn()` does not read is not rewritten — look at every image and every second of the video.
 
 Everything else is the real thing, including the health findings.
-
-## The desktop app's pages
-
-`scripts/shots/desktop.mjs` launches the real Electron app under Xvfb on a fresh profile and photographs its
-own pages: the first-launch choice, the server address, the certificate prompt and the changed-certificate
-warning (a self-signed https front it runs itself, proxying to `SHOT_SERVER`), the error page for a server that
-does not answer, the library-folder page, and Admin → Sources before the engine download (that one needs
-the standalone payload staged: `node desktop/scripts/stage.mjs`). It needs Linux with Xvfb, node 22+,
-`npm ci` and `npm run build` in `desktop/` with the Electron binary installed, and openssl. The black around a
-shell page is trimmed. The tray menus and native dialogs cannot be reached from the page, so they are
-described in words, not pictured; operating-system dialogs (SmartScreen, Gatekeeper) are never faked.
 
 ## The capture account reads a little, and everyone else is a sample name
 
@@ -131,18 +112,17 @@ do: the real accounts have 2FA, and working around that is worse than the screen
 
 ## Currency
 
-Every capture except the desktop app's was retaken against **v0.65.0** on 2026-10-14, with the tour video, because the
+Every capture was retaken against **v0.65.0** on 2026-10-14, with the tour video, because the
 UI refresh changed every screen: the sidebar on a computer, the top bar see-through over art, Home's banner as whole
 strips, the series page on its banner, Lists with covers, Offline by series, Admin's compact header and Settings index,
 Members' keys and Profile's tab strip. Same rig, same fixtures and the same capture account's reading life as the
-v0.60.1 run described next; the desktop shots (`desktop-*`) are still v0.45.0's.
+v0.60.1 run described next.
 
-Before that, every capture except the desktop app's was retaken against **v0.60.1** on 2026-10-12, with the tour video, on the live
+Before that, every capture was retaken against **v0.60.1** on 2026-10-12, with the tour video, on the live
 library behind `neutralNames()`, `peopleFixture` and `librariesFixture` (see above), with the capture account's reading
 life: the series page's Continue, four keys and ratings, *More* open (`series-more`), the Library's toolbar and progress
 bars, Discover's one card per work, Health with *Fix everything*, Admin → Sources, and three new crops for the marketing
-site's "What's new" cards (`crop-library`, `crop-ratings`, `crop-fix-everything`). The desktop shots (`desktop-*`) are
-v0.45.0's: those pages have not changed since. The reader stills and the tour open the shot series' first chapter
+site's "What's new" cards (`crop-library`, `crop-ratings`, `crop-fix-everything`). The reader stills and the tour open the shot series' first chapter
 numbered 1 or more (run.sh): a chapter 0 is often a prologue of a few panels on black, and this run's first pass
 photographed one.
 
@@ -155,7 +135,7 @@ of the other screens (Related on the series page, Home's new rails, a Library or
 them wrong; the next full run takes them.
 
 Before that, the whole set was re-captured against **v0.40.0** on 2026-09-22; for **v0.45.0** the extension and sources
-shots were retaken on the fixture above and the desktop pages added, and everything that showed a third-party name was
+shots were retaken on the fixture above, and everything that showed a third-party name was
 retaken behind `neutralNames()` on a throwaway instance; on 2026-10-03 the extension and sources shots were retaken for
 v0.53.0 and v0.54.0's Admin → Sources. The marketing site's copies of those 10-03 shots were not refreshed until
 2026-10-12: a fixed shot reaches the site only through a run with `--site`.

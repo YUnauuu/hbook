@@ -2,7 +2,7 @@
   "_meta": {
     "language": "zh",
     "note": "Machine-assisted translation, reviewed for tone but not by a native speaker. Corrections are very welcome: edit this file and open a pull request. Keys are the English source strings, so a missing entry falls back to English.",
-    "strings": 4580
+    "strings": 4576
   },
   "1 check found something": "1 项检查发现问题",
   "1 member": "1 位成员",
@@ -1861,7 +1861,6 @@
   "hbook has no Cloudflare helper of its own to share yet: set FLARESOLVERR_URL on hbook, then connect it here.": "hbook 还没有自己的 Cloudflare 助手可以共享：请先在 hbook 上设置 FLARESOLVERR_URL，然后在这里连接。",
   "Its Cloudflare helper setting could not be read just now. Connect points it at the helper hbook uses and switches it on; nothing restarts.": "刚才无法读取它的 Cloudflare 助手设置。“连接”会把它指向 hbook 使用的助手并将其打开；不会重启任何东西。",
   "Its Cloudflare helper setting could not be read just now.": "刚才无法读取它的 Cloudflare 助手设置。",
-  "This engine version does not report its Cloudflare setting, so hbook cannot switch it on from here.": "此版本的引擎不会报告其 Cloudflare 设置，因此 hbook 无法从这里将其打开。",
   "This engine version does not report its Cloudflare setting, so hbook cannot switch it on: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on the engine's own container, or update the engine.": "此版本的引擎不会报告其 Cloudflare 设置，因此 hbook 无法将其打开：请在引擎自己的容器上设置 FLARESOLVERR_ENABLED=true 和 FLARESOLVERR_URL，或更新引擎。",
   "This engine version does not report its Cloudflare setting.": "此版本的引擎不会报告其 Cloudflare 设置。",
   "Answering (v{version})": "有响应（v{version}）",
@@ -2258,8 +2257,6 @@
   "Run the engine where hbook can reach it, with its data in a volume that stays. These are the settings the shipped files use:": "在 hbook 能访问到的地方运行引擎，并把数据放在会保留的卷中。以下是随附文件使用的设置：",
   "Check that the engine is running and that hbook can reach the address in {name}.": "确认引擎正在运行，并且 hbook 能访问 {name} 中的地址。",
   "Stop the engine, then empty {name} on hbook and restart hbook.": "停止引擎，然后清空 hbook 上的 {name}，并重启 hbook。",
-  "hbook Desktop downloads the engine itself, once, from this tab.": "hbook Desktop 会从这个标签页自动下载引擎，只需一次。",
-  "The engine runs only while hbook is open. There is no switch for it: one that was never downloaded costs nothing.": "引擎只在 hbook 打开时运行。它没有开关：从未下载过的引擎不会占用任何资源。",
   "No extension engine is set up": "未设置扩展引擎",
   "Extension engine": "扩展引擎",
   "Points the extension engine’s own Cloudflare helper at the one hbook uses and switches it on, so extensions on Cloudflare-protected sites can get through.": "把扩展引擎自身的 Cloudflare 助手指向 hbook 使用的助手并将其打开，让受 Cloudflare 保护的网站的扩展能够通过。",
@@ -3785,7 +3782,6 @@
   "In {file}, set the engine’s image to {image}, then run {command}.": "在 {file} 中把引擎的镜像改为 {image}，然后运行 {command}。",
   "On the Docker tab, edit {service}, set its Repository to {image} and apply. Its data stays in {path}.": "在 Docker 标签页中编辑 {service}，把 Repository 改为 {image} 并应用。它的数据保留在 {path}。",
   "In CasaOS, edit the {service} app, set its image to {image} and save. Its data stays in {path}.": "在 CasaOS 中编辑 {service} 应用，把镜像改为 {image} 并保存。它的数据保留在 {path}。",
-  "Quit and reopen hbook. If Admin → Sources then offers to download the extension engine, download it: that is the version this hbook was tested with.": "请退出并重新打开 hbook。如果 管理 → 来源 随后提示下载扩展引擎，请下载：那就是此 hbook 测试时所用的版本。",
   "Run {image} in place of the engine you have, on the same data.": "用 {image} 替换你现在的引擎运行，使用相同的数据。",
   "Engine version": "引擎版本",
   "{version} is newer than the version this hbook was tested with ({tested}).": "{version} 比此 hbook 测试时所用的版本（{tested}）更新。",
@@ -4292,7 +4288,7 @@
   "Accounts come from {name}, but a profile without a password can be made here: it opens on the home network only.": "账号来自 {name}，但可以在这里创建无需密码的个人资料：它只在家庭网络上打开。",
   "Create profile": "创建个人资料",
   "Home network": "家庭网络",
-  "No network is home, so profiles without a password open only in the desktop app.": "没有任何网络是家庭网络，因此无密码的个人资料只能在桌面应用中打开。",
+  "No network is home, so profiles without a password cannot open.": "没有任何网络是家庭网络，因此无密码的个人资料无法打开。",
   "Set by {name} in the environment: change it there.": "由环境中的 {name} 设置：请在那里更改。",
   "Profiles without a password open only from the home network. From anywhere else, an account needs its password.": "无密码的个人资料只能从家庭网络打开。在其他任何地方，账号都需要密码。",
   "How the server sees you": "服务器如何看到你",

@@ -37,7 +37,6 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { t as tr } from '@/lib/i18n';
 import { bustCover } from '@/lib/coverBust';
 import type { HealthCheck, Series } from '@/lib/types';
-import { bridge, isDesktop, type UpdateStatus } from '@/lib/desktop';
 import { SourcesPanel } from '@/components/SourcesPanel';
 import { StatusEdge, StatusMark } from '@/components/StatusMark';
 import { TONE_SURFACE, healthMark } from '@/lib/status';
@@ -85,7 +84,6 @@ function AdminInner() {
   // v0.55.4: `?section=` -- a card found by the search palette lands, once it has loaded. A row of the console's own is
   // the console's to land on (components/ConsoleLayout.tsx); this answers the rest.
   useSectionArrival();
-  const desktop = isDesktop();
   // Maintenance's Run now, after its settings: what was the Tasks tab (v0.88.0).
   const settings = useAdminSettingsViews({
     maintenance: (
@@ -129,7 +127,7 @@ function AdminInner() {
     <div className="min-h-screen-d px-4 lg:px-0" data-admin-console>
       {/* The foot of the list says which hbook this is (v0.55.4, #150): the place people looked for it. */}
       <ConsoleLayout index={ADMIN_SETTINGS} label={tr('Admin')} views={views} home="overview"
-        conds={{ web: !desktop, 'local-accounts': !settings.sso, extensions: settings.extensions, pointer: true, talk: false }}
+        conds={{ 'local-accounts': !settings.sso, extensions: settings.extensions, pointer: true, talk: false }}
         hero={(mode) => <AdminHero mode={mode} onBack={() => (window.history.length > 1 ? router.back() : router.push('/profile/'))} />}
         art={art?.seriesId ? <Backdrop seriesId={art.seriesId} className="absolute inset-0" /> : null}
         footer={<VersionLine />} />
@@ -203,8 +201,7 @@ function AdminHero({ mode, onBack }: { mode: 'full' | 'band'; onBack: () => void
     // thousands. A server older than the field sends none, and the fact is simply left out.
     typeof stats?.booksTotal === 'number'
       ? (stats.booksTotal === 1 ? tr('1 chapter') : tr('{n} chapters', { n: numberText(stats.booksTotal) })) : null,
-    // Desktop is one person: "1 member" there would describe a household that does not exist.
-    stats && !isDesktop() ? (stats.members === 1 ? tr('1 member') : tr('{n} members', { n: stats.members })) : null,
+    stats ? (stats.members === 1 ? tr('1 member') : tr('{n} members', { n: stats.members })) : null,
     stats ? tr('{size} cached', { size: bytes(stats.cacheBytes) }) : null,
     // Which layout this is, in one word: the answer to "where is my database" without reading a compose file.
     stats?.database ? (stats.database === 'embedded' ? tr('embedded database') : tr('external database')) : null,
@@ -268,7 +265,7 @@ const HERO_ART = {
  * Which hbook this is, at the foot of the admin menu (v0.55.4, #150).
  *
  * Kedryn: "I can't find anymore what version I'm running. I'm pretty sure it was in a menu on the left somewhere." It
- * was only Health's Version card. The number is the server's (`/api/admin/stats`), or hbook Desktop's own
+ * was only Health's Version card. The number is the server's (`/api/admin/stats`)
  * (`bridge().version`, the app the person installed); whether a newer one is out is Health's `update` check, read from
  * the answer the header has already asked for -- the same query key, so no request of its own and nothing asked of
  * GitHub, and with update checks off it says nothing either way (lib/versionLine.ts). Short: run.mjs reads the
@@ -277,7 +274,7 @@ const HERO_ART = {
 function VersionLine() {
   const { data: stats } = useQuery({ queryKey: ['admin-stats'], queryFn: () => api<any>('/api/admin/stats') });
   const { data: health } = useQuery(healthQuery);
-  const running: string | null = bridge()?.version || stats?.version || null;
+  const running: string | null = stats?.version || null;
   if (!running) return null;
   return (
     <p data-admin-version className="px-1 text-[11px] leading-relaxed text-fog-500">
@@ -956,7 +953,6 @@ function Tasks() {
   // `justify-between`, which at 1592px left a lake of nothing between a task's name and its own button.
   return (
     <div className="board">
-      <DesktopBackups />
       <div className="card grad-border full divide-y divide-ink-800/70 overflow-hidden">
         {(data?.content || []).map((t: any) => (
           // `id`: the search palette's Rescan everything lands on its row (`?section=task-rescan`, lib/destinations.ts), clear
@@ -1000,52 +996,6 @@ function Tasks() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/**
- * hbook Desktop's backups, under Tasks where the nightly backup is listed. Renders nothing without the
- * shell's bridge, so the server build's Tasks tab is unchanged.
- *
- * The backups are files in a folder on this computer, so the useful thing is to open that folder (to copy
- * one to another drive, or to find last night's). Restoring cannot happen inside the page: the shell has to
- * stop the library server, load the dump into the database and start it again (design-inapp §6), so this
- * asks first -- it replaces everything since that backup -- and then hands over to the shell's own dialog.
- */
-function DesktopBackups() {
-  const toast = useToast();
-  const b = bridge();
-  const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  if (!b || (typeof b.revealBackups !== 'function' && typeof b.restoreBackup !== 'function')) return null;
-  const restore = async () => {
-    setBusy(true);
-    try { await b.restoreBackup(); setAsking(false); }
-    // Electron prefixes a rejected IPC call with "Error invoking remote method '…': Error: "; the shell's own
-    // sentence is what follows it.
-    catch (e: any) { toast(String(e?.message || '').replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '') || tr('Could not restore that backup'), 'error'); }
-    setBusy(false);
-  };
-  return (
-    <div className="full flex flex-wrap items-center justify-end gap-2">
-      {typeof b.revealBackups === 'function' && (
-        <button type="button" onClick={() => b.revealBackups()} className="chip text-xs">{tr('Open backups folder')}</button>
-      )}
-      {typeof b.restoreBackup === 'function' && (
-        <button type="button" onClick={() => setAsking(true)} className="chip text-xs">{tr('Restore a backup…')}</button>
-      )}
-      {asking && (
-        <ConfirmDialog
-          title={tr('Restore a backup?')}
-          body={tr('hbook closes your library, replaces its database and settings with the backup you choose, and opens again. Everything since that backup — reading progress, new series, settings — is replaced. The manga files themselves are not touched.')}
-          confirmLabel={tr('Choose a backup…')}
-          danger
-          busy={busy}
-          onConfirm={() => { void restore(); }}
-          onClose={() => setAsking(false)}
-        />
-      )}
     </div>
   );
 }
@@ -1581,8 +1531,6 @@ function LibrariesSection() {
     queryFn: () => api<{ content: { role: string }[] }>('/api/admin/users'),
   });
   const anyMembers = (people?.content ?? []).some((u) => u.role !== 'admin');
-  // hbook Desktop keeps libraries and their age rating but not who may open them (lib/desktop.ts).
-  const desktopLibs = isDesktop();
   // ['libraries'] too (v0.60.1, found in Squeaks72's fork): the Library page's library filter and the 18+ toggle read it
   // (components/AdultToggle.tsx useLibraries), and with a five-minute staleTime they kept a renamed, added or removed
   // library in this tab until then.
@@ -1610,9 +1558,7 @@ function LibrariesSection() {
         <button onClick={() => openNew()} className="chip shrink-0 text-xs"><IcPlus width={13} height={13} />{tr('New library')}</button>
       </div>
       <p className="mb-3 max-w-prose text-xs leading-relaxed text-fog-500">
-        {desktopLibs
-          ? tr('A library is one or more folders, plus any series you file into it by hand. Give it an age rating and everything in it inherits that.')
-          : tr('A library is one or more folders, plus any series you file into it by hand. Give it an age rating and everything in it inherits that, and choose who can open it.')}
+        {tr('A library is one or more folders, plus any series you file into it by hand. Give it an age rating and everything in it inherits that, and choose who can open it.')}
       </p>
 
       {/* Cards rather than one divided list: at 1592px a row left a lake between a library's path and the
@@ -1627,8 +1573,7 @@ function LibrariesSection() {
               <p className="truncate text-[11px] text-fog-600">
                 {l.n} {tr('series')}
                 {l.pinned > 0 && <> · {l.pinned === 1 ? tr('1 filed by hand') : tr('{n} filed by hand', { n: l.pinned })}</>}
-                {/* Who may open it is per-person access, which desktop does not have (one person, no members). */}
-                {!desktopLibs && <>{' · '}{!anyMembers ? tr('admins only') : l.members.length ? tr('{n} can open it', { n: l.members.length }) : tr('nobody can open it')}</>}
+                {' · '}{!anyMembers ? tr('admins only') : l.members.length ? tr('{n} can open it', { n: l.members.length }) : tr('nobody can open it')}
               </p>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1641,7 +1586,7 @@ function LibrariesSection() {
                 className={`chip text-xs ${l.age_rating != null ? 'border-amber-500/40 text-amber-300' : ''}`}>
                 {l.age_rating != null ? tr('{n}+', { n: l.age_rating }) : tr('Not rated')}
               </button>
-              {!desktopLibs && <button onClick={() => setAccess(l)} className="chip text-xs">{tr('Access')}</button>}
+              <button onClick={() => setAccess(l)} className="chip text-xs">{tr('Access')}</button>
               <button onClick={() => openEdit(l)} className="chip text-xs">{tr('Settings')}</button>
               {l.id !== 'lib' && (
                 <button onClick={() => setConfirmDel(l)} className="chip text-xs hover:border-rose-500/50 hover:text-rose-400">{tr('Remove')}</button>
@@ -2060,7 +2005,6 @@ function Health() {
                   </>
                 )}
               </button>
-              {c.id === 'update' && <DesktopUpdateNote />}
 
               {/* v0.53.0: Source health draws a body of its own -- the sources the library depends on first, one line
                   and one key each, the rest folded, and its glossary at its foot (components/SourceHealthBody.tsx). */}
@@ -2114,37 +2058,5 @@ function Health() {
     </AutofixRunProvider>
     </FindRunProvider>
     </RepairRunProvider>
-  );
-}
-
-/**
- * Under the Health "Version" card on hbook Desktop: what the SHELL knows about a newer release.
- *
- * The card above still comes from the server's own GitHub check, which is the only update path on an
- * unsigned Mac. The shell adds the half the server cannot do: on Windows it has already downloaded the
- * update (`ready` -> restart to install); on a Mac it can only point at the release page. Renders nothing
- * without the bridge, or while there is nothing newer, so the server build's card is exactly as it was.
- */
-function DesktopUpdateNote() {
-  const b = bridge();
-  const [u, setU] = useState<UpdateStatus | null>(null);
-  useEffect(() => {
-    if (!b?.update?.status) return;
-    let live = true;
-    b.update.status().then((s) => { if (live) setU(s); }).catch(() => {});
-    return () => { live = false; };
-  }, [b]);
-  if (!b || !u?.available) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-ink-800/70 px-4 py-2.5">
-      <p className="min-w-0 flex-1 text-sm text-fog-100">
-        {u.version ? tr('New version available — {version}', { version: u.version }) : tr('New version available')}
-      </p>
-      {u.ready && typeof b.update.installNow === 'function' ? (
-        <button type="button" onClick={() => b.update.installNow()} className="chip shrink-0 text-xs">{tr('Restart to update')}</button>
-      ) : u.url ? (
-        <a href={u.url} target="_blank" rel="noopener noreferrer" className="chip shrink-0 text-xs">{tr('Download')}</a>
-      ) : null}
-    </div>
   );
 }

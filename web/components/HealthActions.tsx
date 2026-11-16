@@ -35,7 +35,6 @@ import { FindStartDialog } from '@/components/FindSources';
 import { ReplaceDialog } from '@/components/ReplaceDialog';
 import { t as tr } from '@/lib/i18n';
 import { deletedText, skippedBookmarkedText, skippedNotOursText } from '@/lib/counted';
-import { isDesktop } from '@/lib/desktop';
 import { bookCountText, languageName } from '@/lib/format';
 import { standingMark } from '@/lib/status';
 import { IDLE, actionButton, isBusy, type ActionState } from '@/lib/actionState';
@@ -863,7 +862,7 @@ export function HealthCardActions({ check, className = 'border-b border-ink-800/
     });
   }
   if (solverDown(check)) {
-    rows.push({ id: 'solver_down', label: tr('Reset the solver'), what: solverDownLine(isDesktop(), solverQuiet(check)) });
+    rows.push({ id: 'solver_down', label: tr('Reset the solver'), what: solverDownLine(solverQuiet(check)) });
   }
   if (pairs.length) {
     const copy = ACTION_COPY.merge_all;

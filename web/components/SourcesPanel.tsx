@@ -28,7 +28,6 @@ import { api } from '@/lib/api';
 import { t as tr } from '@/lib/i18n';
 import { numberText } from '@/lib/format';
 import { useReduceEffects } from '@/lib/effects';
-import { isDesktop } from '@/lib/desktop';
 import { IDLE, isBusy, type ActionState } from '@/lib/actionState';
 import { checkAllSession, type CheckAllSession, type SourceCheckProgress } from '@/lib/sourceCheckRun';
 import { checkAllLabel, sweepToast } from '@/lib/sourceEvidence';
@@ -46,7 +45,6 @@ import { useToast } from '@/components/Toast';
 import { OnBody } from '@/components/ui';
 import { ActionStatus } from '@/components/ActionList';
 import { LinkRow, Row } from '@/components/settings';
-import { EngineInstall } from '@/components/EngineInstall';
 import { EngineReady, EngineSetup } from '@/components/EngineSetup';
 import { ExtensionSettings } from '@/components/ExtensionSettings';
 import { LanguagesSheet } from '@/components/ExtensionLanguages';
@@ -142,9 +140,8 @@ export function SourcesPanel() {
     <div className="space-y-6" data-sources-panel>
       {/* The extension engine: its strip when it runs, its setup card when it does not -- above the rest, never instead of it. */}
       {!status ? <div className="skeleton h-16 rounded-2xl" aria-busy="true" />
-        : isDesktop() && !ready ? <EngineInstall />
         : !ready ? <EngineSetup status={status} />
-        : <EngineReady status={status} desktop={isDesktop()} />}
+        : <EngineReady status={status} />}
 
       {overview && needsAttention(overview.attention) && (
         <Attention overview={overview} evidence={evidence} installed={installed} actions={actions}
@@ -494,9 +491,7 @@ export function YourSources({ overview, failed, evidence, onRetry, onOpen, onCha
       <div className="card px-4 py-8 text-center" data-sources-empty>
         <p className="text-sm font-semibold text-fog-100">{tr('No sources installed')}</p>
         <p className="mx-auto mt-1 max-w-md text-xs text-fog-500">
-          {isDesktop()
-            ? tr('Add a site, or download the extension engine and add an extension, under Add sources. With none, hbook reads only the library you already own.')
-            : tr('Add a site or an extension under Add sources, or mount a source pack at the server’s {dir}. With none, hbook reads only the library you already own.', { dir: 'SOURCES_DIR' })}
+          {tr('Add a site or an extension under Add sources, or mount a source pack at the server’s {dir}. With none, hbook reads only the library you already own.', { dir: 'SOURCES_DIR' })}
         </p>
         <button type="button" onClick={onAdd} className="btn-key mt-3">{tr('Add sources')}</button>
       </div>

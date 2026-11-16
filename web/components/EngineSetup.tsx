@@ -281,7 +281,7 @@ function Tile({ tone, children }: { tone: Tone; children: ReactNode }) {
  * them) in their own sheet. Connect answers in place, in one line, and the status refetch after it shows the helper
  * connected. On desktop there is no turning it off, and so no ⋯.
  */
-export function EngineReady({ status, desktop }: { status: ExtStatus; desktop: boolean }) {
+export function EngineReady({ status }: { status: ExtStatus }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
@@ -289,7 +289,7 @@ export function EngineReady({ status, desktop }: { status: ExtStatus; desktop: b
   const engine = engineLine(status);
   const helper = helperLine(status.solver);
   const over = overLimitText(status.skipped, status.cap);
-  const menu = useContextMenu(() => (desktop ? [] : [{ label: tr('Turning it off'), onSelect: () => setShowOff(true) }]), { label: tr('Extension engine') });
+  const menu = useContextMenu(() => [{ label: tr('Turning it off'), onSelect: () => setShowOff(true) }], { label: tr('Extension engine') });
 
   const connect = async () => {
     if (busy) return;
@@ -325,13 +325,11 @@ export function EngineReady({ status, desktop }: { status: ExtStatus; desktop: b
             </p>
             <p className={`mt-1 text-[12px] leading-snug tabular-nums ${over ? 'text-amber-300' : 'text-fog-500'}`} data-engine-counts>{engineMeta(status)}</p>
           </div>
-          {!desktop && (
-            <button type="button" onClick={(e) => menu.openFrom(e.currentTarget)} aria-label={tr('More')} title={tr('More')}
-              aria-haspopup="menu" aria-expanded={menu.open} data-engine-more
-              className="btn-key w-8 border-transparent bg-transparent px-0 text-fog-400 hover:border-ink-600 hover:bg-ink-800/70 hover:text-fog-100">
-              <IcMore aria-hidden width={16} height={16} />
-            </button>
-          )}
+          <button type="button" onClick={(e) => menu.openFrom(e.currentTarget)} aria-label={tr('More')} title={tr('More')}
+            aria-haspopup="menu" aria-expanded={menu.open} data-engine-more
+            className="btn-key w-8 border-transparent bg-transparent px-0 text-fog-400 hover:border-ink-600 hover:bg-ink-800/70 hover:text-fog-100">
+            <IcMore aria-hidden width={16} height={16} />
+          </button>
         </div>
         <div data-engine-tile="helper" data-engine-solver={status.solver?.wiring ?? ''} className="flex min-w-0 items-center gap-3 px-4 py-3">
           <Tile tone={helperTone}><ShieldGlyph size={17} /></Tile>
@@ -352,13 +350,11 @@ export function EngineReady({ status, desktop }: { status: ExtStatus; desktop: b
         </div>
       </div>
       {/* Over the source limit: what is over, and the way under it. SUWAYOMI_MAX_SOURCES is the Docker install's
-          variable, and desktop has no .env to raise it in; the name is copied into the sentence, never translated. */}
+          variable; the name is copied into the sentence, never translated. */}
       {over && (
         <p className="border-t border-ink-800/70 px-4 py-2.5 text-[12px] leading-relaxed text-amber-300" data-engine-over>
           {over}{sentenceGap(over)}
-          <span className="text-amber-200/70">{desktop
-            ? tr('Hide languages you don’t read.')
-            : tr('Hide languages you don’t read, or raise {name}.', { name: 'SUWAYOMI_MAX_SOURCES' })}</span>
+          <span className="text-amber-200/70">{tr('Hide languages you don’t read, or raise {name}.', { name: 'SUWAYOMI_MAX_SOURCES' })}</span>
         </p>
       )}
       {menu.element}

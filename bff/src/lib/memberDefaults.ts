@@ -15,7 +15,7 @@
 // request, and whatever its role: an admin is unrestricted whatever it carries, but one the provider makes an admin
 // (OIDC_ADMIN_GROUP) becomes a member the first time it signs in outside the group, and is then what the defaults say
 // rather than a member nobody chose for. Never applied where an admin is the one choosing: the first admin (first-run
-// setup, SSO-only mode's firstAdmin), the desktop's one account, and an account made in Admin → Members, which its card
+// setup, SSO-only mode's firstAdmin), and an account made in Admin → Members, which its card
 // sets up.
 import { z } from 'zod';
 import { q } from './db';

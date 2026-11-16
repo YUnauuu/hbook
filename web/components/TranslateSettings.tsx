@@ -31,7 +31,7 @@ const KEY = ['admin-translate'];
  * Translate pages (v0.85.0, bff lib/translate/): one row in Admin → Settings → Server, for an engine that is never part of
  * hbook until an admin asks for it. Download first -- the engine and a model, about 19 GB on a server with the memory
  * for the large model, 3 GB elsewhere -- with its progress here, then the one switch, and Remove. Gone on an install that
- * cannot run it (the desktop app). It reads its own endpoint, and asks again every 2 s while a download runs.
+ * cannot run it. It reads its own endpoint, and asks again every 2 s while a download runs.
  *
  * Its own group (v0.86.0), so an install that cannot run it shows no empty card where the row would be.
  */

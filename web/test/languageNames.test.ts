@@ -48,7 +48,6 @@ test('two sentences never get a plain space after a CJK full stop', () => {
   assert.match(sheet, /\{joinSentences\(l\.enabled === 1/, 'the Hide question joins its sentences with a plain space');
   const archive = src('components/ArchiveSettings.tsx');
   assert.doesNotMatch(archive, /nothing queued is lost\.'\)\} \$\{tr\(/, 'the desktop archive help joins its sentences with a plain space');
-  assert.match(archive, /joinSentences\(tr\('Off pauses every archive; nothing queued is lost\.'\)/);
   const prefs = src('components/ExtensionSettings.tsx');
   assert.doesNotMatch(prefs, /reading progress stays\.'\)\}\{' '\}/, 'the renumber warning joins its sentences with a plain space');
   assert.match(prefs, /\{warn\}\{sentenceGap\(warn\)\}/);

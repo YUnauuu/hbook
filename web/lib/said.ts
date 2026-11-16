@@ -17,7 +17,6 @@
  */
 import { t as tr } from './i18n';
 import { activeLocale, cached, durationText, languageName, relativeTime } from './format';
-import { isDesktop } from './desktop';
 import { SOURCE_STATUSES, sourceMark, type ProviderStatus } from './status';
 
 /** How a part joins the one before it (bff lib/said.ts Join). */
@@ -378,7 +377,6 @@ const WORDS: Record<string, (p: P) => string | null> = {
     : tr('{n} chapters; its source {source} is switched off', { n: num(p, 'n'), source: str(p, 'source') })),
   'frozen.overLimit': (p) => {
     const v = { n: num(p, 'n'), source: str(p, 'source') };
-    if (isDesktop()) return v.n === 1 ? tr('1 chapter; its source {source} is over the source limit', v) : tr('{n} chapters; its source {source} is over the source limit', v);
     return v.n === 1 ? tr('1 chapter; its source {source} is over the source limit (SUWAYOMI_MAX_SOURCES)', v)
       : tr('{n} chapters; its source {source} is over the source limit (SUWAYOMI_MAX_SOURCES)', v);
   },
@@ -497,12 +495,10 @@ const WORDS: Record<string, (p: P) => string | null> = {
 
   // ---- Cloudflare solver. On desktop no address is sent: it carries the helper's token.
   'solver.down': (p) => {
-    const head = isDesktop() || !p.url ? tr('Not answering') : tr('Not answering at {url}', { url: str(p, 'url') });
+    const head = !p.url ? tr('Not answering') : tr('Not answering at {url}', { url: str(p, 'url') });
     return p.error ? joinPart(head, str(p, 'error'), 'paren') : head;
   },
-  'solver.downNote': () => (isDesktop()
-    ? tr('Sources on Cloudflare-protected sites cannot work without it. hbook\'s built-in Cloudflare helper isn\'t answering; quit and reopen hbook.')
-    : tr('Sources on Cloudflare-protected sites cannot work without it. Check the container is running and that FLARESOLVERR_URL points at it.')),
+  'solver.downNote': () => tr('Sources on Cloudflare-protected sites cannot work without it. Check the container is running and that FLARESOLVERR_URL points at it.'),
   'solver.helper': () => tr('Cloudflare helper'),
   'solver.notAnswering': (p) => (p.error ? tr('not answering ({error})', { error: str(p, 'error') }) : tr('not answering')),
   'solver.names': () => tr('failing, and its recorded error names the solver'),
@@ -512,9 +508,7 @@ const WORDS: Record<string, (p: P) => string | null> = {
     const ready = label ? tr('Ready ({version})', { version: label }) : tr('Ready to solve challenges');
     return p.latest ? joinPart(ready, tr('v{version} is available', { version: str(p, 'latest') }), 'dash') : ready;
   },
-  'solver.failingNote': () => (isDesktop()
-    ? tr('It responds, but it has been failing mid-request; quit and reopen hbook to restart it.')
-    : tr('It responds, but it has been failing mid-request. Chrome needs far more than Docker\'s default 64 MB of shared memory (set shm_size: 1gb), and the solver leaks memory, so it wants a restart.')),
+  'solver.failingNote': () => tr('It responds, but it has been failing mid-request. Chrome needs far more than Docker\'s default 64 MB of shared memory (set shm_size: 1gb), and the solver leaks memory, so it wants a restart.'),
   'solver.behind': () => tr('a newer solver is out; Cloudflare changes often break older ones'),
   'solver.inside': () => tr('its last failure happened inside the solver'),
   // v0.55.3, a backup solver: the card lists both, each titled by what it is.
@@ -541,16 +535,10 @@ const WORDS: Record<string, (p: P) => string | null> = {
     : tr('{n} enabled sources are not registered — over the limit of {cap}', { n: num(p, 'n'), cap: num(p, 'cap') })),
   'cap.unreachable': (p) => tr('engine unreachable at the last load; nothing is registered (limit {cap})', { cap: num(p, 'cap') }),
   'cap.inUse': (p) => tr('{n} of {cap} extension sources in use', { n: num(p, 'n'), cap: num(p, 'cap') }),
-  'cap.note': () => (isDesktop()
-    ? tr('Every registered source is searched at once, which is why there is a limit. Hide the languages you don\'t read to get under it.')
-    : tr('Every registered source is searched at once, which is why there is a limit. Hiding the languages you do not read is the cheap way under it; SUWAYOMI_MAX_SOURCES raises it.')),
-  'cap.title': () => (isDesktop() ? tr('Source limit') : 'SUWAYOMI_MAX_SOURCES'),
+  'cap.note': () => tr('Every registered source is searched at once, which is why there is a limit. Hiding the languages you do not read is the cheap way under it; SUWAYOMI_MAX_SOURCES raises it.'),
+  'cap.title': () => 'SUWAYOMI_MAX_SOURCES',
   'cap.detail': (p) => {
     const v = { n: num(p, 'n'), cap: num(p, 'cap') };
-    if (isDesktop()) {
-      return v.n === 1 ? tr('1 enabled source not registered; the limit is {cap}. Hide the languages you don\'t read.', v)
-        : tr('{n} enabled sources not registered; the limit is {cap}. Hide the languages you don\'t read.', v);
-    }
     return v.n === 1 ? tr('1 enabled source not registered; the limit is {cap}. Hide languages you do not read, or raise the limit.', v)
       : tr('{n} enabled sources not registered; the limit is {cap}. Hide languages you do not read, or raise the limit.', v);
   },
@@ -650,9 +638,7 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'nested.libraryInside': (p) => tr('The library is inside the downloads folder, at {folder}, so every chapter in it is scanned twice', { folder: str(p, 'folder') }),
   'nested.byPath': () => tr('Their paths put one inside the other.'),
   'nested.byScan': () => tr('The last library scan read the same files here a second time.'),
-  'nested.note': (p) => (isDesktop()
-    ? tr('hbook scans its library folder and the manga folder you added both, so neither may be inside the other: each downloaded chapter then shows up twice. Keep the two side by side; then remove the copies with no source.')
-    : tr('hbook scans the library ({lib}) and its downloads folder ({dl}) both, so neither may be inside the other: each downloaded chapter then shows up twice, once in a series with its source and once in a series with none. Mount them side by side, each in a folder of its own, and restart hbook; then remove the copies with no source. The Volumes section of the install guide shows how.', { lib: str(p, 'lib'), dl: str(p, 'dl') })),
+  'nested.note': (p) => tr('hbook scans the library ({lib}) and its downloads folder ({dl}) both, so neither may be inside the other: each downloaded chapter then shows up twice, once in a series with its source and once in a series with none. Mount them side by side, each in a folder of its own, and restart hbook; then remove the copies with no source. The Volumes section of the install guide shows how.', { lib: str(p, 'lib'), dl: str(p, 'dl') }),
 
   // ---- The extension engine (#72)
   'engine.waiting': (p) => (num(p, 'n') === 1
@@ -680,7 +666,6 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'engine.noSolver': () => tr('hbook has no Cloudflare helper of its own to share yet: set FLARESOLVERR_URL on hbook, then connect it here.'),
   'engine.unreadConnect': () => tr('Its Cloudflare helper setting could not be read just now. Connect points it at the helper hbook uses and switches it on; nothing restarts.'),
   'engine.unread': () => tr('Its Cloudflare helper setting could not be read just now.'),
-  'engine.unsupportedDesktop': () => tr('This engine version does not report its Cloudflare setting, so hbook cannot switch it on from here.'),
   'engine.unsupportedServer': () => tr('This engine version does not report its Cloudflare setting, so hbook cannot switch it on: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on the engine\'s own container, or update the engine.'),
   'engine.unsupported': () => tr('This engine version does not report its Cloudflare setting.'),
   'engine.answering': (p) => (p.version ? tr('Answering (v{version})', { version: engineVersion(p) }) : tr('Answering')),
@@ -717,7 +702,6 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'engine.stepCompose': (p) => tr('In {file}, set the engine’s image to {image}, then run {command}.', { file: str(p, 'file'), image: str(p, 'image'), command: str(p, 'command') }),
   'engine.stepUnraid': (p) => tr('On the Docker tab, edit {service}, set its Repository to {image} and apply. Its data stays in {path}.', { service: str(p, 'service'), image: str(p, 'image'), path: str(p, 'path') }),
   'engine.stepCasaos': (p) => tr('In CasaOS, edit the {service} app, set its image to {image} and save. Its data stays in {path}.', { service: str(p, 'service'), image: str(p, 'image'), path: str(p, 'path') }),
-  'engine.stepDesktop': () => tr('Quit and reopen hbook. If Admin → Sources then offers to download the extension engine, download it: that is the version this hbook was tested with.'),
   'engine.stepOther': (p) => tr('Run {image} in place of the engine you have, on the same data.', { image: str(p, 'image') }),
   'engine.versionTitle': () => tr('Engine version'),
   'engine.versionNewer': (p) => tr('{version} is newer than the version this hbook was tested with ({tested}).', { version: verText(p, 'version'), tested: verText(p, 'tested') }),
@@ -949,22 +933,12 @@ const WORDS: Record<string, (p: P) => string | null> = {
     }
   },
 
-  'autofix.needs.solverDown': () => (isDesktop()
-    ? tr('hbook’s Cloudflare helper is not answering: quit and reopen hbook')
-    : tr('The Cloudflare solver is not answering: check that its container is running')),
-  'autofix.needs.solverFailing': () => (isDesktop()
-    ? tr('hbook’s Cloudflare helper keeps failing: quit and reopen hbook')
-    : tr('The Cloudflare solver answers but keeps failing: restart its container')),
+  'autofix.needs.solverDown': () => tr('The Cloudflare solver is not answering: check that its container is running'),
+  'autofix.needs.solverFailing': () => tr('The Cloudflare solver answers but keeps failing: restart its container'),
   'autofix.needs.engine': () => tr('The extension engine needs a look'),
-  'autofix.needs.foldersTwice': () => (isDesktop()
-    ? tr('hbook’s library folder and the manga folder you added are inside each other: keep them side by side')
-    : tr('The library and the downloads folder are inside each other: mount them side by side')),
+  'autofix.needs.foldersTwice': () => tr('The library and the downloads folder are inside each other: mount them side by side'),
   'autofix.needs.sourceLimit': (p) => {
     const n = num(p, 'n');
-    if (isDesktop()) {
-      return n === 1 ? tr('1 extension source is over the source limit: hide languages you do not read')
-        : tr('{n} extension sources are over the source limit: hide languages you do not read', { n });
-    }
     return n === 1 ? tr('1 extension source is over the source limit: raise SUWAYOMI_MAX_SOURCES or hide languages you do not read')
       : tr('{n} extension sources are over the source limit: raise SUWAYOMI_MAX_SOURCES or hide languages you do not read', { n });
   },
@@ -1017,7 +991,7 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'autofix.clears.slow': (p) => (num(p, 'n') === 1
     ? tr('1 source answered slowly or empty lately')
     : tr('{n} sources answered slowly or empty lately', { n: num(p, 'n') })),
-  // v0.55.3: one of two solvers is not answering while the other solves (never on the desktop app: one helper, no backup).
+  // v0.55.3: one of two solvers is not answering while the other solves.
   'autofix.clears.mainSolverDown': () => tr('The main Cloudflare solver is not answering, and the backup is solving meanwhile'),
   'autofix.clears.backupSolverDown': () => tr('The backup Cloudflare solver is not answering, and the main one is solving'),
 
@@ -1074,29 +1048,15 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'files.note': () => tr('The nightly repair opens each chapter file once to count its pages, and these are the files it found no page in: empty, cut short by a download, damaged, or gone. Fetch again downloads a new copy of a file hbook fetched itself and keeps the old one until the new copy lands; a file in a library you built is yours to replace. Nothing here deletes a file, and Fix everything leaves these to you.'),
 
   // ---- A diagnosis's fix (bff lib/sourceDiagnosis.ts FixCode). ADMIN ONLY, like the server's.
-  'fix.solverCrash': () => (isDesktop()
-    ? tr('The browser inside hbook\'s built-in Cloudflare helper crashed. Quit and reopen hbook to restart it.')
-    : tr('The Cloudflare solver\'s browser crashed. Chrome in Docker needs far more than the default 64 MB of shared memory: set shm_size: 1gb on the flaresolverr service and recreate it.')),
-  'fix.solverDown': () => (isDesktop()
-    ? tr('hbook\'s built-in Cloudflare helper is not answering. Quit and reopen hbook to restart it.')
-    : tr('The Cloudflare solver is not answering. Check the container is up and FLARESOLVERR_URL is right. It also leaks memory, so it wants a periodic restart.')),
+  'fix.solverCrash': () => tr('The Cloudflare solver\'s browser crashed. Chrome in Docker needs far more than the default 64 MB of shared memory: set shm_size: 1gb on the flaresolverr service and recreate it.'),
+  'fix.solverDown': () => tr('The Cloudflare solver is not answering. Check the container is up and FLARESOLVERR_URL is right. It also leaks memory, so it wants a periodic restart.'),
   'fix.solverTimeout': () => tr('The site presented a Cloudflare challenge the solver could not finish in time. Often transient, so re-test first. If it persists, the site has raised its protection.'),
   // v0.55.3: a solver still busy after its tries and the backup (bff sources/flaresolverr.ts SOLVER_BUSY).
-  'fix.solverBusy': () => (isDesktop()
-    ? tr('hbook\'s built-in Cloudflare helper stayed busy with other pages. It catches up by itself. Quit and reopen hbook if it keeps happening.')
-    : tr('The Cloudflare solver stayed busy: every browser it has was in use, however long hbook waited. It catches up by itself; if it keeps happening, give it more browsers (trawl: BROWSER_POOL_SIZE), or let hbook ask fewer pages of it at once (SOLVER_CONCURRENCY).')),
-  'fix.bypassOff': () => (isDesktop()
-    ? tr('The extension engine isn\'t using hbook\'s built-in Cloudflare helper. Quit and reopen hbook to restart it.')
-    : tr('The extension engine\'s own Cloudflare bypass is switched off. On the Suwayomi engine\'s container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.')),
-  'fix.engineLogin': () => (isDesktop()
-    ? tr('hbook\'s extension engine refused hbook\'s own login. Quit and reopen hbook to restart both.')
-    : tr('The extension engine refused hbook\'s login. Set SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD to the engine\'s own basic-auth user and password (or turn its auth off), then restart hbook.')),
-  'fix.engineDown': () => (isDesktop()
-    ? tr('This is hbook\'s extension engine, not the site. Quit and reopen hbook to restart it.')
-    : tr('This is the Suwayomi extension server, not the site. Check that container.')),
-  'fix.engineIncompatible': () => (isDesktop()
-    ? tr('hbook\'s extension engine refused hbook\'s request. Quit and reopen hbook, and download the extension engine again if Admin → Sources offers it.')
-    : tr('The extension engine refused hbook\'s request: it is older or newer than the version this hbook works with. Health → Extension engine says which, and how to change it.')),
+  'fix.solverBusy': () => tr('The Cloudflare solver stayed busy: every browser it has was in use, however long hbook waited. It catches up by itself; if it keeps happening, give it more browsers (trawl: BROWSER_POOL_SIZE), or let hbook ask fewer pages of it at once (SOLVER_CONCURRENCY).'),
+  'fix.bypassOff': () => tr('The extension engine\'s own Cloudflare bypass is switched off. On the Suwayomi engine\'s container (hbook-suwayomi in the shipped compose files) set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL to the same solver address hbook uses (http://hbook-trawl:8191 in the shipped files), then recreate it. The v0.37.0 compose files already set both, so an upgrade that recreates the engine is the fix there.'),
+  'fix.engineLogin': () => tr('The extension engine refused hbook\'s login. Set SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD to the engine\'s own basic-auth user and password (or turn its auth off), then restart hbook.'),
+  'fix.engineDown': () => tr('This is the Suwayomi extension server, not the site. Check that container.'),
+  'fix.engineIncompatible': () => tr('The extension engine refused hbook\'s request: it is older or newer than the version this hbook works with. Health → Extension engine says which, and how to change it.'),
   'fix.engineTimeout': (p) => joinPart(byStage(p, {
     none: () => tr('The extension engine did not answer in time.'),
     search: () => tr('The extension engine did not answer in time while searching.'),
@@ -1130,9 +1090,7 @@ const WORDS: Record<string, (p: P) => string | null> = {
   'fix.unreachableAt': (p) => tr('The address could not be reached ({error}). Check the URL. The site may be gone.', { error: str(p, 'transport') }),
   'fix.cdnAnswered403': () => tr('The site\'s CDN answered 403 to a direct request. A challenge solver cannot fix that; it is usually a datacentre-IP block.'),
   'fix.nothingToDo': () => tr('Nothing to do. The cooldown widens automatically and clears itself.'),
-  'fix.solverBroken': () => (isDesktop()
-    ? tr('The site answers fine from this computer, so hbook\'s built-in Cloudflare helper is the broken part. Quit and reopen hbook to restart it.')
-    : tr('The site answers fine from this server, so the Cloudflare solver is the broken part. Check that container.')),
+  'fix.solverBroken': () => tr('The site answers fine from this server, so the Cloudflare solver is the broken part. Check that container.'),
   'fix.markupChanged': () => tr('The site answers, but its listing no longer matches the parser, so the site changed its markup. Re-add it with auto-detect to re-pick the engine.'),
   'fix.unknownLive': (p) => byStage(p, {
     none: () => tr('The live test failed while searching, and the error matches nothing known. It is shown with the test.'),

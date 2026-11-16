@@ -66,7 +66,7 @@ export const runtime: {
   lastBackupResult: { bytes: number; ms: number; configEmpty?: boolean; sizeUnknown?: boolean } | null;
   backingUp: boolean;
   /**
-   * When the scheduled backup last STARTED, success or not (0: not in this process). The desktop catch-up
+   * When the scheduled backup last STARTED, success or not (0: not in this process). The catch-up
    * (backupDelay in lib/backup.ts) reads it beside `backup_last_run`, because a run that failed with the
    * database down could not stamp the database, and without this every re-arm would try again at once.
    */

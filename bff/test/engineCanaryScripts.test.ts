@@ -29,8 +29,8 @@ const PIN: string = JSON.parse(read(PINS.pin)).version;
 function copyRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'engine-bump-'));
   const files = [
-    'scripts/engine/pins.json', 'scripts/engine/bump.mjs', PINS.pin, PINS.pack, PINS.workflow, PINS.tested, PINS.fake,
-    ...PINS.images, `${PINS.schemas}/suwayomi-${PIN}-schema.json`, PINS.solverDtos.test, `${PINS.solverDtos.dir}/suwayomi-${PIN}-FlareSolverDtos.kt`,
+    'scripts/engine/pins.json', 'scripts/engine/bump.mjs', PINS.pin, PINS.tested, PINS.fake,
+    ...PINS.images, `${PINS.schemas}/suwayomi-${PIN}-schema.json`,
   ];
   for (const f of files) {
     mkdirSync(dirname(join(dir, f)), { recursive: true });
@@ -40,43 +40,28 @@ function copyRepo(): string {
 }
 
 const NEXT = 'v9.9.9';
-/** A release's Checksums.sha256, as Suwayomi publishes it, for NEXT. */
-const CHECKSUMS = ['windows-x64.zip', 'macOS-arm64.tar.gz', 'macOS-x64.tar.gz', 'linux-x64.tar.gz', 'windows-x64.msi', 'debian-all.deb']
-  .map((s, i) => `${String(i + 1).repeat(64)}  Suwayomi-Server-${NEXT}-${s}`).join('\n') + `\n${'f'.repeat(64)}  Suwayomi-Server-${NEXT}.jar\n`;
 
 test('bump.mjs moves every pin to the new engine, and the pin test passes on the result', async () => {
-  // Reintroduce by dropping a file from bump.mjs's rewrites (say the workflow's SUWAYOMI): enginePins.test.ts, run on the
-  // bumped copy, names it -- the desktop cache would restore the old engine's pack into the new one's build.
+  // Reintroduce by dropping a file from bump.mjs's rewrites (say the pin file's version): enginePins.test.ts, run on the
+  // bumped copy, names it -- that compose file would run the old engine on data a newer one already migrated.
   const dir = copyRepo();
   try {
     const schema = JSON.parse(read(`${PINS.schemas}/suwayomi-${PIN}-schema.json`));
     schema.engine = { ...schema.engine, version: NEXT };
     writeFileSync(join(dir, 'schema.json'), JSON.stringify(schema));
-    writeFileSync(join(dir, 'Checksums.sha256'), CHECKSUMS);
-    // CloudflareInterceptor.kt at NEXT: the DTOs as the current fixture has them, among other lines.
-    const dtos = read(`${PINS.solverDtos.dir}/suwayomi-${PIN}-FlareSolverDtos.kt`).split('\n').slice(3).join('\n').trimEnd();
-    writeFileSync(join(dir, 'CloudflareInterceptor.kt'), ['package x', '', 'class CloudflareInterceptor {', '    private val mutex = Mutex()', '', dtos, '', '    suspend fun resolve() {}', '}'].join('\n'));
-    const r = await run([join(dir, 'scripts/engine/bump.mjs'), NEXT, '--repo', dir, '--schema', join(dir, 'schema.json'),
-      '--checksums', join(dir, 'Checksums.sha256'), '--interceptor', join(dir, 'CloudflareInterceptor.kt')]);
+    const r = await run([join(dir, 'scripts/engine/bump.mjs'), NEXT, '--repo', dir, '--schema', join(dir, 'schema.json')]);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /Left to do by hand:/);
 
     const pins = await run(['--import', 'tsx', '--test', 'test/enginePins.test.ts'], { cwd: join(REPO, 'bff'), env: { ENGINE_PINS_REPO: dir } });
     assert.equal(pins.code, 0, `the pin test fails on the bumped copy:\n${pins.out}`);
-    assert.match(pins.out, /ℹ pass 8/, 'PREMISE: every pin test ran on the copy');
+    assert.match(pins.out, /ℹ pass 5/, 'PREMISE: every pin test ran on the copy');
 
     const at = (p: string) => readFileSync(join(dir, p), 'utf8');
-    assert.match(at(PINS.pack), new RegExp(`name: 'Suwayomi-Server-${NEXT}-windows-x64\\.zip', sha256: '${'1'.repeat(64)}'`), "the pack's hashes are the release's own");
-    assert.match(at(PINS.pack), new RegExp(`name: 'Suwayomi-Server-${NEXT}-linux-x64\\.tar\\.gz', sha256: '${'4'.repeat(64)}'`));
-    const pin = JSON.parse(at(PINS.pin));
-    assert.deepEqual([pin.version, pin.tag], [NEXT, `engine-${NEXT}`]);
-    assert.ok(pin.baseUrl.endsWith(`/releases/download/engine-${NEXT}`));
-    assert.ok(Object.values<any>(pin.packs).every((p) => p.sha256 === null && p.bytes === null), 'a pack of the old engine is still pinned for the new one');
-    const fixture = at(`${PINS.solverDtos.dir}/suwayomi-${NEXT}-FlareSolverDtos.kt`);
-    assert.match(fixture, new RegExp(`^// Verbatim: Suwayomi-Server ${NEXT} CloudflareInterceptor\\.kt lines 6-58 \\(the request/response DTOs\\)\\n`));
-    assert.ok(fixture.includes(dtos), 'the DTOs are not verbatim');
-    assert.ok(!existsSync(join(dir, `${PINS.solverDtos.dir}/suwayomi-${PIN}-FlareSolverDtos.kt`)), 'the old DTOs are left behind');
-    assert.ok(at(PINS.solverDtos.test).includes(`suwayomi-${NEXT}-FlareSolverDtos.kt`), 'the solver contract still reads the old DTOs');
+    assert.equal(JSON.parse(at(PINS.pin)).version, NEXT, 'the pin file still names the old engine');
+    assert.match(at(PINS.tested), new RegExp(`export const TESTED_ENGINE = '${NEXT}'`), "the server's own TESTED_ENGINE was left behind");
+    assert.ok(existsSync(join(dir, `${PINS.schemas}/suwayomi-${NEXT}-schema.json`)), "the new engine's schema was not written");
+    assert.match(at(PINS.fake), new RegExp(`suwayomi-${NEXT}-schema\\.json`), 'the fake engine still validates against the old schema');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -91,11 +76,8 @@ test('bump.mjs writes nothing when one pin cannot be found', async () => {
     writeFileSync(casa, readFileSync(casa, 'utf8').replaceAll(`suwayomi-server:${PIN}`, 'suwayomi-server:latest'));
     const schema = JSON.parse(read(`${PINS.schemas}/suwayomi-${PIN}-schema.json`));
     writeFileSync(join(dir, 'schema.json'), JSON.stringify({ ...schema, engine: { ...schema.engine, version: NEXT } }));
-    writeFileSync(join(dir, 'Checksums.sha256'), CHECKSUMS);
-    writeFileSync(join(dir, 'CloudflareInterceptor.kt'), read(`${PINS.solverDtos.dir}/suwayomi-${PIN}-FlareSolverDtos.kt`));
     const before = readFileSync(join(dir, 'deploy/docker-compose.yml'), 'utf8');
-    const r = await run([join(dir, 'scripts/engine/bump.mjs'), NEXT, '--repo', dir, '--schema', join(dir, 'schema.json'),
-      '--checksums', join(dir, 'Checksums.sha256'), '--interceptor', join(dir, 'CloudflareInterceptor.kt')]);
+    const r = await run([join(dir, 'scripts/engine/bump.mjs'), NEXT, '--repo', dir, '--schema', join(dir, 'schema.json')]);
     assert.notEqual(r.code, 0);
     assert.match(r.out, /deploy\/casaos\/hbook-suwayomi\.yml: nothing to rewrite/);
     assert.equal(readFileSync(join(dir, 'deploy/docker-compose.yml'), 'utf8'), before, 'a file was written before the refusal');

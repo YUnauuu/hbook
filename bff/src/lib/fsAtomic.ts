@@ -39,7 +39,7 @@ const TRANSIENT = new Set(['EPERM', 'EBUSY', 'EACCES']);
  * retries clear it. Windows only: on Linux those errors are real (a read-only share, a permission problem)
  * and retrying would only delay the message. `platform`, `rename` and `waits` are parameters for the test.
  * Reintroduce by making this a bare rename: relPath.test.ts "a rename Windows refuses twice" throws (and
- * desktopSwitchHygiene.test.ts pins that writeAtomic calls this rather than `fs.rename`).
+ * the tests pin that writeAtomic calls this rather than `fs.rename`).
  */
 export async function renameRetry(
   from: string,

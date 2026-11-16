@@ -21,7 +21,6 @@ import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { t as tr } from '@/lib/i18n';
-import { isDesktop } from '@/lib/desktop';
 import { diagnosisReason } from '@/lib/said';
 import { useTicker } from '@/lib/ticker';
 import { testClock, type TestAnswer } from '@/lib/sourceEvidence';
@@ -111,7 +110,7 @@ export function SourceSheet({ target, overview, evidence, testMs, status, action
   const says = s ? sourceSays(s, failingSince(row)) : null;
   const keys = s ? sheetKeys(s, overview?.attention) : [];
   // Not loaded because the engine's source limit is full (v0.55.1): why, and the way to room, where Replace was.
-  const limit = s ? limitLine(s, isDesktop()) : null;
+  const limit = s ? limitLine(s) : null;
   // A backup extension hbook added by itself (v0.82.0): what it is, and that it goes again.
   const backup = s ? backupLine(s) : null;
   const offByAdmin = new Set((overview?.sources ?? []).filter((x) => x.kind === 'extension' && x.offBy === 'admin')

@@ -1,7 +1,3 @@
-// ⚠️ FIRST. On desktop this writes the paths and settings into process.env that library.ts, customSites.ts and
-// the source loader capture when they load; today they happen to import env (which imports this first) before
-// reading anything, but that order is an accident this line stops relying on. A no-op on a server.
-import './lib/desktop';
 import { uploadSeriesRoutes } from './routes/upload';
 import Fastify from 'fastify';
 import { APP_ROUTER_OPTIONS } from './lib/httpLimits';
@@ -53,7 +49,6 @@ import { pruneAudit } from './lib/audit';
 import { pruneRing } from './lib/deviceRing';
 import { startActivityLog, flushActivityLog } from './lib/activityLog';
 import { runBackup, backupDelay, backupSettings, stampDelay } from './lib/backup';
-import { firstRunFloor, DESKTOP_FLOORS } from './lib/desktop';
 import { scoutTick, storeLook, SCOUT_TICK_MS } from './lib/sourceScout';
 import { backupUpkeep, BACKUP_UPKEEP_MS } from './lib/backupExtensions';
 import { KomgaError } from './lib/komga';
@@ -81,25 +76,19 @@ import notifyRoutes from './routes/notify';
 import translateRoutes from './routes/translate';
 import { stopEngine } from './lib/translate/engine';
 import commentRoutes from './routes/comments';
-import { isDesktop } from './lib/desktop';
-import { installDesktopGuards } from './lib/desktopGuard';
-import { ensureDesktopUser } from './lib/desktopUser';
 import { initialiseBulkChapterDeleteRuns } from './lib/bulkChapterDelete';
 import { authFacts, authModeProblems, authModeWarnings } from './lib/authMode';
 
 async function main() {
   // A TRUST_PROXY entry Fastify cannot read stops the server here, naming the entry, before the migrations run; one that
   // works but not as its author likely thinks is said at every start (lib/auth.ts trustProxyProblems, trustProxyWarnings).
-  // Not on desktop, which trusts no proxy whatever is set (`trustProxy` below).
-  // LOCAL_NETWORKS likewise (lib/clientAddr.ts): it decides who is at home, where a profile without a password opens.
-  if (!isDesktop()) {
+  // LOCAL_NETWORKS (lib/clientAddr.ts) decides who is at home, where a profile without a password opens.
+  {
     const netProblems = [...trustProxyProblems(env.TRUST_PROXY), ...localNetworksProblems(env.LOCAL_NETWORKS, env.TRUST_PROXY)];
     if (netProblems.length) {
       for (const p of netProblems) console.error(`[net] ${p}`);
       process.exit(1);
     }
-  } else if (env.LOCAL_NETWORKS.trim()) {
-    console.warn('[net] hbook Desktop is reached from this computer alone: LOCAL_NETWORKS is ignored.');
   }
   await migrate();
   await initializeTitleLogoScan();
@@ -107,7 +96,7 @@ async function main() {
   await initializeTitleExtractionBatch();
   // What Admin -> Settings -> Server -> Home network saved, where the environment does not say (lib/clientAddr.ts),
   // before any request is judged by it; then what is in force, said once.
-  if (!isDesktop()) {
+  {
     await loadNetworkSettings();
     const net = networkConfig();
     for (const w of [...trustProxyWarnings(net.trustedProxies.value), ...localNetworksWarnings(net.localNetworks.value, net.trustedProxies.value)]) {
@@ -140,8 +129,6 @@ async function main() {
   // before routes can accept a new run; completed and partial results remain readable after a restart. This belongs
   // on the real boot path, not in the admin route plugin: documentation tests register routes without a database.
   await initialiseBulkChapterDeleteRuns();
-  // Desktop: the one local account the window signs in as (lib/desktopUser.ts). There is no setup screen.
-  if (isDesktop()) await ensureDesktopUser();
   // What finished downloading in the last day, back into the Downloads view, and every chapter from here on
   // written down (lib/activityLog.ts). Before any download can start, so nothing lands ahead of the day it
   // restores. A database that cannot be read here costs the view its yesterday, never the boot.
@@ -171,12 +158,11 @@ async function main() {
   const app = Fastify({
     // LOG_LEVEL (env.ts logLevelOf): `info` in production unless the operator says otherwise.
     logger: { level: logLevel },
-    // Desktop: nothing sits in front of the app, so a forwarded-for header is only ever something a local
-    // process made up. Elsewhere only the trusted proxies may set it (TRUST_PROXY, or Admin -> Settings): trusting every
+    // Only the trusted proxies may set a forwarded-for header (TRUST_PROXY, or Admin -> Settings): trusting every
     // peer let a client on the app port choose its own address for the rate limits. Reintroduce `true`:
     // trustProxy.test.ts sees 14 sign-ins with rotating X-Forwarded-For all answered 401, none 429. A function rather
     // than the list, so a save on the settings page is in force at the next request (lib/clientAddr.ts trustsPeer).
-    trustProxy: isDesktop() ? false : trustsPeer,
+    trustProxy: trustsPeer,
     bodyLimit: 2 * 1024 * 1024,
     routerOptions: APP_ROUTER_OPTIONS,
   });
@@ -208,10 +194,6 @@ async function main() {
   // by @fastify/static with no Content-Length, so those are compressed whatever their size. nginx skipped
   // anything under 1 KB; the difference is a few bytes of gzip framing on the handful of tiny assets.
   await app.register(compress, { threshold: 1024, encodings: ['br', 'gzip', 'deflate'] });
-
-  // Desktop only: the Host allowlist (DNS rebinding) and the hidden routes, as one root onRequest hook that runs
-  // ahead of every route, /livez included, and of every plugin's own auth (lib/desktopGuard.ts).
-  if (isDesktop()) installDesktopGuards(app);
 
   /**
    * Liveness, deliberately separate from readiness.
@@ -286,17 +268,15 @@ async function main() {
   // The reader's own API: no accounts, no login. A separate surface from the household library above,
   // so that the small app in `reader/` needs no session, no permission and no account to read with.
   await app.register(readerRoutes);
-  // Translated pages (v0.85.0): answers "off" until an admin downloads the engine and turns it on. Hidden on desktop
-  // (DESKTOP_HIDDEN_ROUTES), whose server runs inside the app, where the engine's processes cannot (docs/DESKTOP.md).
+  // Translated pages (v0.85.0): answers "off" until an admin downloads the engine and turns it on.
   await app.register(translateRoutes);
-  // Chapter comments and reactions (v0.87.0): everywhere, as every plugin is; desktop answers 404 for them (lib/desktop.ts).
+  // Chapter comments and reactions (v0.87.0): everywhere, as every plugin is.
   await app.register(commentRoutes);
-  // Neither OPDS nor the Komga-compatible API exists on desktop: both are for OTHER devices reading this
-  // library, and the desktop server is reachable from this PC only (they return with "Share with my phone").
-  if (!isDesktop()) await app.register(opdsRoutes);
+  // OPDS, for the other devices that read this library.
+  await app.register(opdsRoutes);
   // The Komga-compatible API for Mihon's Komga extension + tracker. Its own auth hook (API tokens and the
   // HBOOK-SESSION cookie), encapsulated like OPDS: the cookie is honoured by these routes and nowhere else.
-  if (!isDesktop()) await app.register(komgaCompatRoutes);
+  await app.register(komgaCompatRoutes);
   // The interactive API reference, BEFORE the web root: registerWebRoot installs the not-found handler that
   // serves the app shell for any unknown path, and a route added after it would still work, but its
   // static assets under /api/docs/ would not be found by the UI in the same way. Unauthenticated on
@@ -380,9 +360,7 @@ async function main() {
         last = s.rows[0]?.updater_last_run ? new Date(s.rows[0].updater_last_run).getTime() : 0;
       } catch { /* settings row not readable yet — keep the defaults */ }
       const due = last + hours * 60 * 60 * 1000 - Date.now();
-      // Desktop: a two-minute floor instead of ten (lib/desktop.ts DESKTOP_FLOORS). A PC is switched off
-      // every night, so a server's boot wait would push most of its sweeps past the time it is on at all.
-      const delay = Math.max(firstRunFloor(10 * 60 * 1000, 'sweep'), due);
+      const delay = Math.max(10 * 60 * 1000, due);
       app.log.info(`updater: first sweep in ${Math.round(delay / 60000)} min` + (last ? ` (last completed ${new Date(last).toISOString()})` : ' (no completed sweep on record)'));
       setTimeout(tick, delay).unref();
     })();
@@ -412,7 +390,7 @@ async function main() {
       }
       setTimeout(finishTick, next).unref();
     };
-    setTimeout(finishTick, firstRunFloor(5 * 60 * 1000, 'finishDownloads')).unref();
+    setTimeout(finishTick, 5 * 60 * 1000).unref();
     // v0.80.0, the scout (lib/sourceScout.ts): every few minutes, one series whose own sources cannot get it its chapters
     // -- every one cooling, refusing or broken for what it lacks -- is looked for on the other installed sources, and a
     // source that is this series and has them is followed. The switch "Use other sources on their own", the hour's
@@ -425,7 +403,7 @@ async function main() {
       }
       setTimeout(scoutLoop, SCOUT_TICK_MS).unref();
     };
-    setTimeout(scoutLoop, firstRunFloor(10 * 60 * 1000, 'scout')).unref();
+    setTimeout(scoutLoop, 10 * 60 * 1000).unref();
     // v0.82.0, the backup extensions (lib/backupExtensions.ts): every half hour, the extensions hbook installed by
     // itself to finish downloads are checked against what the series need, and one nothing has needed for three days
     // is removed -- remembered, and put back by the scout when a series it carried is stuck again. v0.83.0: then, for the
@@ -439,7 +417,7 @@ async function main() {
       }
       setTimeout(backupLoop, BACKUP_UPKEEP_MS).unref();
     };
-    setTimeout(backupLoop, firstRunFloor(15 * 60 * 1000, 'backups')).unref();
+    setTimeout(backupLoop, 15 * 60 * 1000).unref();
     // v0.61.0, the release radar (lib/releaseRadar.ts): once, a minute after boot, every series with a source and no
     // radar yet is dated from what is already stored -- its listing and its chapters' arrivals, no source asked -- so
     // an upgrade's Releasing soon and Expected this week are not empty until each series' next check.
@@ -490,7 +468,7 @@ async function main() {
       }
       setTimeout(tick, HOUR).unref();
     };
-    setTimeout(tick, firstRunFloor(10 * 60 * 1000, 'solverHealth')).unref();
+    setTimeout(tick, 10 * 60 * 1000).unref();
   }
 
   /**
@@ -510,7 +488,7 @@ async function main() {
       }
       setTimeout(tick, SIX_HOURS).unref();
     };
-    setTimeout(tick, firstRunFloor(20 * 60 * 1000, 'healthSummary')).unref();
+    setTimeout(tick, 20 * 60 * 1000).unref();
   }
 
   /**
@@ -560,10 +538,8 @@ async function main() {
    * repeatedly (a crash loop, someone tuning their compose file) must not turn a headcount into a flood.
    * Sending at most one ping a day per install is also what makes the number mean "installs", not "boots".
    *
-   * Not on desktop at all (owner decision): the switch is hidden there and nothing is ever sent, whatever a
-   * restored server database says about consent.
    */
-  if (!isDesktop()) {
+  {
     const DAY = 24 * 60 * 60 * 1000;
     const tick = async () => {
       try {
@@ -610,17 +586,7 @@ async function main() {
       }
       setTimeout(tick, DAY).unref();
     };
-    // Desktop: from the last check's stamp, not from boot. The server is up for weeks, so "ten minutes after
-    // boot, then daily" is daily; a PC that is on for a few hours a day would otherwise check every source on
-    // every start (and never reach the second tick). ⚠️ The stamp is per source (sourceWatchdog.ts writes
-    // source_health.checked_at), so the newest one is the last run; none at all means run at the floor.
-    if (isDesktop()) {
-      void (async () => {
-        const row = await one<{ last: Date | null }>('SELECT max(checked_at) AS last FROM source_health').catch(() => null);
-        const last = row?.last ? new Date(row.last).getTime() : 0;
-        setTimeout(tick, stampDelay({ last, interval: DAY, floor: DESKTOP_FLOORS.watchdog, now: Date.now() })).unref();
-      })();
-    } else setTimeout(tick, 10 * 60 * 1000).unref();
+    setTimeout(tick, 10 * 60 * 1000).unref();
   }
 
   /**
@@ -708,7 +674,7 @@ async function main() {
              FROM server_settings st WHERE st.id = 1`);
         last = s.rows[0]?.last ? new Date(s.rows[0].last).getTime() : 0;
       } catch { /* settings row not readable yet -- run on the floor */ }
-      const delay = Math.max(firstRunFloor(30 * 60 * 1000, 'repair'), last + REPAIR_HOURS * 60 * 60 * 1000 - Date.now());
+      const delay = Math.max(30 * 60 * 1000, last + REPAIR_HOURS * 60 * 60 * 1000 - Date.now());
       app.log.info(`repair: first run in ${Math.round(delay / 60000)} min`
         + (last ? ` (last completed ${new Date(last).toISOString()})` : ' (no completed run on record)'));
       setRepairNext(Date.now() + delay);
@@ -718,7 +684,7 @@ async function main() {
 
   /**
    * The slow archive (#117, lib/archive.ts): series queued to be fetched a chapter at a time, paced per source.
-   * It schedules itself -- a first look ten minutes after boot (three on desktop), then whenever a break ends --
+   * It schedules itself -- a first look ten minutes after boot, then whenever a break ends --
    * and stands aside for every sweep, repair and source check. `jobBusy` is how it sees a download a person
    * started on the same series. Owned mode only, like the sweep: it writes DL_ROOT and lib_books.
    */
@@ -747,7 +713,7 @@ async function main() {
       }
       setTimeout(tick, DAY).unref();
     };
-    setTimeout(tick, firstRunFloor(15 * 60 * 1000, 'importSweep')).unref();
+    setTimeout(tick, 15 * 60 * 1000).unref();
   }
 
   // Keep the installed extensions current with the repositories they came from.
@@ -781,7 +747,7 @@ async function main() {
         hours = Math.min(168, Math.max(1, s.rows[0]?.extension_hours || 6));
         last = s.rows[0]?.extension_last_run ? new Date(s.rows[0].extension_last_run).getTime() : 0;
       } catch { /* settings row not readable yet -- keep the defaults */ }
-      const delay = Math.max(firstRunFloor(10 * 60 * 1000, 'extensionCheck'), last + hours * 60 * 60 * 1000 - Date.now());
+      const delay = Math.max(10 * 60 * 1000, last + hours * 60 * 60 * 1000 - Date.now());
       app.log.info(`extensions: first check in ${Math.round(delay / 60000)} min`);
       setTimeout(tick, delay).unref();
     })();
@@ -813,7 +779,7 @@ async function main() {
       if (!(await backupSettings()).enabled) { void arm(); return; }
       try {
         runtime.backingUp = true;
-        // Before the run, success or not: the desktop catch-up reads it (backupDelay in lib/backup.ts).
+        // Before the run, success or not: the catch-up reads it (backupDelay in lib/backup.ts).
         runtime.lastBackupAttempt = Date.now();
         const r = await runBackup();
         runtime.lastBackup = Date.now();
@@ -826,14 +792,10 @@ async function main() {
         void arm();
       }
     };
-    // The server: the next `backup_hour`, exactly as before. The desktop: the same, unless the last run is
-    // more than a day old -- a PC that is off at that hour every night would otherwise never back up -- in
-    // which case it runs a few minutes after start (backupDelay in lib/backup.ts).
+    // The next `backup_hour`, exactly as before (backupDelay in lib/backup.ts).
     const nextBackupDelay = async (): Promise<number> => {
       let hour = 3;
       let lastRun: number | null = null;
-      // A nightly switched off has no night to catch up on: without this the desktop's catch-up would wake every five
-      // minutes to find it off (v0.61.1).
       let on = true;
       try {
         const s = await pool.query('SELECT backup_hour, backup_last_run, backup_enabled FROM server_settings WHERE id = 1');
@@ -842,7 +804,7 @@ async function main() {
         lastRun = s.rows[0]?.backup_last_run ? new Date(s.rows[0].backup_last_run).getTime() : null;
         on = s.rows[0]?.backup_enabled !== false;
       } catch { /* settings not readable yet — keep 03:00 */ }
-      return backupDelay({ hour, lastRun, lastAttempt: runtime.lastBackupAttempt, now: Date.now(), desktop: isDesktop() && on });
+      return backupDelay({ hour, lastRun, lastAttempt: runtime.lastBackupAttempt, now: Date.now() });
     };
     const arm = async () => {
       // The clear sits AFTER the await, right before the set, with nothing between them. Clearing before the
@@ -864,32 +826,6 @@ async function main() {
     };
     runtime.rearmBackup = () => { void arm(); };
     void arm();
-  }
-
-  /**
-   * Desktop: notice the PC waking up, and re-aim the backup.
-   *
-   * ⚠️ Timers count monotonic time, which does not advance while a Mac sleeps (and may not on Windows), but
-   * the backup is aimed at a wall-clock hour. A laptop that sleeps from 23:00 to 07:00 fires its 03:00
-   * backup around 11:00 -- or, closed again before then, not that day at all. So once a minute compare the
-   * wall clock with the last tick: a jump of more than five minutes means the machine slept, and re-arming
-   * re-reads the hour and the last run, which catches up at once if the night was missed (backupDelay).
-   * The other jobs run on intervals and at worst run one interval late; that is documented, not fixed.
-   * Reintroduce by deleting this block: desktopSwitchHygiene.test.ts "the backup catch-up is wired, and a
-   * desktop wake re-arms the backup".
-   */
-  if (isDesktop()) {
-    const EVERY = 60 * 1000;
-    const SLEPT = 5 * 60 * 1000;
-    let wall = Date.now();
-    setInterval(() => {
-      const now = Date.now();
-      if (now - wall > EVERY + SLEPT) {
-        app.log.info(`woke after about ${Math.round((now - wall) / 60000)} min asleep; re-aiming the backup`);
-        runtime.rearmBackup?.();
-      }
-      wall = now;
-    }, EVERY).unref();
   }
 
   /**
@@ -924,7 +860,7 @@ async function main() {
       }
       setTimeout(tick, HOUR).unref();
     };
-    setTimeout(tick, firstRunFloor(15 * 60 * 1000, 'cleanup')).unref();
+    setTimeout(tick, 15 * 60 * 1000).unref();
   }
 
   // Abandoned half-writes from a previous life: a chapter or cache file whose rename never happened. A
@@ -958,9 +894,7 @@ async function main() {
     });
   }
 
-  // ⚠️ Desktop: this PC only. 0.0.0.0 would put the library on the LAN (and raise a firewall prompt on first run)
-  // for an app that has no sign-in screen.
-  await app.listen({ host: isDesktop() ? '127.0.0.1' : '0.0.0.0', port: env.PORT });
+  await app.listen({ host: '0.0.0.0', port: env.PORT });
 
   // Says which topology is running, so "why is / a 404" is answerable from `docker compose logs`.
   console.log(webRootConfigured()

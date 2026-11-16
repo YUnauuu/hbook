@@ -414,7 +414,7 @@ rarely needed:
 - `FINISH_DOWNLOADS_REFUSAL_CAP` (default `12`): tries a chapter a site refused gets.
 - `SCOUT_SEARCHES_PER_HOUR` (default `40`; `0` stops it looking for new sources on its own, and keeps the rest):
   searches it may make in an hour when it looks for a series on your other installed sources.
-- `BACKUP_EXTENSIONS_MAX` (default `5`, the desktop app `3`; `0`: never): backup extensions -- the ones hbook
+- `BACKUP_EXTENSIONS_MAX` (default `5`; `0`: never): backup extensions -- the ones hbook
   installed by itself -- installed at once. One a series uses as its main source does not count. When it is full, the
   one needed longest ago is removed to make room, and one in use never is.
 
@@ -570,7 +570,7 @@ normal install needs neither:
   most one, whatever this says.
 
 `ARCHIVE_FIRST_RUN_MS`, `ARCHIVE_MIN_BREAK_MS` and `ARCHIVE_TICK_MS` exist for the end-to-end tests only: they
-shorten the wait before the first look after a start (10 minutes, 3 on the desktop app), the 45-second minimum
+shorten the wait before the first look after a start (10 minutes), the 45-second minimum
 break and the scheduler's one-minute look, so a test can watch a chapter land. Leave them unset.
 
 ## The nightly repair
@@ -744,4 +744,3 @@ stop after 10 minutes without a page.
 | `TRANSLATE_MODEL` | by memory | `large` or `small`, to pick the model yourself. |
 | `TRANSLATE_ENGINE_URL` | none | Translate with a llama.cpp server you already run (a machine with a graphics card, say) instead of downloading a model. Download then fetches only the engine pack, for the OCR and the fonts. |
 
-Not in hbook Desktop yet: its server runs inside the app, where the engine's processes cannot.

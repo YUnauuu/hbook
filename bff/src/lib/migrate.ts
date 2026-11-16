@@ -2062,13 +2062,12 @@ CREATE TABLE IF NOT EXISTS anilist_trending (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_login boolean NOT NULL DEFAULT true;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS local_open     boolean NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS managed_by     uuid REFERENCES users(id) ON DELETE SET NULL;
--- A profile anyone at home can open never runs the server. The desktop app's own account is the exception it already
--- is (lib/desktopUser.ts): its window is the only way in.
+-- A profile anyone at home can open never runs the server.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_local_open_not_admin') THEN
     ALTER TABLE users ADD CONSTRAINT users_local_open_not_admin
-      CHECK (NOT local_open OR role <> 'admin' OR auth_kind = 'desktop');
+      CHECK (NOT local_open OR role <> 'admin');
   END IF;
 END $$;
 -- A session's name through its rotations (session_id; NULL on a row from before it, which is then its own id), the
@@ -2627,6 +2626,19 @@ const DATA_MIGRATIONS: { id: string; run: (c: PoolClient) => Promise<void> }[] =
   {
     id: BACKUP_SEED_MIGRATION,
     run: seedBackupExtensions,
+  },
+  {
+    // v0.3.0: the desktop app is gone, so the check that a profile which opens at home is never an admin has no
+    // exception left. The old constraint allowed auth_kind = 'desktop' (that app's own account); a row that still
+    // needs it keeps the constraint as it is, since dropping it would not hold.
+    id: 'v0.3.0-local-open-never-admin',
+    run: async (c) => {
+      const rows = await c.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM users WHERE local_open AND role = 'admin' AND auth_kind = 'desktop'`);
+      if (Number(rows.rows[0]?.count ?? '0') > 0) return;
+      await c.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_local_open_not_admin`);
+      await c.query(`ALTER TABLE users ADD CONSTRAINT users_local_open_not_admin CHECK (NOT local_open OR role <> 'admin')`);
+    },
   },
 ];
 

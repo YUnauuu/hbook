@@ -226,7 +226,7 @@ export const IDLE_TURNS = 2;
  * The server-wide wait a viewer is shown: the admin's pause as the settings say it now, else what the last look
  * concluded -- unless the settings have since taken that reason away. A 'paused' from before a Resume all, or a
  * 'window' from before the window was cleared, lingered on the view until the next look, which on a server that
- * does not run the scheduler (a test, the desktop app shut) is never.
+ * does not run the scheduler (a test) is never.
  */
 export function shownGlobalWait(s: { paused: boolean; windowFrom: number | null; windowTo: number | null }, last: GlobalWait | null): GlobalWait | null {
   if (s.paused) return { why: 'paused' };

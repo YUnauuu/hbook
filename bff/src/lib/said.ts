@@ -14,10 +14,8 @@
 //
 // ⚠️ A new sentence is a new code HERE and its words in web/lib/said.ts in the same commit: web/test/said.test.ts
 // imports this registry, fails by the code's name, and holds the web's English to the English below.
-// ⚠️ Pure on purpose -- no db, no env -- so that test can import it. It imports only lib/desktop.ts, which imports
-// nothing of ours (a platform's own wording goes through `forDesktop` here, where desktopCopy.test.ts reads both
-// arms), and lib/sourceDiagnosis.ts, pure for the same reason.
-import { forDesktop } from './desktop';
+// ⚠️ Pure on purpose -- no db, no env -- so that test can import it. It imports only lib/sourceDiagnosis.ts,
+// pure for the same reason.
 import { REASONS, STAGE_WORD, type DiagnosisCode } from './sourceDiagnosis';
 
 /** How a part joins the one before it. The first part of a line joins nothing. */
@@ -60,10 +58,9 @@ const STAGE_LABEL: Record<StageName, string> = { search: 'Search', chapters: 'Ch
 const solverName = (kind?: string | null): string => (kind === 'flaresolverr' ? 'FlareSolverr' : kind === 'trawl' ? 'trawl' : '');
 
 /**
- * " (v3.4.6)" for FlareSolverr, whose versions are numbers; the desktop helper's is `hbook-desktop-0.44.0`,
- * deliberately not semver-shaped (desktop/src/solver/server.ts), and read "vhbook-desktop-…" with the v.
+ * " (v3.4.6)" for FlareSolverr, whose versions are numbers, and " (trawl v1.7.0)" for the other one.
  * v0.55.3: with its kind, the solver's name comes first -- " (FlareSolverr v3.4.6)", " (trawl v1.7.0)": a version alone
- * no longer says which solver it is. A kind with no name (`other`) and none at all (the desktop helper) read as before.
+ * no longer says which solver it is. A kind with no name (`other`) and none at all read as before.
  */
 export function solverVersionLabel(version?: string | null, kind?: string | null): string {
   const label = [solverName(kind), version ? `${/^\d/.test(version) ? 'v' : ''}${version}` : ''].filter(Boolean).join(' ');
@@ -232,7 +229,7 @@ const EN = {
   'frozen.switchedOff': ({ n, source }: { n: number; source: string }) => `${n} chapters; its source ${source} is switched off`,
   // Enabled yet unregistered: dropped by SUWAYOMI_MAX_SOURCES, which the cap check names but a series page cannot see.
   'frozen.overLimit': ({ n, source }: { n: number; source: string }) =>
-    `${n} chapters; its source ${source} is ${forDesktop('over the source limit (SUWAYOMI_MAX_SOURCES)', 'over the source limit')}`,
+    `${n} chapters; its source ${source} is ${'over the source limit (SUWAYOMI_MAX_SOURCES)'}`,
   'frozen.uninstalled': ({ n, source }: { n: number; source: string }) => `${n} chapters; its source ${source} is no longer installed`,
   // v0.52.0 (#123): its source is MangaDex in a language an admin switched off. `lang` is the app code (es-419).
   'frozen.mangadexOff': ({ n, lang }: { n: number; lang: string }) =>
@@ -336,31 +333,24 @@ const EN = {
     'progress moves to the copy that stays, and a bookmarked copy is kept. A part or an extra filed under its chapter\'s ' +
     'number (17e, 1053a) is never offered.',
 
-  // ---- Cloudflare solver. ⚠️ On desktop the helper's address carries its access token: no `url` is sent there.
+  // ---- Cloudflare solver.
   'solver.down': ({ url, error }: { url?: string; error: string | null }) =>
-    forDesktop(`Not answering at ${url}`, 'Not answering') + (error ? ` (${error})` : ''),
-  'solver.downNote': () => forDesktop(
-    'Sources on Cloudflare-protected sites cannot work without it. Check the container is running '
+    `Not answering at ${url}` + (error ? ` (${error})` : ''),
+  'solver.downNote': () => 'Sources on Cloudflare-protected sites cannot work without it. Check the container is running '
       + 'and that FLARESOLVERR_URL points at it.',
-    "Sources on Cloudflare-protected sites cannot work without it. hbook's built-in Cloudflare helper "
-      + "isn't answering; quit and reopen hbook.",
-  ),
   'solver.helper': () => 'Cloudflare helper',
   'solver.notAnswering': ({ error }: { error: string | null }) => (error ? `not answering (${error})` : 'not answering'),
   'solver.names': () => 'failing, and its recorded error names the solver',
   'solver.blaming': ({ n }: { n: number }) => `Answering, but ${n} source${s(n, '', 's')} recently failed inside it`,
-  // `kind` (v0.55.3): which solver answered, named before its version; absent on the desktop app, whose helper is its own.
+  // `kind` (v0.55.3): which solver answered, named before its version.
   'solver.ready': ({ version, latest, kind }: { version: string | null; latest: string | null; kind?: string | null }) =>
     `Ready${solverVersionLabel(version, kind)}${latest ? ` — v${latest} is available` : ''}`,
-  'solver.failingNote': () => forDesktop(
-    'It responds, but it has been failing mid-request. Chrome needs far more than Docker\'s default '
+  'solver.failingNote': () => 'It responds, but it has been failing mid-request. Chrome needs far more than Docker\'s default '
     + '64 MB of shared memory (set shm_size: 1gb), and the solver leaks memory, so it wants a restart.',
-    'It responds, but it has been failing mid-request; quit and reopen hbook to restart it.',
-  ),
   'solver.behind': () => 'a newer solver is out; Cloudflare changes often break older ones',
   'solver.inside': () => 'its last failure happened inside the solver',
   // v0.55.3, a backup solver (FLARESOLVERR_FALLBACK_URL): the card lists both, each titled by what it is, and says which
-  // is not answering. No address in these: the rows carry theirs, and the desktop app never has a backup.
+  // is not answering. No address in these: the rows carry theirs.
   'solver.main': () => 'Main solver',
   'solver.backup': () => 'Backup solver',
   'solver.backupSolving': () => 'The main solver is not answering; the backup is solving',
@@ -383,17 +373,10 @@ const EN = {
   'cap.over': ({ n, cap }: { n: number; cap: number }) => `${n} enabled source${s(n, ' is', 's are')} not registered — over the limit of ${cap}`,
   'cap.unreachable': ({ cap }: { cap: number }) => `engine unreachable at the last load; nothing is registered (limit ${cap})`,
   'cap.inUse': ({ n, cap }: { n: number; cap: number }) => `${n} of ${cap} extension sources in use`,
-  'cap.note': () => forDesktop(
-    'Every registered source is searched at once, which is why there is a limit. Hiding the languages you do not read ' +
+  'cap.note': () => 'Every registered source is searched at once, which is why there is a limit. Hiding the languages you do not read ' +
       'is the cheap way under it; SUWAYOMI_MAX_SOURCES raises it.',
-    'Every registered source is searched at once, which is why there is a limit. Hide the languages you don\'t read ' +
-      'to get under it.',
-  ),
-  'cap.title': () => forDesktop('SUWAYOMI_MAX_SOURCES', 'Source limit'),
-  'cap.detail': ({ n, cap }: { n: number; cap: number }) => forDesktop(
-    `${n} enabled sources not registered; the limit is ${cap}. Hide languages you do not read, or raise the limit.`,
-    `${n} enabled sources not registered; the limit is ${cap}. Hide the languages you don't read.`,
-  ),
+  'cap.title': () => 'SUWAYOMI_MAX_SOURCES',
+  'cap.detail': ({ n, cap }: { n: number; cap: number }) => `${n} enabled sources not registered; the limit is ${cap}. Hide languages you do not read, or raise the limit.`,
 
   // ---- Library scan (#109). The walk's own findings, from lib/library.ts's WalkIssue.
   'scan.none': () => 'no scan has run since the server started',
@@ -462,16 +445,10 @@ const EN = {
     `The library is inside the downloads folder, at ${folder}, so every chapter in it is scanned twice`,
   'nested.byPath': () => 'Their paths put one inside the other.',
   'nested.byScan': () => 'The last library scan read the same files here a second time.',
-  'nested.note': ({ lib, dl }: { lib: string; dl: string }) => forDesktop(
-    `hbook scans the library (${lib}) and its downloads folder (${dl}) both, so neither may be inside the other: `
+  'nested.note': ({ lib, dl }: { lib: string; dl: string }) => `hbook scans the library (${lib}) and its downloads folder (${dl}) both, so neither may be inside the other: `
       + 'each downloaded chapter then shows up twice, once in a series with its source and once in a series with none. '
       + 'Mount them side by side, each in a folder of its own, and restart hbook; then remove the copies with no '
       + 'source. The Volumes section of the install guide shows how.',
-    // The desktop app's own words (docs/DESKTOP.md): its "library folder" is the downloads, the reader's is the manga
-    // folder they added.
-    'hbook scans its library folder and the manga folder you added both, so neither may be inside the other: each '
-      + 'downloaded chapter then shows up twice. Keep the two side by side; then remove the copies with no source.',
-  ),
 
   // ---- The extension engine (#72, lib/engineHealth.ts)
   'engine.waiting': ({ n }: { n: number }) =>
@@ -498,8 +475,6 @@ const EN = {
   'engine.unreadConnect': () =>
     'Its Cloudflare helper setting could not be read just now. Connect points it at the helper hbook uses and switches it on; nothing restarts.',
   'engine.unread': () => 'Its Cloudflare helper setting could not be read just now.',
-  'engine.unsupportedDesktop': () =>
-    'This engine version does not report its Cloudflare setting, so hbook cannot switch it on from here.',
   'engine.unsupportedServer': () =>
     "This engine version does not report its Cloudflare setting, so hbook cannot switch it on: set FLARESOLVERR_ENABLED=true and FLARESOLVERR_URL on the engine's own container, or update the engine.",
   'engine.unsupported': () => 'This engine version does not report its Cloudflare setting.',
@@ -542,8 +517,6 @@ const EN = {
     `On the Docker tab, edit ${service}, set its Repository to ${image} and apply. Its data stays in ${path}.`,
   'engine.stepCasaos': ({ image, service, path }: { image: string; service: string; path: string }) =>
     `In CasaOS, edit the ${service} app, set its image to ${image} and save. Its data stays in ${path}.`,
-  'engine.stepDesktop': () =>
-    'Quit and reopen hbook. If Admin → Sources then offers to download the extension engine, download it: that is the version this hbook was tested with.',
   'engine.stepOther': ({ image }: { image: string }) => `Run ${image} in place of the engine you have, on the same data.`,
   'engine.versionTitle': () => 'Engine version',
   'engine.versionNewer': ({ version, tested }: { version: string; tested: string }) =>
@@ -724,24 +697,11 @@ const EN = {
   'autofix.item.skipped': ({ why }: { why: string }) => AUTOFIX_SKIPPED[why] ?? why,
 
   // What only a person can do (summary.needsYou), each with its one key.
-  'autofix.needs.solverDown': () => forDesktop(
-    'The Cloudflare solver is not answering: check that its container is running',
-    'hbook’s Cloudflare helper is not answering: quit and reopen hbook',
-  ),
-  'autofix.needs.solverFailing': () => forDesktop(
-    'The Cloudflare solver answers but keeps failing: restart its container',
-    'hbook’s Cloudflare helper keeps failing: quit and reopen hbook',
-  ),
+  'autofix.needs.solverDown': () => 'The Cloudflare solver is not answering: check that its container is running',
+  'autofix.needs.solverFailing': () => 'The Cloudflare solver answers but keeps failing: restart its container',
   'autofix.needs.engine': () => 'The extension engine needs a look',
-  'autofix.needs.foldersTwice': () => forDesktop(
-    'The library and the downloads folder are inside each other: mount them side by side',
-    // The desktop app's own words, as nested.note's: its library folder and the manga folder they added.
-    'hbook’s library folder and the manga folder you added are inside each other: keep them side by side',
-  ),
-  'autofix.needs.sourceLimit': ({ n }: { n: number }) => forDesktop(
-    `${n} extension source${s(n, '', 's')} ${s(n, 'is', 'are')} over the source limit: raise SUWAYOMI_MAX_SOURCES or hide languages you do not read`,
-    `${n} extension source${s(n, '', 's')} ${s(n, 'is', 'are')} over the source limit: hide languages you do not read`,
-  ),
+  'autofix.needs.foldersTwice': () => 'The library and the downloads folder are inside each other: mount them side by side',
+  'autofix.needs.sourceLimit': ({ n }: { n: number }) => `${n} extension source${s(n, '', 's')} ${s(n, 'is', 'are')} over the source limit: raise SUWAYOMI_MAX_SOURCES or hide languages you do not read`,
   'autofix.needs.freeSlot': ({ n }: { n: number }) => `${n} series ${s(n, 'waits', 'wait')} for a free slot under the source limit`,
   'autofix.needs.frozen': ({ n }: { n: number }) => `${n} series ${s(n, 'has', 'have')} no working source anywhere`,
   'autofix.needs.sourceFailing': ({ n }: { n: number }) => `${n} source${s(n, '', 's')} your series use ${s(n, 'is', 'are')} still failing`,
@@ -770,8 +730,7 @@ const EN = {
   'autofix.clears.partial': ({ n }: { n: number }) => `${n} chapter${s(n, '', 's')} with missing pages ${s(n, 'is', 'are')} completed by the sweep`,
   'autofix.clears.slow': ({ n }: { n: number }) => `${n} source${s(n, '', 's')} answered slowly or empty lately`,
   // v0.55.3: one of two solvers is not answering while the other solves: Health's solver card is amber, and nothing waits
-  // on a person -- Needs you holds the solver only when neither answers (the owner's plan). The desktop app has one
-  // helper and never a backup, so neither is ever said there.
+  // on a person -- Needs you holds the solver only when neither answers (the owner's plan).
   'autofix.clears.mainSolverDown': () => 'The main Cloudflare solver is not answering, and the backup is solving meanwhile',
   'autofix.clears.backupSolverDown': () => 'The backup Cloudflare solver is not answering, and the main one is solving',
 

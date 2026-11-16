@@ -98,12 +98,9 @@ test('a nightly switched off does not run, and has no night to catch up on (v0.6
   // It sits before the run is marked as running or attempted, and re-arms through arm() like every other way out.
   assert.match(tick, /^const backupTick = async \(\) => \{\s*if \(!\(await backupSettings\(\)\)\.enabled\) \{ void arm\(\); return; \}\s*try \{\s*runtime\.backingUp = true;/,
     'backupTick does not read the switch before it runs');
-  // Reintroduce by passing `desktop: isDesktop()` alone: a desktop with the nightly off wakes every five minutes to
-  // find it off, because its last run only gets older.
   const next = server.slice(server.indexOf('const nextBackupDelay'), server.indexOf('const arm = async ()'));
   assert.match(next, /SELECT backup_hour, backup_last_run, backup_enabled FROM server_settings/);
   assert.match(next, /on = s\.rows\[0\]\?\.backup_enabled !== false;/);
-  assert.match(next, /desktop: isDesktop\(\) && on \}\);/);
 });
 
 test('the settings route takes the switch and the count, and re-arms on the switch', () => {

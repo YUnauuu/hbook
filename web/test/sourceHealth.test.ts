@@ -304,7 +304,7 @@ test('the glossary is at the foot, behind a link, no longer above the list', () 
   assert.match(html, /data-source-foot="note"[^>]*aria-expanded="false"[^>]*>How a source counts as failing/);
   // Health() gives the sources card this body, and every other card the one it had.
   const page = code(read('app/admin/page.tsx'));
-  const health = slice(page, 'function Health()', 'function DesktopUpdateNote(');
+  const health = slice(page, 'function Health()', '');
   assert.match(health, /\{isOpen && c\.id === 'sources' && \(\s*<div id=\{`health-\$\{c\.id\}-details`\} className="border-t border-ink-800\/70">\s*<SourceHealthBody check=\{c\} \/>\s*<\/div>\s*\)\}/,
     'the sources card does not draw its own body');
   assert.match(health, /\{isOpen && c\.id !== 'sources' && \(\s*<div id=\{`health-\$\{c\.id\}-details`\} className="border-t border-ink-800\/70">\s*<HealthCardActions check=\{c\} \/>/,

@@ -4,7 +4,7 @@
  *
  * - The pack: llama.cpp's llama-server built for the image (Alpine, musl), onnxruntime-web's Node build, PaddleOCR's
  *   models and the fonts. Built and published by .github/workflows/translate-pack.yml on its own prerelease, never
- *   replaced once an app version pins it (the same rules as the desktop app's extension engine pack).
+ *   replaced once an app version pins it.
  * - The model: from Hugging Face at a pinned revision. Both are Apache-2.0 and downloadable without an account.
  */
 export interface PinnedFile { name: string; url: string; sha256: string; bytes: number }

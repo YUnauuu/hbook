@@ -11,15 +11,14 @@
 import { env } from '../env';
 import { q } from './db';
 import { oidcEnabled, oidcName } from './oidc';
-import { isDesktop } from './desktop';
 
 export type AuthMode = 'local' | 'oidc-only';
 
 const raw = (): string => (process.env.AUTH_MODE ?? '').trim().toLowerCase();
 
-/** The sign-in mode in force. hbook Desktop signs its one person in through the app, whatever is set: local. */
+/** The sign-in mode in force. */
 export function authMode(): AuthMode {
-  return !isDesktop() && raw() === 'oidc-only' ? 'oidc-only' : 'local';
+  return raw() === 'oidc-only' ? 'oidc-only' : 'local';
 }
 
 /** SSO-only mode is on. */
@@ -40,7 +39,6 @@ export const bootstrapSub = (): string => (process.env.OIDC_BOOTSTRAP_ADMIN_SUB 
 export interface AuthFacts {
   /** AUTH_MODE as written. */
   mode: string;
-  desktop: boolean;
   oidc: boolean;
   linkByUsername: boolean;
   bootstrapSub: string;
@@ -53,12 +51,12 @@ export interface AuthFacts {
  * Why the server cannot start in the sign-in mode it was given, one sentence each; empty when it can. Each is a
  * configuration that cannot work, and SSO-only is a security setting: a server that started anyway would leave the
  * password routes open while its operator thinks them closed (a typo in the mode), or have no way for anyone to sign
- * in. hbook Desktop ignores the mode (authMode), so nothing here stops it.
+ * in.
  */
 export function authModeProblems(f: AuthFacts): string[] {
   const mode = f.mode.trim().toLowerCase();
   if (mode !== '' && mode !== 'local' && mode !== 'oidc-only') return [`AUTH_MODE is "${f.mode}": use local or oidc-only.`];
-  if (mode !== 'oidc-only' || f.desktop) return [];
+  if (mode !== 'oidc-only') return [];
   const out: string[] = [];
   if (!f.oidc) out.push('AUTH_MODE=oidc-only needs single sign-on: set OIDC_ISSUER and OIDC_CLIENT_ID.');
   if (f.linkByUsername) {
@@ -74,7 +72,6 @@ export function authModeProblems(f: AuthFacts): string[] {
 /** This process's facts, for authModeProblems: boot passes whether any account exists. */
 export const authFacts = (hasUsers: boolean): AuthFacts => ({
   mode: process.env.AUTH_MODE ?? '',
-  desktop: isDesktop(),
   oidc: oidcEnabled(),
   linkByUsername: env.OIDC_LINK_BY_USERNAME,
   bootstrapSub: bootstrapSub(),
@@ -102,10 +99,6 @@ const NAMED = 10;
  */
 export async function authModeWarnings(): Promise<string[]> {
   const out: string[] = [];
-  if (isDesktop()) {
-    if (raw() && raw() !== 'local') out.push('hbook Desktop signs in through the app: AUTH_MODE is ignored.');
-    return out;
-  }
   if (!ssoOnly()) {
     if ((process.env.AUTH_RESCUE_ADMIN ?? '').trim()) out.push('AUTH_RESCUE_ADMIN does nothing outside AUTH_MODE=oidc-only: every account signs in with its password.');
     return out;

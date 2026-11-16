@@ -38,7 +38,7 @@ test('the view is this device\'s, By check until it chooses, and a private windo
 
 test('the Health tab: a view switch above the findings, the series view on the shared report, keys and the card look', () => {
   const page = code('app/admin/page.tsx');
-  const health = page.slice(page.indexOf('function Health()'), page.indexOf('function DesktopUpdateNote()'));
+  const health = page.slice(page.indexOf('function Health()'), page.length);
   assert.match(health, /<Segmented square label=\{tr\('Group the findings'\)\} value=\{view\} onChange=\{pickView\}/);
   assert.match(health, /\{view === 'series' && \(data\?\.bySeries\s*\? <HealthBySeries rows=\{data\.bySeries\} checks=\{checks\} \/>/);
   assert.match(health, /\{view === 'checks' && checks\.map\(\(c\) => \{/);

@@ -9,7 +9,6 @@ import { relativeTime } from '@/lib/format';
 import { useAuth, canDownload } from '@/lib/auth';
 import { keys, t as tr } from '@/lib/i18n';
 import { reasonText } from '@/lib/said';
-import { isDesktop } from '@/lib/desktop';
 import { EmptyState } from '@/components/EmptyState';
 import { ProgressBar, Reveal } from '@/components/ui';
 import { SourceCard, SourceItem, StillLoadingCard } from '@/components/cards';
@@ -712,9 +711,7 @@ function DiscoverInner() {
           </>
         ) : isAdmin ? (
           <EmptyState art={ART.emptyLibrary} title={tr('No sources installed')}
-            sub={isDesktop()
-              ? tr('Add a site, or turn on an extension source, in Admin → Sources.')
-              : tr('Add a site or an extension in Admin → Sources, or mount a source pack at SOURCES_DIR.')} />
+            sub={tr('Add a site or an extension in Admin → Sources, or mount a source pack at SOURCES_DIR.')} />
         ) : (
           <EmptyState art={ART.emptyLibrary} title={tr('No sources available')}
             sub={tr('There is nothing set up for your account to browse yet. Ask whoever runs this server.')} />

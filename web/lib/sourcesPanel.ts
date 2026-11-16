@@ -369,15 +369,13 @@ export function sheetKeys(s: OverviewSource, a?: Pick<SourcesAttention, 'replace
 /**
  * Why a source the engine's limit left out is not loaded, and the way to room, in one line under its state on the sheet
  * (v0.55.1): "The engine’s limit of 25 sources is full. Turn off a source you don’t use, or raise SUWAYOMI_MAX_SOURCES."
- * The variable is the Docker install's, copied in untranslated; the desktop app has none to raise. Null for any other
- * source.
+ * The variable is the Docker install's, copied in untranslated. Null for any other source.
  */
-export function limitLine(s: Pick<OverviewSource, 'overLimit'>, desktop: boolean): string | null {
+export function limitLine(s: Pick<OverviewSource, 'overLimit'>): string | null {
   const n = s.overLimit?.limit;
   if (!n) return null;
   const full = n === 1 ? tr('The engine’s limit of 1 source is full.') : tr('The engine’s limit of {n} sources is full.', { n: numberText(n) });
-  return joinSentences(full, desktop ? tr('Turn off a source you don’t use.')
-    : tr('Turn off a source you don’t use, or raise {name}.', { name: 'SUWAYOMI_MAX_SOURCES' }));
+  return joinSentences(full, tr('Turn off a source you don’t use, or raise {name}.', { name: 'SUWAYOMI_MAX_SOURCES' }));
 }
 
 /** The request behind Turn on: undo what switched it off -- an admin's switch, or its extension's. */

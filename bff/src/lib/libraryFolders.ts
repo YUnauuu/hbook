@@ -9,7 +9,6 @@
 //
 // The preview runs the same statement and stops short of the UPDATE, so the count it promises is what the save does.
 import { visibleToAll } from './visibility';
-import { diskSpelling } from './libraryAdmin';
 import { LIBRARY_ROOT, DL_ROOT } from './library';
 import { toStoredRel, trimTrailingSlashes } from './relPath';
 
@@ -22,17 +21,14 @@ export const LIBRARY_MAX_FOLDERS = 200;
  * The folders a save names, as they are stored, or null when one is not a folder under the root.
  *
  * Each is checked as a library's one folder always was: relative and posix (a `\` typed on Windows is a separator,
- * lib/relPath.ts), no `..`, and on the desktop in the spelling the disk already has (libraryAdmin.ts diskSpelling:
- * NTFS and APFS find `manga/seinen` for `Manga/Seinen`, but series folders are compared as exact strings). The same
- * folder named twice -- or typed in two spellings the disk resolves to one -- is held once, in its first place.
+ * lib/relPath.ts) and no `..`. The same folder named twice is held once, in its first place.
  */
 export async function storedFolders(raw: string[]): Promise<string[] | null> {
   const out: string[] = [];
   for (const r of raw) {
     const typed = trimTrailingSlashes(toStoredRel(r).replace(/^\/+/, '')).trim();
     if (!typed || typed.includes('..') || typed.startsWith('/')) return null;
-    const path = await diskSpelling([LIBRARY_ROOT, DL_ROOT], typed);
-    if (!out.includes(path)) out.push(path);
+    if (!out.includes(typed)) out.push(typed);
   }
   return out.length ? out : null;
 }

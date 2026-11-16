@@ -42,9 +42,9 @@ test('the reader asks from the page it is on, polls only while pages wait, and s
   assert.match(page, /onTranslate=\{trOffer\?\.available \? applyTranslate : undefined\}/);
 });
 
-test('the switch shows only where the server offers it, and Admin → Settings offers the engine except on desktop', () => {
+test('the switch shows only where the server offers it, and Admin → Settings offers the engine', () => {
   assert.match(read('components/ReaderSettings.tsx'), /\{onTranslate && \(\n\s+<div className="py-3" data-reader-translate>/);
-  assert.match(read('components/AdminSettings.tsx'), /\{!desktop && <TranslateRow \/>\}/);
+  assert.match(read('components/AdminSettings.tsx'), /<TranslateRow \/>/);
   const row = read('components/TranslateSettings.tsx');
   // The admin sees what Download costs before pressing it, and the row is gone where the server cannot run it.
   assert.match(row, /if \(!st \|\| st\.state === 'unsupported'\) return null;/);

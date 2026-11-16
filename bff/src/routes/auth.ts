@@ -39,8 +39,6 @@ import { generateRecoveryCodes, generateSecret, otpauthURL, recoveryCodeForm, sh
 import { oidcEnabled, oidcName, beginLogin, completeLogin, isAdminByGroup, type OidcClaims } from '../lib/oidc';
 import { randomBytes } from 'crypto';
 import { SESSION_COOKIE as KOMGA_SESSION_COOKIE } from '../lib/komgaSession';
-import { desktopFailAudit, desktopSecretMatches, isDesktop, isLoopback } from '../lib/desktop';
-import { desktopUserId, ensureDesktopUser } from '../lib/desktopUser';
 import { authMode, bootstrapSub, mayBootstrap, rescueAdmin, ssoOnly } from '../lib/authMode';
 import { applyMemberDefaults } from '../lib/memberDefaults';
 import { talkOn } from '../lib/comments';
@@ -82,13 +80,10 @@ const USER_AUTH_COLS =
  * `local`: the session was entered without a credential (lib/auth.ts withoutCredential), so the token says `loc: true`
  * and is good at home only (authenticate). Every other token is byte-for-byte what it was.
  */
-function signAccess(app: FastifyInstance, userId: string, role: string, local = false): { accessToken: string; expiresIn: number; desktop?: true } {
-  // `desktop: true` tells the web app it is inside hbook Desktop (web/lib/desktop.ts). Spread in only when
-  // on, so every server response is byte-for-byte what it was.
+function signAccess(app: FastifyInstance, userId: string, role: string, local = false): { accessToken: string; expiresIn: number } {
   return {
     accessToken: signSessionJwt(app, { sub: userId, role }, env.ACCESS_TTL_SECONDS, local),
     expiresIn: env.ACCESS_TTL_SECONDS,
-    ...(isDesktop() ? { desktop: true as const } : {}),
   };
 }
 /** The image cookie of a session entered without a credential carries `loc` too (routes/images.ts): it lasts a week. */
@@ -303,7 +298,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const refresh = await issueRefreshToken(user.id, { deviceId, deviceName, ip, userAgent: ua, via: 'password' });
     reply.setCookie(REFRESH_COOKIE, refresh, cookieOptions());
     setImgCookie(app, reply, user.id);
-    if (parsed.data.remember && !isDesktop()) {
+    if (parsed.data.remember) {
       const live = await validateRefreshToken(refresh);
       if (live) await rememberSession(ensureDeviceKey(req, reply), user.id, live.sessionId);
     }
@@ -318,80 +313,15 @@ export default async function authRoutes(app: FastifyInstance) {
     const s = await one<{ server_name: string; allow_registration: boolean }>('SELECT server_name, allow_registration FROM server_settings WHERE id = 1');
     return {
       serverName: s?.server_name || 'hbook',
-      // Desktop has one person and no sign-up form, whatever a restored server database says; SSO-only mode (v0.63.0)
-      // has no sign-up route at all.
-      allowRegistration: !isDesktop() && local && !!s?.allow_registration,
+      // SSO-only mode (v0.63.0) has no sign-up route at all.
+      allowRegistration: local && !!s?.allow_registration,
       oidc: oidcEnabled() ? { enabled: true, name: oidcName() } : { enabled: false, name: '' },
       // v0.63.0 (#208): `oidc-only` is a sign-in screen with the provider's button alone, and `rescue` the password form
       // beside it while AUTH_RESCUE_ADMIN reopens it for one admin (components/LoginScreen.tsx).
       mode: authMode(),
       ...(rescueAdmin() ? { rescue: true as const } : {}),
-      // What a browser tab pointed at the desktop app's port sees instead of a sign-in form (LoginScreen.tsx).
-      ...(isDesktop() ? { desktop: true as const } : {}),
     };
   });
-
-  /**
-   * The desktop sign-in handshake: how hbook Desktop's own window gets a session with no sign-in screen.
-   *
-   * The shell starts this server with a fresh 256-bit secret on every launch (lib/desktop.ts takes it out of
-   * the environment), and its main process adds `X-hbook-Desktop: <secret>` to exactly this request, below
-   * the page -- page JavaScript never sees it. Success answers exactly like `/auth/login`: the same body and the
-   * same `hbook_rt` + `hbook_img` cookies, so every other route, image loading and refresh work unchanged.
-   *
-   * Registered ONLY when the desktop switch is on, so the server's route table (openapiCoverage.test.ts) is
-   * untouched, and deliberately not in openapi.yaml: it is a private handshake with the shell, not an API.
-   *
-   * Checked in this order, each answer saying as little as possible:
-   *   1. not from this machine -> 404 (as if the route did not exist, so a future LAN mode cannot expose it);
-   *   2. an Origin that is not the app's own -> 403 (a page elsewhere cannot trigger it -- the header would be
-   *      missing anyway, but a no-cors POST from another origin must not even reach the comparison);
-   *   3. the secret, compared by digest in constant time -> 401, audited when one was offered (at most a row
-   *      a minute, so a flood cannot grow the database).
-   * No rate limit and no lockout, on purpose: everything arrives from 127.0.0.1, so another local account could
-   * exhaust a limit and lock the real window out, and a 256-bit secret needs none. No 2FA: holding the OS
-   * account and the shell's secret IS the factor.
-   *
-   * Reintroduce by dropping any one check: desktopAuth.test.ts names each answer.
-   */
-  if (isDesktop()) {
-    app.post('/auth/desktop', async (req, reply) => {
-      if (!isLoopback(req.socket.remoteAddress)) return reply.code(404).send({ error: 'not_found' });
-      const origin = req.headers.origin;
-      if (origin !== undefined && origin !== env.PUBLIC_ORIGIN) return reply.code(403).send({ error: 'forbidden' });
-      const header = req.headers['x-hbook-desktop'];
-      if (!desktopSecretMatches(header)) {
-        // ⚠️ With no rate limit, a row per refusal let anything on the PC grow audit_log without bound. A request
-        // that offered no secret guessed nothing and is not written down; wrong secrets are, one row a minute
-        // at most, counting the attempts it stands for (lib/desktop.ts desktopFailAudit).
-        const attempts = header ? desktopFailAudit() : null;
-        if (attempts !== null) await logAudit('login.desktop_fail', { detail: { reason: 'bad_secret', attempts }, req });
-        return reply.code(401).send({ error: 'unauthorized' });
-      }
-      // The window may name itself (the same device id the sign-in form sends), and nothing else is read.
-      const b = z.object({ deviceId: z.string().max(128).optional() }).safeParse(req.body ?? {});
-      const userId = (await desktopUserId()) ?? (await ensureDesktopUser());
-      const user = await one<{ role: string; username: string | null }>('SELECT role, username FROM users WHERE id = $1', [userId]);
-      const meta = { ip: clientIp(req), userAgent: (req.headers['user-agent'] as string) || null };
-      // Back from a profile switched to on this PC: the owner's own session,
-      // the one the profile was opened from, is taken up again and the profile's is ended -- rather than a new owner
-      // session each time, and the old ones left live with no cookie anywhere. Reintroduce a fresh session here:
-      // "back to the owner takes up the session the profile came from" in desktopProfiles.int.test.ts counts two.
-      const held = req.cookies?.[REFRESH_COOKIE];
-      const cur = held ? await validateRefreshToken(held) : null;
-      const from = cur && withoutCredential(cur.via) ? await parentHeadOf(cur.sessionId, userId) : null;
-      if (cur && withoutCredential(cur.via)) await revokeRefreshToken(held!);
-      const resumed = from ? await resumeHead(from, meta) : null;
-      const refresh = resumed ?? await issueRefreshToken(userId, {
-        deviceId: b.success ? b.data.deviceId : undefined, deviceName: 'This PC', via: 'desktop', ...meta,
-      });
-      const expires = resumed ? from!.expiresAt.getTime() : refreshExpiresAt();
-      reply.setCookie(REFRESH_COOKIE, refresh, { ...cookieOptions(), maxAge: Math.max(1, Math.floor((expires - Date.now()) / 1000)) });
-      setImgCookie(app, reply, userId);
-      await logAudit('login.desktop', { userId, username: user?.username ?? undefined, ...(resumed ? { detail: { from: cur!.userId } } : {}), req });
-      return reply.send({ ...signAccess(app, userId, user?.role ?? 'admin'), user: await userPayload(userId), refreshExpiresAt: expires });
-    });
-  }
 
 
   // ---- OIDC / SSO -----------------------------------------------------------
@@ -761,9 +691,8 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // ---- "who is reading?" at home ----
 
-  /** Whether an admin turned the sign-in screen's "who is reading?" on (Admin -> Settings -> Server). Never on desktop. */
-  const localPickOn = async () => !isDesktop()
-    && !!(await one<{ on: boolean }>('SELECT local_pick AS on FROM server_settings WHERE id = 1'))?.on;
+  /** Whether an admin turned the sign-in screen's "who is reading?" on (Admin -> Settings -> Server). */
+  const localPickOn = async () => !!(await one<{ on: boolean }>('SELECT local_pick AS on FROM server_settings WHERE id = 1'))?.on;
 
   /**
    * The profiles the sign-in screen offers at home without a password, when an admin turned it on: the enabled ones that
@@ -816,7 +745,7 @@ export default async function authRoutes(app: FastifyInstance) {
    */
   app.get('/auth/ring', async (req) => {
     const key = deviceKeyOf(req);
-    if (!key || isDesktop()) return { content: [] };
+    if (!key) return { content: [] };
     const home = clientZone(req) === 'local';
     return {
       content: (await ringOf(key)).filter((r) => home || !withoutCredential(r.via))
@@ -835,7 +764,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const b = z.object({ profileId: z.string().uuid() }).safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'bad_request' });
     const key = deviceKeyOf(req);
-    const [r] = key && !isDesktop() ? await ringOf(key, b.data.profileId) : [];
+    const [r] = key ? await ringOf(key, b.data.profileId) : [];
     if (!key || !r) {
       // Anyone can ask this, with no session: written down at most once a minute, as "who is reading?" is, and against
       // nobody -- the id is the caller's word, not an account that tried to sign in.

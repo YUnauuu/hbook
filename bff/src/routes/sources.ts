@@ -80,8 +80,6 @@ export function _clearFillScans(): void { fillScans.clear(); }
 import { persistScan, setBookDates, setBookMeta, libraryIdFor, libraryRows, LIBRARY_ROOT, DL_ROOT } from '../lib/library';
 import { notInLibrary, notInLibraryParts } from '../lib/downloadCensus';
 import { english, joined, say, saids, type Part, type Said } from '../lib/said';
-import { diskSpelling } from '../lib/libraryAdmin';
-import { isDesktop } from '../lib/desktop';
 import { newSeriesId } from '../lib/ids';
 import { cleanDescription } from '../lib/htmlText';
 import { runsInside, updateSeries } from '../lib/updater';
@@ -1545,17 +1543,6 @@ export async function addSeriesFromSource(opts: {
   const srcDir = process.platform === 'win32' ? sanitize(src.name) : src.name;
   // An edition's folder carries its language (lib/editions.ts editionFolder), so it never lands in the original's.
   let folder = edition ? editionFolder(srcDir, title, edition.lang) : `${srcDir}/${sanitize(title)}`;
-  // ⚠️ Desktop, case-insensitive disks (NTFS, APFS): a source that now spells the title `Solo leveling`
-  // still downloads into the existing `Solo Leveling` folder, and the scanner reads that folder back with
-  // its on-disk spelling -- so a row keyed on the new spelling never met its own chapters, and the series
-  // split in two. Reuse the spelling already stored, then the one already on disk; only a folder that
-  // exists nowhere keeps the new one. The server's disks are case-sensitive and keep the exact match.
-  if (isDesktop()) {
-    const stored = await one<{ folder: string }>(
-      'SELECT folder FROM lib_series WHERE lower(folder) = lower($1) ORDER BY (deleted_at IS NOT NULL), created_at LIMIT 1', [folder]);
-    folder = stored?.folder ?? await diskSpelling([DL_ROOT, LIBRARY_ROOT], folder);
-  }
-
   // Source identity survives a title change. An exact entry already followed by this library keeps its shelf.
   if (!edition) {
     const exact = await one<{ folder: string }>(

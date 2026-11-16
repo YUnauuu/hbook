@@ -698,8 +698,7 @@ export function runStatusWord(status: RepairRunRecord['status']): string {
  * repairRun.ts solverQuiet) it names the one that is not answering: "the solver is not answering" beside a backup that
  * is solving every request would send the admin to look for an outage there is not.
  */
-export function solverDownLine(desktop: boolean, which: 'all' | 'main' | 'backup' | null = 'all'): string {
-  if (desktop) return tr('The Cloudflare helper is not answering. Quit and reopen hbook; a reset from here would change nothing.');
+export function solverDownLine(which: 'all' | 'main' | 'backup' | null = 'all'): string {
   if (which === 'main') return tr('The main solver is not answering; the backup is solving meanwhile. Restart the main solver\'s container; a reset from here would change nothing.');
   if (which === 'backup') return tr('The backup solver is not answering. Restart its container; a reset from here would change nothing.');
   return tr('The solver is not answering. Restart its container; a reset from here would change nothing.');

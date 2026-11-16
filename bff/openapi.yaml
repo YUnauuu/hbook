@@ -6,7 +6,7 @@
 openapi: 3.1.0
 info:
   title: hbook API
-  version: "0.2"
+  version: "0.3"
   description: "Everything the web app does, it does over this API. Session JWTs are for the browser; scripts
     use a personal API token (Profile -> Connections -> API tokens), sent as `Authorization: Bearer uy_...`.
     Scopes: read (every token; GET plus the library search POST, which is a query), write (anything that changes data), admin (the /api/admin surface, which also
@@ -37,7 +37,7 @@ tags:
   - name: reader
     description: "The reader app's API: six features, no accounts, no tokens"
   - name: comments
-    description: "A chapter's comments and reactions, for the members who may open its series (v0.87.0; not on hbook Desktop)"
+    description: "A chapter's comments and reactions, for the members who may open its series (v0.87.0)"
   - name: downloads
     description: Offline downloads
   - name: images
@@ -789,7 +789,7 @@ components:
         through the OIDC provider with OIDC_ALLOW_SIGNUP, in SSO-only mode too. A member's own fields from PATCH
         /api/admin/users/{id}, with their meanings. The account is made with them in one transaction. Never applied to the
         first admin (POST /api/setup, or SSO-only mode's first sign-in), to an account made by POST /api/admin/users, or to
-        the desktop app's own; an account the provider makes an admin (OIDC_ADMIN_GROUP) carries them too, unrestricted
+        an account the provider makes an admin (OIDC_ADMIN_GROUP) carries them too, unrestricted
         while it is one. Saving them changes no account that exists. GET always answers all three; PATCH takes any of them,
         an absent one left as it is.
       properties:
@@ -1465,8 +1465,8 @@ paths:
       summary: Create an account, when registration is open.
       operationId: postAuthRegister
       description: >-
-        Only while Admin → Settings → Open registration is on (`allowRegistration` in GET /auth/config; never on
-        hbook Desktop). Makes a member (role `user`) and signs them in exactly as POST /auth/login does: the same
+        Only while Admin → Settings → Open registration is on (`allowRegistration` in GET /auth/config).
+        Makes a member (role `user`) and signs them in exactly as POST /auth/login does: the same
         body and the same refresh and image cookies. Since v0.61.0 the web sign-in screen has a form for it, the
         device names itself as at sign-in (`deviceId`, `deviceName`, shown in the sessions list), and a name that
         differs from an existing one only in case is taken. Five per address per ten minutes.
@@ -1550,7 +1550,7 @@ paths:
       operationId: getAuthPick
       description: >-
         When an admin turned it on (`localPick` on PATCH /api/admin/settings) and the caller is inside LOCAL_NETWORKS:
-        the enabled profiles that open at home, as `{id, displayName, avatar}`. Otherwise, and on desktop, none.
+        the enabled profiles that open at home, as `{id, displayName, avatar}`. Otherwise, none.
       security: []
       responses:
         "200":
@@ -1599,7 +1599,7 @@ paths:
       description: >-
         By the device's own `hbook_dev` cookie, set by a sign-in with `remember: true`; no session needed. Each entry
         whose session is still live, as `{id, displayName, avatar}`. A session entered without a password is listed from
-        the home network only (LOCAL_NETWORKS). Empty on desktop.
+        the home network only (LOCAL_NETWORKS).
       responses:
         "200":
           description: "`{content: [{id, displayName, avatar}]}`"
@@ -1676,7 +1676,7 @@ paths:
     get:
       tags:
         - auth
-      summary: "The calling account: id, username, role, permissions, settings, `talk` (since v0.90.0: whether this server has chapter comments) and `kind`: `password` for every account until profiles that open without a password exist (`open`, `hybrid`), `desktop-owner` for the desktop app's own account."
+      summary: "The calling account: id, username, role, permissions, settings, `talk` (since v0.90.0: whether this server has chapter comments) and `kind`: `password` for every account until profiles that open without a password exist (`open`, `hybrid`)."
       operationId: getAuthMe
       security:
         - bearer: []
@@ -8313,7 +8313,7 @@ paths:
         of addresses, CIDR ranges and loopback / linklocal / uniquelocal -- never true, false, none or a bare number. In
         force at the next request, no restart. A value LOCAL_NETWORKS or TRUST_PROXY sets in the environment is a 409
         set_by_env naming it; a value boot would refuse is a 400 bad_network or bad_proxy with a sentence. The answer is
-        the GET's. Audit row settings.network. Not on the desktop app (404). Requires an admin account and a token
+        the GET's. Audit row settings.network. Requires an admin account and a token
         carrying the admin scope.
       security:
         - bearer: []
@@ -8439,7 +8439,7 @@ paths:
       summary: The translation engine and the Translate pages switch (since v0.85.0).
       operationId: getApiAdminTranslate
       description: >-
-        `state`: unsupported (this install cannot run it: the desktop app, or a platform with no pack), missing,
+        `state`: unsupported (this install cannot run it: a platform with no pack), missing,
         downloading (`done` of `total` bytes), ready or failed (`error`). `pick` is the model size Download chooses
         here (large on machines with 28 GB of memory or more), `need` the bytes it fetches and `free` the bytes free
         where they go (TRANSLATE_DIR). `running`: the engine's processes are up.
@@ -12858,11 +12858,11 @@ paths:
       description: "Requires an admin account and a token carrying the admin scope. Scopes only ever restrict.
         Not configured: `{configured: false, reachable: false, off: 'switch' | 'unset', platform, linkedSeries}`
         (`switch` is EXTENSION_ENGINE=0 with the bundled address). Configured: the fields above plus `engine`
-        (host:port), `platform` (desktop, compose, unraid, casaos, umbrel or unknown), `retry` ({attempts, since,
+        (host:port), `platform` (compose, unraid, casaos, umbrel or unknown), `retry` ({attempts, since,
         nextAt} while the registration retry runs, else null), `lastTry` and `lastTryOk` (the last attempt to reach
         the engine, this call's own look included, and whether it answered), `linkedSeries` (series added through an
         extension) and, when the engine answers, `solver` ({supported, enabled, wiring: ok | off | localhost |
-        other | unsupported, connectable, url}; `url` is never sent on desktop). When the engine answers but the
+        other | unsupported, connectable, url}). When the engine answers but the
         last registration missed it, this call registers its sources before replying. Since the engine upgrade:
         `buildType` (Stable or Preview), `tested` and `oldest` (the engine version this hbook was tested with, and
         the oldest it works with), `standing` (same | older | tooOld | newer | unknown: the engine's version against

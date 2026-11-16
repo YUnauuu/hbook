@@ -29,7 +29,7 @@ test('the sign-in screen is the provider\'s button alone only in SSO-only mode, 
 test('an SSO-only server\'s screen is its provider\'s button alone, decided once both answers are in', () => {
   const login = code(read('components/LoginScreen.tsx'));
   // Set only after /auth/config has answered: a password form shown in between would be a sign-in nobody can use.
-  assert.match(login, /else if \(first\) setMode\(first === 'login' && providerOnly\(c\) \? 'sso' : first\);/);
+  assert.match(login, /if \(first\) setMode\(first === 'login' && providerOnly\(c\) \? 'sso' : first\);/);
   const card = login.slice(login.indexOf("{mode === 'sso' && ("), login.indexOf("{mode === 'login' && ("));
   assert.ok(card.length > 0, 'there is no SSO-only screen');
   assert.match(card, /href="\/auth\/oidc\/start"/);
@@ -68,7 +68,7 @@ test('the profile manages no password and no 2FA in SSO-only mode, and links an 
   // A link, never a request: the server takes the account from this browser's session (bff /auth/oidc/link).
   assert.match(profile, /\{!user\?\.sso && <a href="\/auth\/oidc\/link" className="btn-key" data-sso-link>/);
   const settings = code(read('components/AdminSettings.tsx'));
-  assert.match(settings, /\{!desktop && !ssoOnly\(authConfig\) && \(\s*<SwitchRow id="registration" label=\{tr\('Open registration'\)\}/,
+  assert.match(settings, /\{!ssoOnly\(authConfig\) && \(\s*<SwitchRow id="registration" label=\{tr\('Open registration'\)\}/,
     'Open registration is offered where there is no sign-up');
 });
 

@@ -39,7 +39,7 @@ test('it offers only switches Settings already has, from the same hooks', () => 
   assert.match(menu, /\.some\(\(l\) => l\.adult\)/);
   assert.match(menu, /href="\/profile\/"/, 'the Profile route stays reachable');
   assert.match(menu, /\{tr\('Sign out'\)\}/);
-  assert.match(menu, /!isDesktop\(\) && <button/, 'no Sign out on the desktop app');
+  assert.match(menu, /<button type="button" onClick=\{\(\) => \{ onClose\(\); void logout\(\); \}\}/, 'no Sign out');
 });
 
 test('the phone opens the same body in a sheet from Home\'s avatar', () => {

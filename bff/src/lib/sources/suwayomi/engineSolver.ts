@@ -59,7 +59,7 @@ export async function getEngineSolver(run: Gql = defaultGql, timeoutMs = 15000):
 /**
  * Point the engine at `url` and switch its helper on, and say what it held before and holds now.
  *
- * Read first: desktop/engine/README.md records a setSettings that was the first settings access after the
+ * Read first: the engine's own README records a setSettings that was the first settings access after the
  * engine booted as echoed back and then lost (measured for extensionRepos, a migrated value; the same order costs
  * nothing here). A read is one round trip; a write that silently did not stick is a Health row that never clears.
  */
@@ -77,7 +77,7 @@ export async function setEngineSolver(url: string, run: Gql = defaultGql): Promi
  * Not flaresolverr.ts `solverUrl()`: that falls back to the development stack's `http://hbook-trawl:8191`
  * so the built-in engines always have somewhere to ask, and offering to point someone's engine at a host that
  * exists on one development machine would be a fix that breaks it. Read on each call rather than once, so a
- * test can vary it; on desktop the shell sets it before the server starts (lib/desktop).
+ * test can vary it.
  */
 export function ourSolverUrl(e: NodeJS.ProcessEnv = process.env): string {
   return (e.FLARESOLVERR_URL ?? '').trim();
@@ -98,22 +98,20 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'
 /**
  * How the engine's helper is wired, against `ours` (hbook's own FLARESOLVERR_URL, '' when unset).
  *
- * `desktop`: the desktop shell points the engine at the in-app helper on 127.0.0.1 on purpose, so localhost
+ * A helper on localhost is the in-app one, so localhost
  * there is the right answer and never `localhost` (it is `ok` when it is our own helper, `other` otherwise).
  */
-export function solverWiring(s: EngineSolver, ours: string, desktop: boolean): SolverWiring {
+export function solverWiring(s: EngineSolver, ours: string): SolverWiring {
   if (!s.supported) return 'unsupported';
   if (!s.enabled || !s.url.trim()) return 'off';
   if (ours && norm(s.url) === norm(ours)) return 'ok';
-  if (!desktop) {
-    let host = '';
-    try { host = new URL(s.url.trim()).hostname.toLowerCase(); } catch { /* not a URL: not localhost either */ }
-    if (LOCAL_HOSTS.has(host)) return 'localhost';
-  }
+  let host = '';
+  try { host = new URL(s.url.trim()).hostname.toLowerCase(); } catch { /* not a URL: not localhost either */ }
+  if (LOCAL_HOSTS.has(host)) return 'localhost';
   return 'other';
 }
 
-/** The host a solver address names, for the audit log: never the path, which on desktop carries a token. */
+/** The host a solver address names, for the audit log: never the path, which can carry a token. */
 export function solverHost(u: string): string {
   try { return new URL(u).host; } catch { return ''; }
 }

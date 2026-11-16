@@ -6,17 +6,14 @@
 import { hash } from '@node-rs/argon2';
 import { randomBytes } from 'crypto';
 import type { Query } from './memberDefaults';
-import { isDesktop } from './desktop';
 
 export type ProfileKind =
   /** Every account before profiles: a password, or the sign-on provider, from anywhere. */
   | 'password'
-  /** No credential: opens from the local network only, through someone else's session or the desktop app. */
+  /** No credential: opens from the local network only, through someone else's session. */
   | 'open'
   /** Opens without a password from the local network, and with its credential from anywhere else. */
   | 'hybrid'
-  /** The desktop app's one account, signed in by the app itself (lib/desktopUser.ts). */
-  | 'desktop-owner'
   /** No credential and not open at home: no way in. The management routes never make one; an old row might be one. */
   | 'none';
 
@@ -28,9 +25,7 @@ export interface ProfileRow {
   auth_kind: string;
 }
 
-/** `desktop`: whether this server is the desktop app's; asked of the switch unless a test says. */
-export function profileKind(row: ProfileRow, desktop: boolean = isDesktop()): ProfileKind {
-  if (desktop && row.auth_kind === 'desktop') return 'desktop-owner';
+export function profileKind(row: ProfileRow): ProfileKind {
   const credential = row.password_login || row.sso;
   if (credential) return row.local_open ? 'hybrid' : 'password';
   return row.local_open ? 'open' : 'none';
@@ -54,7 +49,7 @@ export const MAX_MANAGED_PROFILES = 6;
 
 /**
  * A password hash nobody can type: 32 random bytes, hashed and forgotten -- the row is a valid user everywhere a hash
- * is expected and password sign-in can never open it (lib/desktopUser.ts, the sign-on provider's accounts).
+ * is expected and password sign-in can never open it.
  */
 export const placeholderPasswordHash = (): Promise<string> => hash(randomBytes(32).toString('base64url'));
 

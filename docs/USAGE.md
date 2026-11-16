@@ -18,15 +18,10 @@ environment variables see [CONFIGURATION.md](CONFIGURATION.md).
 - [11. Install as an app & offline](#11-install-as-an-app--offline)
 - [12. Backups & restore](#12-backups--restore)
 - [13. Troubleshooting & FAQ](#13-troubleshooting--faq)
-- [14. hbook Desktop](#14-hbook-desktop) — the Windows and macOS app (beta), now in [its own guide](DESKTOP.md)
 
 ---
 
 ## 1. First run & setup
-
-> 💻 **Using the Windows or Mac app?** Its first launch is different: it asks whether to run everything on the
-> computer or connect to your server, and on the computer there is no setup at all. That is all in
-> **[the desktop guide](DESKTOP.md)**; this section is about a server.
 
 ```bash
 docker compose up -d         # no config needed — secrets are generated automatically
@@ -66,10 +61,6 @@ database, see the recovery notes in [Contributing](../CONTRIBUTING.md#tests) bef
 
 ![Login](shots/login.webp)
 
-> 💻 **In the desktop app** on the computer itself there is no sign-in screen: it opens signed in. Connected to
-> your server, it shows your server's own sign-in page, exactly as below
-> ([desktop guide](DESKTOP.md#4-connect-to-your-own-server)).
-
 **Signing in with your own identity provider.** If the admin has configured OIDC, a **Continue with …** button
 appears under the password form and you can sign in with Authentik, Authelia, Keycloak or anything else that
 speaks OpenID Connect. Local accounts keep working alongside it, so a provider outage can never lock you out.
@@ -91,8 +82,7 @@ the sign-in form offers **Create an account** under it: a username (letters, num
 of at least 8 characters, typed twice, and you are signed in as a member. A name someone already has is taken,
 whatever its capital letters: with `admin` here, `Admin` is taken too. What a new account can open (which
 libraries, an age limit, downloads) is the admin's choice, under **Admin → Members → When someone signs up**. With the
-switch off there is no such link, and accounts come from the admin (**Admin → Members**). The desktop app never offers
-it.
+switch off there is no such link, and accounts come from the admin (**Admin → Members**).
 
 **Profiles without a password.** A household can give the children, or anyone who reads on the family tablet, a
 profile of their own that opens without a password, with its own progress, favourites and history. Tap your profile
@@ -111,10 +101,6 @@ in the environment outrank the page ([Configuration](CONFIGURATION.md)).
 An admin can also turn on **Admin → Settings → Server → Choose a profile at home**: at home, the sign-in screen then
 lists those profiles under *Who is reading?*, a tap each, with nobody else signed in first. From outside it lists
 nothing.
-> 💻 **In the desktop app** the computer's owner adds these profiles under **Profile → Account → Profiles** and switches
-> to one with **Switch profile**; **Back to my account** returns to the owner. The desktop app is home, so they always open
-> there.
-
 **Remember on this device.** Tick it under the password when you sign in, and this device keeps you: the sign-in
 screen lists you under *On this device*, and the others signed in here find you under **Switch profile**, a tap away
 without your password, for as long as your session lasts. **Sign out** forgets you on this device; **Sign in with
@@ -261,7 +247,7 @@ v0.86.0), the profile's cards, the import, the *Cloudflare solver* and the *Vers
 on Maintenance. A name works in your language and in English, and so do a few words people type instead
 (*flaresolverr*, *mihon*, *2fa*, *discord*), and an old name still finds where it went (*Scanlators*, *Updates &
 schedules*, *Tasks*). Each row says where it is (*Admin → Settings → Downloads*), and choosing it opens that page and
-the row itself, highlighted once it has loaded. Admin pages are listed for admins only, and what the desktop app does not have is not listed there. On a phone,
+the row itself, highlighted once it has loaded. Admin pages are listed for admins only. On a phone,
 the **Search** tab lists the same ones under the series it finds.
 
 ### Your reading: time, Wrapped and Incognito
@@ -311,15 +297,15 @@ what you read meanwhile; a tracker catches up at the next chapter you finish.
 opens a small panel instead of going to Profile: **Incognito reading**, **Show 18+** (only if the server has something
 for it to reveal) and **Reduce effects**, the same switches as **Profile → Settings** and the same state, so flipping
 one there moves the other here. **Profile** and **Profile settings** in the panel go to the page; **Sign out** is there
-too, except in the desktop app. **Esc**, a tap outside or tabbing away closes it.
+too. **Esc**, a tap outside or tabbing away closes it.
 
 **Your profile** opens under its hero — your name, how your reading is going, the weekly goal (tap its ring to set
 it), your chapters and series, and what to read next — and then one list (since v0.88.0): **You** and **Insights** as
 two pictures (your latest covers, your last four weeks), then **Settings**: **General** (the language, how series pages
 list chapters, shortcuts and Incognito reading), **Appearance** (the background, the accent colour, your avatar and
 Reduce effects), **Reading** (the reader's defaults, below), **This device** (offline downloads, new-chapter alerts and
-installing the app; not in the desktop app), **Connections** (trackers, reading apps and API tokens) and **Account**
-(password, two-factor and sessions; not in the desktop app). **Admin**, **Support hbook** and **Sign out** are at its
+installing the app), **Connections** (trackers, reading apps and API tokens) and **Account**
+(password, two-factor and sessions). **Admin**, **Support hbook** and **Sign out** are at its
 foot. The box above the list finds any page or setting by name and opens it. On a computer the list stays beside the
 page, under the hero — in full above You, a slimmer band above the rest; on a phone the hero and the list are the first
 screen: tap a row to open its page, under a band of the same art, and Back returns to the list. A row marked *This
@@ -1276,10 +1262,6 @@ changed while an archive runs; one that finishes lifts it, unless somebody chang
   not held to it (they stop at the downloader's own `MIN_FREE_GB`).
 - **How the slow archive works** — the rules above, in five lines.
 
-On the desktop app the archive runs only while hbook does — its window or the tray — and never keeps the
-computer awake, so a PC that sleeps at night is rarely inside a night-time window; its first look after the app
-starts comes three minutes in. Health does not report the gaps an archive is filling as problems (section 8).
-
 ### Downloads & politeness
 
 **Admin → Settings → Downloads → More options → Downloads & politeness** (admins) gathers what keeps the server gentle
@@ -1895,8 +1877,7 @@ recorded in the audit log).
 - **Turning it off** (since v0.90.0): **Profile → Settings → Reading → Comments and reactions**. Off hides the
   comments, the reactions and their counts everywhere for you, and you get no comment alerts, on every device you
   sign in on. It's yours alone: everyone else still sees the household's talk, including what you wrote before.
-- On a server with only one account there is nobody to talk to, so none of this shows, the switch included. hbook
-  Desktop doesn't have it either.
+- On a server with only one account there is nobody to talk to, so none of this shows, the switch included.
 
 ### Skipping the pages that are not the story
 
@@ -1995,7 +1976,6 @@ translated once per language and kept, so reading it again costs nothing.
   wrong.
 - **Privacy.** Pages, text and names never leave your server. Only the download comes from the internet (GitHub and
   Hugging Face).
-- Not in hbook Desktop yet. Chapters downloaded for offline reading show the original pages.
 
 ---
 
@@ -2400,8 +2380,7 @@ sites, but not every one.
 
 > **Cloudflare:** many sites sit behind Cloudflare. The bundled trawl container (`hbook-trawl`;
 > `hbook-dev-trawl` in the development stack) handles that automatically; just make sure it is running (it
-> is, by default). The desktop app has its own Cloudflare helper instead, with nothing to run
-> ([desktop guide](DESKTOP.md#cloudflare)).
+> is, by default).
 
 ---
 
@@ -2425,7 +2404,7 @@ thousand of them. hbook ships none and has no repository built in, so the first 
 What to paste, what every message means, the 25-source limit and removing a repository:
 **[Add an extension repository — step by step](extensions.md#add-an-extension-repository--step-by-step)**.
 Adult extensions stay out of Browse until **Show 18+ extensions** is switched on. The engine they run in is part of the Docker install, a
-second app on Unraid and CasaOS, and a one-time download in the desktop app
+second app on Unraid and CasaOS
 ([what you need first](extensions.md#what-you-need-first-the-extension-engine)).
 
 With no engine — turned off (`EXTENSION_ENGINE=0`), not set up, or not answering — **Admin → Sources** starts with a
@@ -2437,7 +2416,7 @@ later needs no restart. With the engine there, the top of the tab is a slim stri
 engine, *Ready* with its version and how many sources are on of the 25 that can be, and its *Cloudflare helper*,
 *Connected*, or *Not connected* with **Connect** when the engine's own helper is off or points at `localhost` (Health's
 *Extension engine* row offers the same **Connect**). **Turning it off**, behind the engine's **⋯**, has the steps to
-switch it off safely (on a server; the desktop app has no switch).
+switch it off safely.
 Never delete the engine's data: it holds the link from every series you added through an extension to its source,
 and hbook's nightly backup does not include it ([your engine's data](extensions.md#your-engines-data)).
 
@@ -2544,7 +2523,7 @@ land on theirs).
 the admin list: *hbook v0.55.4 · up to date*, or *· update available (v0.55.5)*, which links to that release — on a
 phone too, where the list is the first screen. Whether a newer one is out is
 Health's **Version** check, the same answer: with **Check for updates** off, or GitHub not answering, the line says the
-version alone. In the desktop app it is the app's own version.
+version alone.
 
 **Overview:** what needs a look, each member's week, and the top 10 in your library.
 
@@ -2807,7 +2786,7 @@ that is cooling down or switched off is reset but not asked, and the row says so
 *Turn off* act on a source, with what *Test* found shown under the row. The solver card's **Reset the solver**
 clears the Cloudflare cookies and "could not be solved" marks this server is holding and ends the cooldowns of the
 sources that blame the solver — it says how many — but cannot restart the solver: while the solver is not
-answering, the card says to restart its container (on the desktop app, to quit and reopen hbook) instead. With a
+answering, the card says to restart its container instead. With a
 backup solver (`FLARESOLVERR_FALLBACK_URL`, since v0.55.3) the card lists both, *Main solver* and *Backup solver*, and
 says which one is not answering; the reset clears both ([the Cloudflare solver](CONFIGURATION.md#the-cloudflare-solver)). A
 check whose step the nightly can run also gets **Fix all** at the top of its card; on *Chapters that would not
@@ -4176,19 +4155,10 @@ scan; you can also force a rescan from the admin panel, or restart the stack.
 
 **I never set an admin password / can't sign in.** If no users exist yet, just open the app and the first-run
 screen lets you create the admin. If an admin already exists, reset the password under
-**Profile → Account → Signed in as → Change password**. The desktop app used on the computer itself has no
-password at all — it signs itself in; if it says *hbook couldn't open your library*, see
-[the desktop guide](DESKTOP.md#9-if-something-goes-wrong).
-
-**The desktop app can't connect to my server.** Type the address exactly as you open it in a browser on that
-computer, with `http://` in full if it is not https; the message under the field says what went wrong, and
-[the desktop guide](DESKTOP.md#connecting) explains each one. A self-signed certificate is asked about once
-([details](DESKTOP.md#a-server-with-a-self-signed-certificate)); a password prompt on a reverse proxy (Basic
-Auth) is not supported by the app yet, while sign-in portals such as Authelia and single sign-on work.
+**Profile → Account → Signed in as → Change password**.
 
 **Add sources lists no extensions.** hbook ships none: add an extension repository first
-([step by step](extensions.md#add-an-extension-repository--step-by-step)). In the desktop app on the computer
-itself, download the extension engine first, from the top of **Admin → Sources**.
+([step by step](extensions.md#add-an-extension-repository--step-by-step)).
 
 **A source/site won't add.** Paste the site's **base URL** (e.g. `https://example.com`), not a series page.
 hbook auto-detects the engine (Madara, MangaThemesia, Manganato, JMComic); Cloudflare-protected sites are handled
@@ -4294,7 +4264,7 @@ one that surprises people: the service worker is what serves the app with no con
 register a service worker in a secure context. Over plain HTTP on a LAN address there is no worker, so
 opening the app with no network shows the browser's error page rather than your downloads — even though the
 chapters are on the device. Reading over HTTP while connected works fine. If you want offline, put it behind
-HTTPS. The same holds for the desktop app connected to a server over `http://`.
+HTTPS.
 
 **I lost my 2FA device.** Enter one of the recovery codes (shown when you enabled 2FA) on the login screen instead
 of the 6-digit code — that is the intended way back in, so keep them somewhere that is not the phone.
@@ -4309,28 +4279,6 @@ docker compose exec hbook-db psql -U hbook -d hbook \
 ```
 
 (The database user and database are both `hbook` in the shipped compose files, even on the install path.)
-
----
-
-## 14. hbook Desktop
-
-**hbook Desktop (beta)** is hbook as a program for Windows or a Mac. Since v0.45.0 it has two ways to
-work, chosen on first launch: **On this computer** (the whole app on the PC, the library in a folder there, no
-Docker and no account) or **Connect to my server** (a window onto the hbook server you already run).
-
-Everything about it has moved to **[the desktop guide](DESKTOP.md)**, written for people who have never run a
-server:
-
-- [which file to download](DESKTOP.md#1-download-the-right-file), and the permanent download links;
-- [the first launch on Windows and macOS](DESKTOP.md#2-install-it-and-open-it-the-first-time), step by step;
-- [on this computer](DESKTOP.md#3-on-this-computer): the library folder, adding your first sources and the
-  extension engine, the tray, how it differs from a server;
-- [connecting to your own server](DESKTOP.md#4-connect-to-your-own-server): the address, sign-in portals,
-  self-signed certificates, switching and forgetting a server;
-- [updates](DESKTOP.md#5-updates), [backups](DESKTOP.md#6-backups-and-restoring-them),
-  [where files live](DESKTOP.md#7-where-your-files-live), [uninstalling](DESKTOP.md#8-uninstalling),
-  [troubleshooting](DESKTOP.md#9-if-something-goes-wrong) and
-  [what it leaves out, and why](DESKTOP.md#10-what-the-desktop-app-leaves-out-and-why).
 
 ---
 

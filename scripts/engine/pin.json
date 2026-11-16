@@ -1,0 +1,4 @@
+{
+  "_comment": "The extension engine (Suwayomi-Server) this hbook is built and tested against. Every place that names a version is held equal to this one -- the images in the compose files, the CasaOS add-on, the Unraid template, the web's setup steps and the server's own TESTED_ENGINE (scripts/engine/pins.json lists them; bff/test/enginePins.test.ts holds them equal). scripts/engine/bump.mjs moves them all together.",
+  "version": "v2.4.2366"
+}

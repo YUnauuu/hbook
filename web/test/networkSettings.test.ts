@@ -50,7 +50,7 @@ test('what can make everyone look at home is said: the warnings and every signed
   assert.match(page, /r\.zone === 'local' \? tr\('at home'\) : tr\('outside'\)/);
 });
 
-test('not on the desktop app, where the server is reached from its own computer only', () => {
+test('the server is reached from its own computer only, so the home network is asked of it', () => {
   const settings = code(read('components/AdminSettings.tsx'));
-  assert.match(settings, /\{!desktop && <NetworkSettings \/>\}/);
+  assert.match(settings, /<NetworkSettings \/>/);
 });

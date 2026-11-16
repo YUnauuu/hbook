@@ -56,7 +56,6 @@ import { holds } from './chapterRanges';
 import { seriesIsAdult, sweepAllowedFor } from './sourceHunt';
 import { notInLibrary } from './downloadCensus';
 import { visible, visibleToAll, sourceAllowedFor, Params, type ViewCtx } from './visibility';
-import { firstRunFloor } from './desktop';
 import { onBeforeRenumberPlan, onRenumbered } from './numbering';
 import {
   ARCHIVE_DEFAULTS, PER_HOUR_RANGE, pageGapRange, nextBreakMs, backoffUntil, inWindow, windowOpensAt, ewmaCycle,
@@ -686,8 +685,7 @@ async function tickOnce(opts: TickOpts): Promise<TickReport> {
     report.waits[r.series_id] = w;
     const had = lastWaits.get(r.series_id);
     // Since when a source has been missing or switched off is kept on the row as well: in memory only, every restart
-    // started its day again, and on the desktop app -- which restarts with the app -- it could never reach a day
-    // and show under Needs attention (#117 review).
+    // started its day again (#117 review).
     const gone = w.why === 'source_missing' || w.why === 'disabled';
     const kept = gone && r.note?.goneSince ? Date.parse(r.note.goneSince) : NaN;
     const since = Number.isFinite(kept) ? Math.min(kept, had?.wait.why === w.why ? had.since : now)
@@ -1406,8 +1404,8 @@ export async function archiveBoot(): Promise<void> {
 
 /**
  * Start the scheduler (server.ts, owned mode). The first look waits ten minutes after a boot, like the sweep, so
- * a restart loop cannot become a burst and a server that has just started answers readers first (three on
- * desktop, which is only on while someone uses it); ARCHIVE_FIRST_RUN_MS is the e2e rig's. It never starts before
+ * a restart loop cannot become a burst and a server that has just started answers readers first;
+ * ARCHIVE_FIRST_RUN_MS is the e2e rig's. It never starts before
  * a persisted break or backoff has run out either: those are gates in every tick.
  */
 export function startArchive(d: { busy: (folder: string) => boolean; log: ArchiveLog }): void {
@@ -1415,7 +1413,7 @@ export function startArchive(d: { busy: (folder: string) => boolean; log: Archiv
   started = true;
   const raw = process.env.ARCHIVE_FIRST_RUN_MS;
   const first = raw !== undefined && raw.trim() !== '' && Number.isFinite(Number(raw))
-    ? Math.max(0, Number(raw)) : firstRunFloor(10 * MIN, 'archive');
+    ? Math.max(0, Number(raw)) : 10 * MIN;
   firstLookAt = Date.now() + first;
   void track(archiveBoot());
   d.log.info(`archive: first look in ${Math.round(first / 1000)} s`);

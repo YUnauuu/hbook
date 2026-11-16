@@ -10,7 +10,6 @@
 import { q, one } from './db';
 import { visibleToAll } from './visibility';
 import { env } from '../env';
-import { isDesktop } from './desktop';
 import { installPlatform } from './platform';
 import {
   aboutServer, engineRefusals, EngineRefusedError, gql, suwayomiConfigured, type EngineRefusal, type Gql,
@@ -42,7 +41,7 @@ export async function linkedSeriesCount(): Promise<number> {
   return r?.n ?? 0;
 }
 
-/** The engine's Cloudflare helper, as the status route sends it. The address never goes to a desktop page. */
+/** The engine's Cloudflare helper, as the status route sends it. */
 export interface SolverView {
   supported: boolean;
   enabled: boolean;
@@ -52,14 +51,13 @@ export interface SolverView {
   url?: string;
 }
 
-export function solverView(s: EngineSolver, ours = ourSolverUrl(), desktop = isDesktop()): SolverView {
+export function solverView(s: EngineSolver, ours = ourSolverUrl()): SolverView {
   return {
     supported: s.supported,
     enabled: s.supported ? s.enabled : false,
-    wiring: solverWiring(s, ours, desktop),
+    wiring: solverWiring(s, ours),
     connectable: !!ours,
-    // ⚠️ Never on desktop: the shell's helper address carries its access token in the path.
-    ...(s.supported && !desktop ? { url: s.url } : {}),
+    ...(s.supported ? { url: s.url } : {}),
   };
 }
 
@@ -158,7 +156,7 @@ export async function connectEngineSolver(run: Gql = gql): Promise<ConnectResult
   return {
     ok: true,
     enabled: r.after.enabled,
-    wiring: solverWiring(r.after, ours, isDesktop()),
+    wiring: solverWiring(r.after, ours),
     audit: { wasEnabled: r.before.supported ? r.before.enabled : false, host: solverHost(ours) },
   };
 }

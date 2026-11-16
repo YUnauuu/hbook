@@ -15,7 +15,7 @@ import { runtime } from '../lib/runtime';
 import { persistScan, libraryIdFor, libraryRows, LIBRARY_ROOT, DL_ROOT, setBookDates, setBookMeta } from '../lib/library';
 import { applyMoves, heldElsewhere, lockLibrarySaves, previewMoves, setFolders, storedFolders, underSql, LIBRARY_MAX_FOLDERS } from '../lib/libraryFolders';
 import { containedPath, allWritable, realContainedPath } from '../lib/fsGuard';
-import { deleteSeries, restoreSeries, mergeSeries, mergeRefusal, MergeConflictError, getSeriesRow, deleteSeriesFiles, renameSeriesFolder, forgetSeries, diskSpelling, deleteChapterFiles } from '../lib/libraryAdmin';
+import { deleteSeries, restoreSeries, mergeSeries, mergeRefusal, MergeConflictError, getSeriesRow, deleteSeriesFiles, renameSeriesFolder, forgetSeries, deleteChapterFiles } from '../lib/libraryAdmin';
 import { keepOneOfEach } from '../lib/heldTwice';
 import { editionFollowing, linkEdition, linkPair, unlinkEdition, workRows } from '../lib/editions';
 import { toStoredRel, trimTrailingSlashes } from '../lib/relPath';
@@ -959,7 +959,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     // The scheduler is re-armed at once, so the change applies to the NEXT run rather than the one after: the
     // timer used to re-read the hour only when it fired (server.ts, the backup block says why).
     if (b.backupHour !== undefined) { await q('UPDATE server_settings SET backup_hour = $1, updated_at = now() WHERE id = 1', [b.backupHour]); runtime.rearmBackup?.(); }
-    // Re-armed too: switched back on, a desktop that missed nights catches up at once rather than at the next hour.
+    // Re-armed too: switched back on, a server that missed a night catches up at once rather than at the next hour.
     if (b.backupEnabled !== undefined) { await q('UPDATE server_settings SET backup_enabled = $1, updated_at = now() WHERE id = 1', [b.backupEnabled]); runtime.rearmBackup?.(); }
     if (b.backupKeep !== undefined) await q('UPDATE server_settings SET backup_keep = $1, updated_at = now() WHERE id = 1', [b.backupKeep]);
     if (b.komgaGhostChapters !== undefined) await q('UPDATE server_settings SET komga_ghost_chapters = $1, updated_at = now() WHERE id = 1', [b.komgaGhostChapters]);
@@ -3205,11 +3205,8 @@ export default async function adminRoutes(app: FastifyInstance) {
   });
 
   // ⚠️ Every typed library path in the four routes below goes through toStoredRel (a `\` typed on Windows is a
-  // separator, and the database stores `/`: lib/relPath.ts) and, on the desktop, diskSpelling -- NTFS and
-  // APFS find `manga/seinen` for `Manga/Seinen`, but lib_series.folder and a library's folders are compared as
-  // exact strings with the on-disk spelling, so the typed case would match nothing. Both are identities on
-  // the server. The folder browser does it here; the preview, create and edit take every folder through
-  // storedFolders (lib/libraryFolders.ts).
+  // separator, and the database stores `/`: lib/relPath.ts). The folder browser does it here; the preview,
+  // create and edit take every folder through storedFolders (lib/libraryFolders.ts).
 
   /**
    * The folders that actually exist, at any depth.
@@ -3222,8 +3219,7 @@ export default async function adminRoutes(app: FastifyInstance) {
    * and delete paths use, and the only thing between a query parameter and the disk.
    */
   app.get('/api/admin/libraries/folders', async (req, reply) => {
-    const raw = await diskSpelling([LIBRARY_ROOT, DL_ROOT],
-      trimTrailingSlashes(toStoredRel(String((req.query as { path?: string }).path ?? '')).replace(/^\/+/, '')).trim());
+    const raw = trimTrailingSlashes(toStoredRel(String((req.query as { path?: string }).path ?? '')).replace(/^\/+/, '')).trim();
     const { readdir } = await import('node:fs/promises');
 
     const names = new Set<string>();
@@ -4019,7 +4015,7 @@ export default async function adminRoutes(app: FastifyInstance) {
    * Point the engine's own Cloudflare helper at the one hbook uses, and switch it on (#72, #54): Health's
    * "Connect the Cloudflare helper" and the Extensions tab's Connect. Only ever on a press -- it changes a setting
    * on someone's engine (lib/sources/suwayomi/engineSolver.ts). The audit names the solver's host, never its
-   * address: on desktop that carries the in-app helper's token.
+   * address: it can carry the helper's token.
    */
   app.post('/api/admin/extensions/solver', async (req, reply) => {
     if (needExt(reply)) return;
@@ -5034,7 +5030,7 @@ export default async function adminRoutes(app: FastifyInstance) {
    * - **It records what it found as evidence, and never changes the cooldown** (v0.49.0, #115). The verdict
    *   goes to live_* and the per-stage evidence Health reads (lib/sourceCheck.ts). No `reportFail`: three
    *   impatient clicks would take `consecutive` from 3 to 6 and the cooldown from 90 minutes to its ceiling. No
-   *   status, and no checked_at either: the desktop app schedules the daily check from max(checked_at)
+   *   status, and no checked_at either: the daily check is scheduled from max(checked_at)
    *   (server.ts), so a Test that stamped it would postpone the check. Before v0.49.0 it wrote nothing at all,
    *   which is how a source could fail its Test while Health said "All good".
    * - **Passing does not clear the block.** It reports `canClear` and leaves the decision to the admin. The

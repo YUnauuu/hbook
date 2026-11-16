@@ -16,7 +16,6 @@ export interface AuthConfig {
   /** Absent from a server older than v0.63.0, which signs in the local way. */
   mode?: 'local' | 'oidc-only';
   rescue?: boolean;
-  desktop?: boolean;
 }
 
 /** The server signs in through its provider only. */

@@ -303,7 +303,7 @@ export async function runExtensionCheck(
       wiped = live.length === 0;
       // By repoKey, never by the exact string. ⚠️ The engine lists its own spelling of an address (the repo.json
       // beside a pasted index.min.json), while our copy keeps what was typed. An exact compare called every
-      // repository added that way "lost" after each engine restart -- on the desktop app, every launch -- wrote it
+      // repository added that way "lost" after each engine restart -- every launch -- wrote it
       // back as a duplicate and told the admins it had been restored. One entry per key, too, so two spellings in our
       // copy are never both written.
       const liveKeys = new Set(live.map(repoKey));

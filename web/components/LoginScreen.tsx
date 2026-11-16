@@ -4,7 +4,6 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
-import { noteServerDesktop } from '@/lib/desktop';
 import { providerOnly, type AuthConfig } from '@/lib/authConfig';
 import { ART } from '@/lib/art';
 import { Mark, Wordmark } from './Brand';
@@ -34,10 +33,10 @@ const ssoError = (reason: string): string => {
 
 export function LoginScreen() {
   const { login, firstRunSetup, register, signedOutWhy, resumeProfile, pickProfile } = useAuth();
-  // `desktop`: this port is hbook Desktop's, reached from a browser tab -- see the effect below. `register` (v0.61.0):
+  // `register` (v0.61.0):
   // signing up, reached only from `login` by "Create an account" while Open registration is on. `sso` (v0.63.0): the
   // server signs in through its provider only (lib/authConfig.ts providerOnly), so the screen is that button alone.
-  const [mode, setMode] = useState<'checking' | 'login' | 'setup' | 'desktop' | 'register' | 'sso'>('checking');
+  const [mode, setMode] = useState<'checking' | 'login' | 'setup' | 'register' | 'sso'>('checking');
   const [username, setUsername] = useState('');
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -53,8 +52,7 @@ export function LoginScreen() {
   const [readers, setReaders] = useState<typeof ring>([]);
   const [sso, setSso] = useState<{ enabled: boolean; name: string }>({ enabled: false, name: '' });
   // Admin → Settings → Open registration, as /auth/config says (v0.61.0). The switch existed and POST /auth/register
-  // answered behind it, but this screen had no form, so turning it on did nothing anyone could see. Always false on
-  // hbook Desktop, whose server says so whatever its settings hold.
+  // answered behind it, but this screen had no form, so turning it on did nothing anyone could see.
   const [canRegister, setCanRegister] = useState(false);
   // /auth/config's answer (v0.63.0): read for `rescue`, the password form reopened for one admin in SSO-only mode.
   const [config, setConfig] = useState<AuthConfig | null>(null);
@@ -66,31 +64,22 @@ export function LoginScreen() {
   // First-run detection: if the server has no users yet, show a create-admin form instead of login.
   useEffect(() => {
     (async () => {
-      // ⚠️ A 404 here is hbook Desktop (it has no first-run setup route): stay on the spinner until
-      // /auth/config has said so, rather than flash a sign-in form nobody can use. Any other failure still
-      // falls back to the form at once, as it always has.
-      let desktopMaybe = false;
       // What first-run setup says, kept until /auth/config has answered as well (v0.63.0): in SSO-only mode the screen
       // is the provider's button alone, and a password form shown in between would be a sign-in nobody can use.
       let first: 'setup' | 'login' | null = null;
       try {
         const s = await api<{ needsSetup: boolean }>('/api/setup/status');
         first = s.needsSetup ? 'setup' : 'login';
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 404) desktopMaybe = true;
-        else setMode('login');
+      } catch {
+        setMode('login');
       }
       try {
         const c = await api<AuthConfig>('/auth/config');
         if (c.oidc?.enabled) setSso(c.oidc);
         setCanRegister(c.allowRegistration === true);
         setConfig(c);
-        // A browser tab pointed at the desktop app's port: that library signs in only inside the app, and
-        // this form could never succeed there (the server has no password sign-in to answer it).
-        if (c.desktop === true) { noteServerDesktop(true); setMode('desktop'); }
-        else if (desktopMaybe) setMode('login');
-        else if (first) setMode(first === 'login' && providerOnly(c) ? 'sso' : first);
-      } catch { /* SSO is optional; a failure here just means no button */ if (desktopMaybe) setMode('login'); else if (first) setMode(first); }
+        if (first) setMode(first === 'login' && providerOnly(c) ? 'sso' : first);
+      } catch { /* SSO is optional; a failure here just means no button */ if (first) setMode(first); }
     })();
     // the OIDC callback sends people back here with a reason when it couldn't sign them in
     const reason = new URLSearchParams(window.location.search).get('sso_error');
@@ -215,13 +204,6 @@ export function LoginScreen() {
           <Wordmark className="mt-5 text-5xl drop-shadow-[0_2px_20px_rgba(0,0,0,0.6)]" />
           <p className="mt-2 text-sm text-fog-300">{mode === 'setup' ? tr('Welcome — create your admin account.') : tr('Your library, your way.')}</p>
         </div>
-
-        {mode === 'desktop' && (
-          <div className="glass grad-border rounded-3xl p-6 text-center shadow-lift">
-            <p className="text-sm text-fog-100">{tr('This library opens in the hbook app on this computer.')}</p>
-            <p className="mt-2 text-xs text-fog-500">{tr('Open hbook from the Start menu or your Applications folder.')}</p>
-          </div>
-        )}
 
         {mode === 'checking' && (
           <div className="glass grad-border flex items-center justify-center rounded-3xl p-10 shadow-lift">

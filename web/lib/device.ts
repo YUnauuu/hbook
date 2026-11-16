@@ -36,7 +36,7 @@ const STORED_FALLBACKS = new Set(['Browser', 'device']);
  * A stored device name worth showing, or null for none -- the caller says "another device" in the reader's words.
  *
  * Two names are the SERVER's, stored in English (bff routes/auth.ts) and shown in English everywhere until v0.49.1:
- * 'This PC', the desktop app's own window, and 'SSO', a sign-in through single sign-on. Both are shown in the
+ * 'This PC', a name the server stores for a device, and 'SSO', a sign-in through single sign-on. Both are shown in the
  * reader's language now. 'SSO' says how someone signed in, not where, so `device` (a sentence that reads "on
  * {device}", ContinueCard's) leaves it unnamed: "on Single sign-on" is not a place.
  */

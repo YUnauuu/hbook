@@ -17,7 +17,7 @@ type Deps = import('../src/lib/engineHealth').EngineCheckDeps;
 // read from enginePin.ts: moving the pin (scripts/engine/bump.mjs) must not rewrite every expectation in this file. The
 // shipped pins have a test of their own, the last one.
 const base = (over: Partial<Deps>): Deps => ({
-  state: 'up', linked: 0, desktop: false, ourSolver: OURS, version: '2.3.2243', error: null, tested: 'v2.3.2243', oldest: 'v2.3.2243',
+  state: 'up', linked: 0, ourSolver: OURS, version: '2.3.2243', error: null, tested: 'v2.3.2243', oldest: 'v2.3.2243',
   solver: { supported: true, enabled: true, url: OURS }, retry: null, cloudflare: [], ...over,
 });
 const findings = (c: { items: Array<{ info?: boolean }> }) => c.items.filter((i) => !i.info);
@@ -28,8 +28,6 @@ test('no engine and nothing that needs one: no row at all', async () => {
   const { extensionEngine } = await import('../src/lib/engineHealth');
   assert.equal(extensionEngine(base({ state: 'off', linked: 0 })), null);
   assert.equal(extensionEngine(base({ state: 'switched_off', linked: 0 })), null);
-  // A desktop whose engine was never downloaded (SUWAYOMI_URL is always set there).
-  assert.equal(extensionEngine(base({ state: 'unreachable', desktop: true, linked: 0 })), null);
 });
 
 test('switched off with series that came from extensions: an info line, never a second warning', async () => {
@@ -60,10 +58,6 @@ test('not answering is a warning with exactly one finding, and says it keeps try
   assert.match(c.items[0].detail, /asked 4 times since it stopped answering; 3 series that came from extensions/);
   assert.match(c.note ?? '', /every 5 minutes by itself/);
   assert.match(c.note ?? '', /Check again there asks at once/);
-  // The desktop's Admin → Extensions is the engine's installer: no setup steps, no Check again.
-  const desk = extensionEngine(base({ state: 'unreachable', desktop: true, retry: { attempts: 2 }, linked: 3 }))!;
-  assert.doesNotMatch(desk.note ?? '', /Check again/, 'a desktop is sent to a button it does not have');
-  assert.match(desk.note ?? '', /quit and reopen hbook/);
 });
 
 /**
@@ -143,18 +137,6 @@ test('no solver of our own to share: no Connect, and the detail says what to set
   assert.match(c.items[0].detail, /set FLARESOLVERR_URL on hbook/);
 });
 
-test('desktop: the in-app helper on 127.0.0.1 is right, and its address is never printed', async () => {
-  const { extensionEngine } = await import('../src/lib/engineHealth');
-  const helper = 'http://127.0.0.1:41234/secret-desktop-token';
-  const ok = extensionEngine(base({ desktop: true, ourSolver: helper, solver: { supported: true, enabled: true, url: helper } }))!;
-  assert.equal(ok.status, 'ok');
-  assert.match(ok.summary, /^Ready, and it can get past Cloudflare/);
-  const other = extensionEngine(base({ desktop: true, ourSolver: helper, solver: { supported: true, enabled: true, url: 'http://127.0.0.1:9/elsewhere-token' } }))!;
-  assert.equal(other.status, 'ok');
-  const text = JSON.stringify([ok, other]);
-  assert.ok(!text.includes('secret-desktop-token') && !text.includes('elsewhere-token'), 'a desktop helper address is on the Health page');
-  assert.doesNotMatch(text, /FLARESOLVERR|docker|container/i);
-});
 
 test('another solver, an older engine, an unread setting: all fine, and said', async () => {
   const { extensionEngine } = await import('../src/lib/engineHealth');
@@ -237,16 +219,13 @@ test('every sentence of the row carries its codes, and they say exactly its Engl
     ['off', { state: 'off', linked: 1 }],
     ['switched off', { state: 'switched_off', linked: 3 }],
     ['unreachable', { state: 'unreachable', linked: 2, error: 'ECONNREFUSED', retry: { attempts: 1 } }],
-    ['unreachable on desktop', { state: 'unreachable', desktop: true, linked: 2 }],
     ['unread, refusing', { solver: null, cloudflare: [cf('Ball', true)] }],
     ['unread, refusing, no solver', { solver: null, ourSolver: '', cloudflare: many }],
     ['unread', { solver: null, registering: true }],
     ['unsupported, refusing', { solver: { supported: false, enabled: false, url: '' }, cloudflare: [cf('Ball', true)] }],
-    ['unsupported, refusing, desktop', { desktop: true, solver: { supported: false, enabled: false, url: '' }, cloudflare: [cf('Ball', true)] }],
     ['unsupported', { solver: { supported: false, enabled: false, url: '' } }],
     ['ok', { registering: true }],
     ['other', { solver: { supported: true, enabled: true, url: 'http://elsewhere:8191' } }],
-    ['other, desktop', { desktop: true, solver: { supported: true, enabled: true, url: 'http://elsewhere:8191' } }],
     ['off, failing', { solver: { supported: true, enabled: false, url: OURS }, cloudflare: [cf('Ball', true), cf('Dex', true)] }],
     ['off, failing, a lower-case name', { solver: { supported: true, enabled: false, url: OURS }, cloudflare: [cf('mangapill', true)] }],
     ['localhost, fronted', { solver: { supported: true, enabled: true, url: 'http://localhost:8191' }, cloudflare: [cf('Ball', false)] }],
@@ -256,7 +235,7 @@ test('every sentence of the row carries its codes, and they say exactly its Engl
     ['solver not answering, registering, no version', { solverAnswering: false, registering: true, version: null }],
     ['solver not answering, seen', { solverAnswering: false, cloudflare: [cf('Ball', false), cf('mangapill', true)] }],
     // The engine upgrade: an engine that refuses, by how its version stands and where it runs, and the version row.
-    ...(['compose', 'unraid', 'casaos', 'desktop', 'unknown'] as const).flatMap((platform): Array<[string, Partial<Deps>]> => [
+    ...(['compose', 'unraid', 'casaos', 'unknown'] as const).flatMap((platform): Array<[string, Partial<Deps>]> => [
       [`incompatible, newer, ${platform}`, { state: 'incompatible', version: 'v2.9.0', refused: REFUSED, platform }],
       [`incompatible, too old, ${platform}`, { state: 'incompatible', version: 'v2.2.2100', refused: REFUSED, platform }],
       [`incompatible, unknown, ${platform}`, { state: 'incompatible', version: null, error: 'suwayomi: Validation error (x)', refused: [], platform }],
@@ -325,9 +304,6 @@ test('each platform gets its own step, with the image, service and path as param
   assert.match(step('unraid').detail, /On the Docker tab, edit hbook-suwayomi, set its Repository to ghcr\.io\/suwayomi\/suwayomi-server:v2\.3\.2243 and apply\. Its data stays in \/mnt\/user\/appdata\/hbook-suwayomi\./);
   assert.match(step('casaos').detail, /In CasaOS, edit the hbook-suwayomi app, set its image to ghcr\.io\/suwayomi\/suwayomi-server:v2\.3\.2243 and save\. Its data stays in \/DATA\/AppData\/hbook-suwayomi\./);
   assert.match(step('unknown').detail, /Run ghcr\.io\/suwayomi\/suwayomi-server:v2\.3\.2243 in place of the engine you have, on the same data\./);
-  const desk = step('desktop');
-  assert.match(desk.detail, /Quit and reopen hbook\. If Admin → Sources then offers to download the extension engine, download it/);
-  assert.doesNotMatch(desk.detail, /docker|compose|container|ghcr/i, 'a desktop is sent to Docker');
   // What someone copies is a parameter of the sentence, so a translation cannot touch it.
   const parts = compose.detailSaid!.filter((p) => p.code === 'engine.stepCompose');
   assert.deepEqual(parts.map((p) => p.params), [{ image, file: 'docker-compose.yml', command: 'docker compose up -d hbook-suwayomi' }]);
@@ -355,9 +331,6 @@ test('the version row: only when it is not the tested one; too old is a finding,
   assert.equal(tooOld.status, 'warn', 'too old is a finding');
   const tv = findings(tooOld).find((i) => i.title === 'Engine version')!;
   assert.match(tv.detail, /^v2\.2\.2100 is older than the oldest version this hbook works with \(v2\.3\.2243\)\. Back up the engine’s data first: [^.]+\. In docker-compose\.yml/);
-  // The desktop app keeps a copy of the engine's database itself before a new engine first starts: no backup to make.
-  const desktopOld = extensionEngine(base({ version: 'v2.3.2000', oldest: 'v2.3.0', platform: 'desktop', desktop: true }))!;
-  assert.doesNotMatch(desktopOld.items.find((i) => i.title === 'Engine version')!.detail, /Back up/, 'a desktop is told to back up what the app keeps itself');
   // A version that is not vX.Y.Z says nothing.
   assert.ok(!extensionEngine(base({ version: 'preview-build' }))!.items.some((i) => i.title === 'Engine version'));
 });

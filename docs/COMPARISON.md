@@ -36,7 +36,6 @@ Every server here reads CBZ, CBR, PDF and image EPUB, serves OPDS, can be read f
 | **Shape** | | | | | |
 | A server for several people, each with their own progress | ✅ | ✅ | ✅ | ◐ preview builds | ❌ one user |
 | Installs as an app and reads offline | ✅ any device | ◐ no offline | ◐ no offline | ◐ no offline | ◐ Android only |
-| Desktop app for Windows and Mac | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Fetching** | | | | | |
 | Fetches new chapters by itself | ✅ | ❌ you add files | ❌ you add files | ✅ | ✅ |
 | Runs Mihon / Tachiyomi extensions | ✅ | ❌ | ❌ | ✅ | ✅ |

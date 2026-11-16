@@ -7,19 +7,9 @@
 import { lstat, mkdtemp, opendir, realpath, rmdir, stat } from 'fs/promises';
 import type { Stats } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { forDesktop } from './desktop';
-
 export type Writability =
   | { ok: true }
   | { ok: false; reason: string; fix: string };
-
-/**
- * The desktop app's fix for a folder it cannot use: there is no container, volume or PUID on a PC, only the
- * person's own account and its permissions on that folder.
- */
-const DESKTOP_FIX =
-  'Make sure the folder exists and that your account can write to it (Windows: Properties, Security; ' +
-  'macOS: Get Info, Sharing & Permissions), or choose another folder.';
 
 /**
  * Actually create and remove a directory rather than trusting access().
@@ -36,7 +26,7 @@ export async function writePreflight(dir: string): Promise<Writability> {
     return {
       ok: false,
       reason: `${dir} does not exist or cannot be read`,
-      fix: forDesktop(`Check that the volume is mounted. In docker-compose.yml the library is mounted at ${dir}.`, DESKTOP_FIX),
+      fix: `Check that the volume is mounted. In docker-compose.yml the library is mounted at ${dir}.`,
     };
   }
 
@@ -45,7 +35,7 @@ export async function writePreflight(dir: string): Promise<Writability> {
     await rmdir(probe);
     return { ok: true };
   } catch {
-    return forDesktop<Writability>({
+    return {
       ok: false,
       reason: `${dir} is not writable: it is owned by uid ${ownerUid} and this container runs as uid ${me}`,
       // PUID first, because it is the answer that leaves the user's files alone.
@@ -55,7 +45,7 @@ export async function writePreflight(dir: string): Promise<Writability> {
             `Alternatively, and only if you are sure nothing else uses these files, give them to the app: ` +
             `chown -R ${me}:${me} <your library path>`
           : `Set PUID and PGID to the owner of your library, then restart.`,
-    }, { ok: false, reason: `hbook can't write to ${dir}.`, fix: DESKTOP_FIX });
+    };
   }
 }
 

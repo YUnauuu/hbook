@@ -55,44 +55,34 @@ test("the engine's state follows the last registration: unreachable until one re
  */
 test('the platform the setup steps open on', async () => {
   const { installPlatform } = await import('../src/lib/platform');
-  const cases: Array<[NodeJS.ProcessEnv, boolean, string]> = [
-    [{}, true, 'desktop'],
-    [{ HBOOK_PLATFORM: 'unraid' }, true, 'desktop'], // the desktop app knows what it is
-    [{ HBOOK_PLATFORM: 'casaos' }, false, 'casaos'],
-    [{ HBOOK_PLATFORM: ' Umbrel ' }, false, 'umbrel'],
-    [{ HBOOK_PLATFORM: 'unraid', EXTENSION_ENGINE: '1' }, false, 'unraid'], // the hint beats the compose clue
-    [{ HBOOK_PLATFORM: 'toaster', EXTENSION_ENGINE: '1' }, false, 'compose'], // an unknown hint is ignored
-    [{ HOST_OS: 'Unraid' }, false, 'unraid'],
-    [{ HOST_OS: 'unraid', EXTENSION_ENGINE: '1' }, false, 'unraid'],
-    [{ EXTENSION_ENGINE: '1' }, false, 'compose'],
-    [{ EXTENSION_ENGINE: '' }, false, 'compose'], // present is the clue: every v0.49.0 compose file passes it
-    [{}, false, 'unknown'],
+  const cases: Array<[NodeJS.ProcessEnv, string]> = [
+    [{ HBOOK_PLATFORM: 'casaos' }, 'casaos'],
+    [{ HBOOK_PLATFORM: ' Umbrel ' }, 'umbrel'],
+    [{ HBOOK_PLATFORM: 'unraid', EXTENSION_ENGINE: '1' }, 'unraid'], // the hint beats the compose clue
+    [{ HBOOK_PLATFORM: 'toaster', EXTENSION_ENGINE: '1' }, 'compose'], // an unknown hint is ignored
+    [{ HOST_OS: 'Unraid' }, 'unraid'],
+    [{ HOST_OS: 'unraid', EXTENSION_ENGINE: '1' }, 'unraid'],
+    [{ EXTENSION_ENGINE: '1' }, 'compose'],
+    [{ EXTENSION_ENGINE: '' }, 'compose'], // present is the clue: every v0.49.0 compose file passes it
+    [{}, 'unknown'],
   ];
-  for (const [e, desktop, want] of cases) {
-    assert.equal(installPlatform(e, desktop), want, `installPlatform(${JSON.stringify(e)}, desktop=${desktop})`);
+  for (const [e, want] of cases) {
+    assert.equal(installPlatform(e), want, `installPlatform(${JSON.stringify(e)})`);
   }
 });
 
-/**
- * Reintroduce by dropping the desktop exemption from solverWiring (check localhost on desktop too): the desktop
- * shell's own helper on 127.0.0.1 -- the right answer there -- reads as miswired, and the desktop case fails.
- */
 test("how the engine's Cloudflare helper is wired", async () => {
   const { solverWiring } = await import('../src/lib/sources/suwayomi/engineSolver');
   const ours = 'http://hbook-trawl:8191';
   const on = (url: string) => ({ supported: true as const, enabled: true, url });
-  assert.equal(solverWiring({ supported: false }, ours, false), 'unsupported');
-  assert.equal(solverWiring({ supported: true, enabled: false, url: ours }, ours, false), 'off', 'switched off, whatever it points at');
-  assert.equal(solverWiring(on(''), ours, false), 'off', 'on with no address is off');
-  assert.equal(solverWiring(on(ours), ours, false), 'ok');
-  assert.equal(solverWiring(on('http://HBOOK-trawl:8191/v1/'), ours, false), 'ok', 'the same solver spelled with /v1 and a slash');
-  assert.equal(solverWiring(on('http://localhost:8191'), ours, false), 'localhost', "the engine's default: its own container, where no solver runs");
-  assert.equal(solverWiring(on('http://127.0.0.1:8191'), '', false), 'localhost');
-  assert.equal(solverWiring(on('http://solver.lan:8191'), ours, false), 'other');
-  // Desktop: the shell points the engine at the in-app helper on 127.0.0.1 on purpose.
-  const helper = 'http://127.0.0.1:41234/0123456789abcdef';
-  assert.equal(solverWiring(on(helper), helper, true), 'ok');
-  assert.equal(solverWiring(on('http://127.0.0.1:9/other'), helper, true), 'other', 'localhost is never a fault on desktop');
+  assert.equal(solverWiring({ supported: false }, ours), 'unsupported');
+  assert.equal(solverWiring({ supported: true, enabled: false, url: ours }, ours), 'off', 'switched off, whatever it points at');
+  assert.equal(solverWiring(on(''), ours), 'off', 'on with no address is off');
+  assert.equal(solverWiring(on(ours), ours), 'ok');
+  assert.equal(solverWiring(on('http://HBOOK-trawl:8191/v1/'), ours), 'ok', 'the same solver spelled with /v1 and a slash');
+  assert.equal(solverWiring(on('http://localhost:8191'), ours), 'localhost', "the engine's default: its own container, where no solver runs");
+  assert.equal(solverWiring(on('http://127.0.0.1:8191'), ''), 'localhost');
+  assert.equal(solverWiring(on('http://solver.lan:8191'), ours), 'other');
 });
 
 test("hbook's own solver is what FLARESOLVERR_URL says, never the development stack's default", async () => {
@@ -104,15 +94,3 @@ test("hbook's own solver is what FLARESOLVERR_URL says, never the development st
   assert.equal(solverHost('http://127.0.0.1:41234/secret-token'), '127.0.0.1:41234', 'the audit never carries the path');
 });
 
-test("the status route's helper address never goes to a desktop page", async () => {
-  // On desktop the in-app helper's address carries its per-launch token in the path. Reintroduce by sending the url
-  // whenever the setting is supported (drop `&& !desktop` in solverView): the desktop view carries the token.
-  const { solverView } = await import('../src/lib/extensionEngine');
-  const helper = 'http://127.0.0.1:41234/tok-per-launch';
-  const desk = solverView({ supported: true, enabled: true, url: helper }, helper, true);
-  assert.equal('url' in desk, false, 'no url key on desktop');
-  assert.ok(!JSON.stringify(desk).includes('tok-per-launch'), 'and the token is nowhere in it');
-  assert.equal(desk.wiring, 'ok');
-  const server = solverView({ supported: true, enabled: true, url: 'http://hbook-trawl:8191' }, 'http://hbook-trawl:8191', false);
-  assert.equal(server.url, 'http://hbook-trawl:8191', 'a server admin reads where it points');
-});

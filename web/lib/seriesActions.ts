@@ -126,9 +126,5 @@ export function seriesActionGroups(x: SeriesActionsInput): SeriesActionGroup[] {
   return groups.filter((g) => g.items.length > 0).map((g) => ({ ...g, items: g.items.map(busy) }));
 }
 
-/**
- * Whether the Offline key (Save all offline) is drawn: not on a series with nothing to save, and never in hbook
- * Desktop, where the chapters are already files on this computer (lib/desktop.ts) and a copy in the window's storage
- * would store every one twice.
- */
-export const offlineKeyShown = (x: { nothingYet: boolean; desktop: boolean }): boolean => !x.nothingYet && !x.desktop;
+/** Whether the Offline key (Save all offline) is drawn: not on a series with nothing to save. */
+export const offlineKeyShown = (x: { nothingYet: boolean }): boolean => !x.nothingYet;

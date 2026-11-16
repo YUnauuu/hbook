@@ -73,10 +73,9 @@ test('the sidebar: who sees which item', () => {
     const r = sidebarItems(o);
     return [...r.main, ...r.more, ...(r.admin ? [r.admin] : [])].map((i) => i.href);
   };
-  assert.deepEqual(names({ downloader: true, admin: true, desktop: false }), ['/', '/library', '/collections', '/discover', '/novels', '/history', '/moments', '/downloads', '/admin']);
-  assert.ok(!names({ downloader: false, admin: false, desktop: false }).includes('/discover'), 'Discover for an account that may not add series');
-  assert.ok(!names({ downloader: true, admin: false, desktop: false }).includes('/admin'), 'Admin for a member');
-  assert.ok(!names({ downloader: true, admin: true, desktop: true }).includes('/downloads'), 'Offline in hbook Desktop, where the chapters are on the disk');
+  assert.deepEqual(names({ downloader: true, admin: true }), ['/', '/library', '/collections', '/discover', '/novels', '/history', '/moments', '/downloads', '/admin']);
+  assert.ok(!names({ downloader: false, admin: false }).includes('/discover'), 'Discover for an account that may not add series');
+  assert.ok(!names({ downloader: true, admin: false }).includes('/admin'), 'Admin for a member');
   // The mark walk49 reads off the Library item.
   const ring = (o: Partial<NavRing>): NavRing => ({ show: false, progress: 'idle', count: 0, attention: false, slow: false, label: '', ...o });
   assert.equal(ringMark(ring({})), 'idle');

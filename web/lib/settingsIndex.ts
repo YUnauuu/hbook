@@ -18,15 +18,13 @@ export const fold = (s: string): string => s.normalize('NFKD').replace(/\p{M}+/g
 
 /** What a row needs to be drawn at all: search never offers a row the page does not draw. */
 export type SettingsCondition =
-  /** Not on hbook Desktop, which has no such page or setting (lib/desktop.ts). */
-  | 'web'
   /** Not in SSO-only mode (v0.63.0), which has no sign-up at all. */
   | 'local-accounts'
   /** An extension engine is configured (the extension rows). */
   | 'extensions'
   /** A pointer that can hover: a computer, not a phone or tablet held alone (the rows that do nothing on touch). */
   | 'pointer'
-  /** v0.90.0: the household has chapter comments -- two or more members on the owned library, not hbook Desktop. */
+  /** v0.90.0: the household has chapter comments -- two or more members on the owned library. */
   | 'talk';
 
 export interface SettingsCategory {

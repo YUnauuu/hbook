@@ -3,7 +3,7 @@
 // Kedryn: "I can't find anymore what version I'm running. I'm pretty sure it was in a menu on the left somewhere." It
 // was only Health's Version card, a tab and a scroll away. Now it is the foot of the admin menu, and on a phone (no
 // menu down the side) one of the header's facts. The number comes from /api/admin/stats (bff lib/appVersion.ts) -- or,
-// in hbook Desktop, from the app itself -- and whether a newer one is out from Health's `update` check: the answer
+// from the server -- and whether a newer one is out from Health's `update` check: the answer
 // the admin header has already asked for, so this asks GitHub nothing, and an admin who switched update checks off is
 // told nothing about it rather than "up to date".
 import type { Said } from './said';

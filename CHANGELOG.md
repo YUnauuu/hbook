@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3 — 2026-11-16
+
+### One build: the server, and the browser it serves
+
+- **The desktop app is gone.** hbook is the server now, and the browser you open it in is the whole of the
+  client. The Electron shell, its installers and its update feed, the engine packs it downloaded, and the CI
+  that built and tested them on Windows and macOS runners are all deleted — `desktop/`, the `Desktop` and
+  `Engine pack` workflows, and the two release jobs that attached the installers to a GitHub Release. Nothing
+  of the app is left to install, update or uninstall.
+- **The server has no desktop mode either.** `HBOOK_DESKTOP` and the plan it started are gone, and with them
+  the routes the app hid from the web app, the `/auth/desktop` handshake the shell signed itself in with, the
+  desktop-only account kind, the zip the backup wrote for the app's own "Restore backup…" and the desktop
+  filesystem paths. A server started the ordinary way now answers the same routes to everybody, and the web app
+  asks it for the same things it always did.
+- **The web app has one mode too.** `isDesktop()` is gone, along with the destinations that were hidden on a
+  desktop, the settings rows only a server had, the "the app could not reach the server" card and the engine
+  download card. Every setting the app had is now a setting of the server, and the browser gets all of them.
+- **The engine pin has a home of its own.** The reference was the desktop app's pin file, which named the
+  version the app downloaded; it is now `scripts/engine/pin.json`, and the compose files, the CasaOS add-on, the
+  Unraid template, the web's setup steps and the server's own `TESTED_ENGINE` are held equal to it exactly as
+  before. The pack builder and the workflow that published the packs go with the app that was their only
+  reader.
+- **One check loses its exception.** "A profile that opens at home is never an admin" allowed the app's own
+  account; there is no such account now, so the constraint says so, and a database that still holds one keeps
+  the old constraint rather than refusing to start.
+- The docs lost their desktop guide, and the README its download section: what is left describes the server.
+
 ## v0.2 — 2026-11-13
 
 ### The Chinese manga sites, and an engine that can read them

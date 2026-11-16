@@ -5,7 +5,7 @@
 // before them -- and the folder grew exponentially however few runs were kept. Inside the container the two folders
 // never look alike (/backups and /config/backups are two mounts of one host folder), and an inode cannot be trusted to
 // say so on Unraid, so the run finds ITSELF: a file with a random name in its own folder, looked for under CONFIG_DIR
-// (lib/backup.ts backupSkips). The desktop's zip is desktopBackup.test.ts.
+// (lib/backup.ts backupSkips).
 //
 // No database: pg_dump is a stand-in first on PATH, and the settings query fails at once (port 1) and reads as the
 // defaults. `tar` is the system's (GNU on CI); BusyBox's, in the all-in-one image, was run against the same arguments.
@@ -19,7 +19,6 @@ import { spawnSync } from 'node:child_process';
 process.env.DATABASE_URL = 'postgres://unused:unused@127.0.0.1:1/unused';
 process.env.JWT_SECRET ||= 'test-secret-at-least-16-chars';
 process.env.CONFIG_DIR ||= '/tmp/hbook-test-config';
-delete process.env.HBOOK_DESKTOP;
 
 const ROOT = mkdtempSync(join(tmpdir(), 'uchi-backupskips-'));
 const BIN = join(ROOT, 'bin');

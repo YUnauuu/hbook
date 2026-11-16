@@ -38,7 +38,7 @@ const SEARCH = 'mutation($s:LongString!){ fetchSourceManga(input:{source:$s,type
 test('the rig\'s engine answers as the pinned engine, and refuses a field the real one does not have', async () => {
   // The fake validates against the pinned engine's schema and answers its version (bff/test/fixtures/fakeSuwayomiEngine.mjs
   // SCHEMA_FILE, which scripts/engine/bump.mjs moves with the pin).
-  const pin = JSON.parse(readFileSync(join(__dirname, '..', '..', 'desktop', 'src', 'engine-pin.json'), 'utf8')).version;
+  const pin = JSON.parse(readFileSync(join(__dirname, '..', '..', 'scripts', 'engine', 'pin.json'), 'utf8')).version;
   const ok = await (await gql(ABOUT)).json();
   assert.deepEqual(ok, { data: { aboutServer: { name: 'Suwayomi-Server', version: pin } } });
   const bad = await (await gql('{ aboutServer { name codename } }')).json();

@@ -6,7 +6,7 @@
 // looking for is the one way in that needs no map, so every page of the two consoles, every row of their settings, the
 // profile's cards, the import page and the settings people ask for by name are destinations here: shown for a query of two
 // characters or more, under their own heading after the series, to admins only where the page is theirs, and never on
-// hbook Desktop where the page or the setting does not exist there (lib/desktop.ts DESKTOP_HIDDEN).
+
 //
 // A destination is found by its label in the reader's language (it is what the row says) and in English, and by a few
 // English words someone might type instead ("flaresolverr", "mihon", "2fa"). `?section=` names the card to scroll to
@@ -47,8 +47,6 @@ export interface Destination {
   keywords?: readonly string[];
   /** The admin console and the import page: admins only. */
   admin?: boolean;
-  /** Not on hbook Desktop, which has no such page or setting. */
-  desktopHidden?: boolean;
 }
 
 const ADMIN = ['Admin'] as const;
@@ -93,24 +91,23 @@ const PAGES: readonly Destination[] = [
   { key: 'progress-tracking', label: 'Progress tracking', where: PROFILE_CONNECTIONS, href: '/profile/?tab=connections&section=progress-tracking',
     keywords: ['anilist', 'myanimelist', 'mal', 'kitsu', 'mangaupdates', 'tracker', 'sync'] },
   { key: 'opds', label: 'External readers (OPDS)', where: PROFILE_CONNECTIONS, href: '/profile/?tab=connections&section=opds',
-    desktopHidden: true, keywords: ['opds', 'koreader', 'panels', 'chunky', 'e-reader'] },
+    keywords: ['opds', 'koreader', 'panels', 'chunky', 'e-reader'] },
   { key: 'api-tokens', label: 'API tokens', where: PROFILE_CONNECTIONS, href: '/profile/?tab=connections&section=api-tokens',
-    desktopHidden: true, keywords: ['api', 'token', 'mihon', 'komga', 'scripts'] },
+    keywords: ['api', 'token', 'mihon', 'komga', 'scripts'] },
   { key: 'change-password', label: 'Change password', where: PROFILE_ACCOUNT, href: '/profile/?tab=account&section=signed-in',
-    desktopHidden: true, keywords: ['password'] },
+    keywords: ['password'] },
   { key: 'two-factor', label: 'Two-factor authentication', where: PROFILE_ACCOUNT, href: '/profile/?tab=account&section=two-factor',
-    desktopHidden: true, keywords: ['2fa', 'totp', 'authenticator', 'mfa', 'recovery codes'] },
+    keywords: ['2fa', 'totp', 'authenticator', 'mfa', 'recovery codes'] },
   { key: 'active-sessions', label: 'Active sessions', where: PROFILE_ACCOUNT, href: '/profile/?tab=account&section=sessions',
-    desktopHidden: true, keywords: ['devices', 'signed in'] },
+    keywords: ['devices', 'signed in'] },
 ];
 
 /**
  * Every page of a console and every row of its settings pages as a destination (v0.86.0; the pages since v0.88.0), from
  * its registry (lib/settingsIndex*.ts). A page's place is the console and the group it is listed under; a row's, that
  * and its page; `?tab=` opens the page and `?section=` the row, which the console opens and flashes
- * (components/ConsoleLayout.tsx). The first page is the console's bare address. The pages and rows needing a server's
- * web install are not offered on hbook Desktop; one that needs a mode or an engine this server may not have lands on
- * its page, which is still the right place to look.
+ * (components/ConsoleLayout.tsx). The first page is the console's bare address. One that needs a mode or an engine
+ * this server may not have lands on its page, which is still the right place to look.
  */
 export function consoleDestinations(index: SettingsIndex): Destination[] {
   const admin = index.page === 'admin';
@@ -118,12 +115,11 @@ export function consoleDestinations(index: SettingsIndex): Destination[] {
   const top = admin ? 'Admin' : 'Profile';
   const first = index.categories[0]?.id;
   const cats = new Map(index.categories.map((c) => [c.id, c]));
-  const web = (when?: readonly string[]) => !!when?.includes('web');
   const aliasesOf = (label: string) => Object.entries(SETTINGS_NAME_ALIASES).filter(([, to]) => to === label).map(([from]) => from);
   const out: Destination[] = index.categories.map((c) => ({
     key: `${index.page}-cat-${c.id}`, label: c.label, where: c.group ? [top, c.group] : [top],
     href: c.id === first ? path : `${path}?tab=${c.id}`,
-    admin: admin || undefined, desktopHidden: web(c.when) || undefined,
+    admin: admin || undefined,
     // A section's name before v0.86.0 finds the page it became.
     keywords: [...(c.keywords ?? []), ...aliasesOf(c.label)],
   }));
@@ -133,7 +129,7 @@ export function consoleDestinations(index: SettingsIndex): Destination[] {
     out.push({
       key: `${index.page}-${e.id}`, label: e.label, where: [top, ...(cat.group ? [cat.group] : []), cat.label],
       href: `${path}?tab=${cat.id}&section=${e.id}`,
-      admin: admin || undefined, desktopHidden: web(e.when) || web(cat.when) || undefined,
+      admin: admin || undefined,
       keywords: [...(e.keywords ?? []), ...aliasesOf(e.label)],
     });
   }
@@ -147,18 +143,18 @@ export const DESTINATIONS: readonly Destination[] = [...CONSOLES.filter(isPage),
 
 
 /**
- * The destinations a query finds, best first, for this viewer: admins only for the admin's pages, none of Desktop's
- * missing ones there, nothing below two characters (the palette's own threshold). Its label first -- in the reader's
+ * The destinations a query finds, best first, for this viewer: admins only for the admin's pages, nothing below two
+ * characters (the palette's own threshold). Its label first -- in the reader's
  * language and in English, whole, then at its start, then at a word's start, then anywhere in it -- then its words.
  * A match inside a word ("ate" in "Updates") counts from three characters, where two are noise ("pd" found Updates
  * and OPDS) -- except in Chinese and Japanese, written without spaces, where there is no word start to look for.
  */
-export function findDestinations(query: string, viewer: { admin: boolean; desktop: boolean; limit?: number; label?: (k: string) => string }): Destination[] {
+export function findDestinations(query: string, viewer: { admin: boolean; limit?: number; label?: (k: string) => string }): Destination[] {
   if (fold(query.trim()).length < 2) return [];
   const label = viewer.label ?? ((k: string) => tr(k));
   const rank = (d: Destination): number => rankMatch(query, [label(d.label), d.label], d.keywords ?? []);
   return DESTINATIONS
-    .filter((d) => (!d.admin || viewer.admin) && !(d.desktopHidden && viewer.desktop))
+    .filter((d) => !d.admin || viewer.admin)
     .map((d, i) => ({ d, i, r: rank(d) }))
     .filter((x) => x.r >= 0)
     .sort((a, b) => a.r - b.r || a.i - b.i)

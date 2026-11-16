@@ -299,7 +299,7 @@ export function freeBytes(): Promise<number | null> {
  * ⚠️ `posix.join`, never `join`: this string is compared with what the database stores (`/`, see
  * lib/relPath.ts) by the nightly repair, the Health "Fix" chip and "Fetch again", and on Windows `join`
  * answers with `\` so none of the three ever matched. Identical on Linux, which is why only a static check
- * can catch a regression (desktopSwitchHygiene.test.ts).
+ * can catch a regression.
  */
 export const chapterFileRel = (seriesFolder: string, number: number): string => posix.join(seriesFolder, `Chapter ${number}.cbz`);
 

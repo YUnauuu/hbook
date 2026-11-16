@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { q, one } from './db';
 import { env } from '../env';
-import { isDesktop } from './desktop';
 import { clientZone, sameNetwork, type Zone } from './clientAddr';
 import { newRefreshValue, refreshTokenHash, verifyLocalSessionJwt } from './profileTokens';
 
@@ -99,8 +98,6 @@ export interface OpdsIdentity { userId: string; showAdult: boolean }
  * the app controls, no button. Callers that only want the id read `.userId`.
  */
 export async function resolveOpdsBasic(authHeader?: string): Promise<OpdsIdentity | null> {
-  // Desktop has no OPDS: a token that arrived inside a restored server database must not open /img/ either.
-  if (isDesktop()) return null;
   if (!authHeader || !/^basic /i.test(authHeader)) return null;
   let decoded = '';
   try { decoded = Buffer.from(authHeader.slice(6).trim(), 'base64').toString('utf8'); } catch { return null; }
@@ -153,7 +150,7 @@ export const refreshExpiresAt = () => Date.now() + env.REFRESH_TTL_DAYS * 24 * 6
  * each is good only from the local network (clientZone), on every request, and creates no credential
  * (requireCredentialSession).
  */
-export type SessionVia = 'password' | 'oidc' | 'desktop' | 'register' | 'setup' | 'switch' | 'local-pick';
+export type SessionVia = 'password' | 'oidc' | 'register' | 'setup' | 'switch' | 'local-pick';
 
 /** A session entered without a credential: held to the local network. A row from before the column (null) had one. */
 export const withoutCredential = (via: string | null | undefined): boolean => via === 'switch' || via === 'local-pick';
@@ -375,8 +372,7 @@ export async function resumeHead(
 }
 
 /**
- * The live token of the session a session was opened from (`parent_session`), when that session belongs to `userId`:
- * what hbook Desktop's owner goes back to from a profile switched to on this PC (POST /auth/desktop).
+ * The live token of the session a session was opened from (`parent_session`), when that session belongs to `userId`.
  */
 export async function parentHeadOf(sessionId: string, userId: string): Promise<{ id: string; expiresAt: Date; deviceId: string | null; deviceName: string | null; via: string | null } | null> {
   const row = await one<{ id: string; expires_at: Date; device_id: string | null; device_name: string | null; via: string | null }>(
@@ -751,8 +747,6 @@ function resolved(row: TokenRow | null): ResolvedToken | null {
 }
 
 export async function resolveApiToken(raw: string): Promise<ResolvedToken | null> {
-  // API tokens are hidden on desktop (owner decision): one arriving in a restored server database opens nothing.
-  if (isDesktop()) return null;
   return resolved(await one<TokenRow>(`${TOKEN_SELECT} t.token_hash = $1`, [sha256(raw)]));
 }
 
@@ -762,7 +756,6 @@ export async function resolveApiToken(raw: string): Promise<ResolvedToken | null
  * it expire, or disabling the account end the cookie too, with no session table and no revocation list.
  */
 export async function resolveApiTokenById(id: string): Promise<ResolvedToken | null> {
-  if (isDesktop()) return null;
   // A uuid column; anything else is a cast error in Postgres, and a malformed id is simply not a token.
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   return resolved(await one<TokenRow>(`${TOKEN_SELECT} t.id = $1`, [id]));

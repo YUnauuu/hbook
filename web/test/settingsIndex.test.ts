@@ -31,7 +31,7 @@ const PAGES: Array<[SettingsIndex, string[]]> = [
   [PROFILE_SETTINGS, ['components/ProfileSettings.tsx']],
   [ADMIN_SETTINGS, ['components/AdminSettings.tsx', 'components/ArchiveSettings.tsx', 'components/PolitenessSettings.tsx', 'components/AdminNotifications.tsx', 'components/TranslateSettings.tsx', 'components/NetworkSettings.tsx']],
 ];
-const ALL: Record<SettingsCondition, boolean> = { web: true, 'local-accounts': true, extensions: true, pointer: true, talk: true };
+const ALL: Record<SettingsCondition, boolean> = { 'local-accounts': true, extensions: true, pointer: true, talk: true };
 const en = (k: string) => k;
 const ids = (files: string[]) => new Set(files.flatMap((f) => [...code(read(f)).matchAll(/\bid="([a-z0-9-]+)"/g)].map((m) => m[1])));
 /** An id on these pages that is no row: an input's own id, which its label points at. */
@@ -126,11 +126,10 @@ test('search finds a row by its words, in the reader\'s language, by its old nam
   const ja = (k: string) => (k === 'Reading direction' ? '読む方向' : k);
   assert.equal(find(PROFILE_SETTINGS, '方向', { label: ja })[0], 'reading-direction');
   // Never a row the page does not draw here.
-  const desktop = { ...ALL, web: false };
-  for (const id of ['translate', 'registration', 'install-count', 'member-defaults-link', 'mihon-missing']) {
-    assert.ok(!find(ADMIN_SETTINGS, ADMIN_SETTINGS.entries.find((e) => e.id === id)!.label, { conds: desktop }).includes(id), `Desktop is offered ${id}`);
+  const sso = { ...ALL, 'local-accounts': false };
+  for (const id of ['registration']) {
+    assert.ok(!find(ADMIN_SETTINGS, ADMIN_SETTINGS.entries.find((e) => e.id === id)!.label, { conds: sso }).includes(id), `SSO-only is offered ${id}`);
   }
-  assert.deepEqual(find(PROFILE_SETTINGS, 'install', { conds: desktop }), [], 'Desktop is offered This device');
   assert.ok(!find(ADMIN_SETTINGS, 'registration', { conds: { ...ALL, 'local-accounts': false } }).includes('registration'), 'SSO-only is offered sign-ups');
   assert.ok(!find(ADMIN_SETTINGS, 'extension', { conds: { ...ALL, extensions: false } }).some((id) => id.startsWith('extension-')), 'no engine, and the extension rows are offered');
   assert.ok(!find(PROFILE_SETTINGS, 'compact', { conds: { ...ALL, pointer: false } }).includes('compact-chapters'), 'a phone is offered a computer-only row');
@@ -151,7 +150,6 @@ test('the page is in the address, beside everything else, and the search finds p
   const pages = (q: string, conds = ALL) => searchPages(ADMIN_SETTINGS, q, conds, (k) => k, () => true).map((c) => c.id);
   assert.equal(pages('Tasks')[0], 'maintenance', 'Tasks does not find Maintenance');
   assert.equal(pages('heal')[0], 'health');
-  assert.ok(!pages('sessions', { ...ALL, web: false }).includes('sessions'), 'Desktop is offered Sessions');
   assert.deepEqual(searchPages(PROFILE_SETTINGS, 'anilist', ALL, (k) => k, () => true).map((c) => c.id), ['connections'], 'a tracker does not find Connections');
 });
 

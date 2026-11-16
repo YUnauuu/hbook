@@ -12,7 +12,6 @@
 // (sources/suwayomi/enginePin.ts), and when the engine refuses hbook's queries it says "Not compatible" -- quoting
 // the engine -- where it used to say "Not answering" and send the admin to restart a container that was fine.
 import type { HealthCheck, HealthItem } from './health';
-import { isDesktop } from './desktop';
 import { installPlatform, type InstallPlatform } from './platform';
 import { cloudflareEvidence, engineProbe, linkedSeriesCount, type CloudflareEvidence } from './extensionEngine';
 import { suwayomiConfigured, type EngineRefusal } from './sources/suwayomi/client';
@@ -28,7 +27,6 @@ export interface EngineCheckDeps {
   state: EngineState;
   /** Series added through an extension. */
   linked: number;
-  desktop: boolean;
   /** hbook's own solver (FLARESOLVERR_URL), '' when it has none: what Connect would point the engine at. */
   ourSolver: string;
   version?: string | null;
@@ -81,7 +79,6 @@ function stepTo(version: string, platform: InstallPlatform | undefined): Part {
     case 'compose': return say('engine.stepCompose', { image, file: 'docker-compose.yml', command: `docker compose up -d ${SERVICE}` });
     case 'unraid': return say('engine.stepUnraid', { image, service: SERVICE, path: DATA_PATH.unraid! });
     case 'casaos': return say('engine.stepCasaos', { image, service: SERVICE, path: DATA_PATH.casaos! });
-    case 'desktop': return say('engine.stepDesktop');
     default: return say('engine.stepOther', { image });
   }
 }
@@ -92,8 +89,7 @@ function stepTo(version: string, platform: InstallPlatform | undefined): Part {
  * greyed line). ⚠️ Never a downgrade without a backup: an engine migrates its own database forward when it starts, and an
  * older one cannot read what a newer one wrote -- so for a newer engine the row says that going back needs a backup of
  * its data from before, and nothing more. The step to update an older one starts with that backup too, for the same
- * reason (since the pin moved to v2.4.2366, every install left on v2.3.2243 reads this row) -- except on the desktop
- * app, which keeps a copy of the engine's database itself before a new engine first starts (desktop/src/engine.js).
+ * reason (since the pin moved to v2.4.2366, every install left on v2.3.2243 reads this row).
  */
 function versionItem(d: EngineCheckDeps, standing: EngineStanding): HealthItem | null {
   const version = d.version || null;
@@ -107,7 +103,7 @@ function versionItem(d: EngineCheckDeps, standing: EngineStanding): HealthItem |
       ...detailOf([say('engine.versionNewer', { version, tested }), joined('sentence', say('engine.goBackWithBackup', { tested }))]),
     };
   }
-  const backup = d.platform !== 'desktop' && joined('sentence', say('engine.backupFirst'));
+  const backup = joined('sentence', say('engine.backupFirst'));
   if (standing === 'older') {
     return {
       ...title, info: true,
@@ -142,7 +138,7 @@ function incompatible(d: EngineCheckDeps, standing: EngineStanding): HealthCheck
         ...detailOf([
           words ? say('engine.refused', { error: words.slice(0, 300) }) : null,
           joined('sentence', advice),
-          !older && d.platform !== 'desktop' && joined('sentence', say('engine.backupFirst')),
+          !older && joined('sentence', say('engine.backupFirst')),
           joined('sentence', stepTo(tested, d.platform)),
         ]),
       },
@@ -160,9 +156,7 @@ function withVersion(c: HealthCheck, item: HealthItem | null): HealthCheck {
 
 /**
  * The check, or null when there is nothing to say: no engine and nothing that depends on one (the Docker install
- * someone switched off before adding a single extension series), or a desktop app whose engine was never
- * downloaded -- its SUWAYOMI_URL is always set (desktop/src/env.js), so without this every fresh desktop would
- * open Health on a warning about a download it never asked for.
+ * someone switched off before adding a single extension series).
  */
 export function extensionEngine(d: EngineCheckDeps): HealthCheck | null {
   const base = { id: ID, title: TITLE };
@@ -179,18 +173,12 @@ export function extensionEngine(d: EngineCheckDeps): HealthCheck | null {
       items: [{ ...titled(say('engine.fromExtensions')), ...detailOf([waiting]), info: true }],
     };
   }
-  // A desktop whose engine was never downloaded; one that answers and refuses is worth its row, linked series or not.
-  if (d.desktop && d.state === 'unreachable' && !d.linked) return null;
-
   if (d.state === 'unreachable') {
     const tries = d.retry?.attempts ?? 0;
     return {
       ...base, status: 'warn',
       ...summaryOf([say('engine.notAnswering', { error: d.error || null })]),
-      // The desktop's Admin → Extensions is the engine's installer, with no setup steps and no Check again: the
-      // app starts its engine itself. Reintroduce the one note for both: "not answering is a warning…" in
-      // engineHealth.test.ts finds a desktop sent to a button it does not have.
-      ...noteOf([say('engine.retries'), joined('sentence', say(d.desktop ? 'engine.reopen' : 'engine.checkAgain'))]),
+      ...noteOf([say('engine.retries'), joined('sentence', say('engine.checkAgain'))]),
       // ⚠️ Always one finding: a warning with nothing under it reads as a broken page (health.ts `verdict`).
       items: [{
         ...titled(say('engine.notAnsweringTitle')),
@@ -233,10 +221,10 @@ function up(d: EngineCheckDeps): HealthCheck {
     if (refusing.length) return cannotUse(say(d.ourSolver ? 'engine.unreadConnect' : 'engine.unread'), true);
     return { ...base, status: 'ok', ...summaryOf([say('engine.answering', { version })]), ...noteOf([say('engine.unread'), registering]), items: [] };
   }
-  const wiring = solverWiring(d.solver, d.ourSolver, d.desktop);
+  const wiring = solverWiring(d.solver, d.ourSolver);
   if (wiring === 'unsupported') {
     // No setting to change from here, so no Connect: it is the engine's own configuration (or a newer engine).
-    if (refusing.length) return cannotUse(say(d.desktop ? 'engine.unsupportedDesktop' : 'engine.unsupportedServer'), false);
+    if (refusing.length) return cannotUse(say('engine.unsupportedServer'), false);
     return { ...base, status: 'ok', ...summaryOf([say('engine.answering', { version })]), ...noteOf([say('engine.unsupported'), registering]), items: [] };
   }
   // Registering, and nothing else to say: the note is that sentence alone.
@@ -271,8 +259,7 @@ function up(d: EngineCheckDeps): HealthCheck {
       ...base, status: 'ok', ...summaryOf([say('engine.ready', { version })]), ...noteOf([alone]),
       items: [{
         ...titled(say('engine.helper')),
-        // The address only on a server: on desktop it carries the in-app helper's token.
-        ...detailOf([d.desktop || !d.solver.supported ? say('engine.otherHelper') : say('engine.otherHelperAt', { url: d.solver.url })]),
+        ...detailOf([!d.solver.supported ? say('engine.otherHelper') : say('engine.otherHelperAt', { url: d.solver.url })]),
         info: true,
       }],
     };
@@ -294,7 +281,6 @@ function up(d: EngineCheckDeps): HealthCheck {
       // because of it.", "comick.io is behind Cloudflare."). A raised first letter renamed them. Reintroduce
       // 'sentence': "a source is named as it names itself" in engineHealth.test.ts fails.
       seen && joined('then', seen),
-      // Never on desktop: the shell always gives hbook its helper.
       !d.ourSolver && noSolver,
     ]),
     ...(d.ourSolver ? { actions: ['engine_solver'] } : {}),
@@ -311,12 +297,11 @@ function up(d: EngineCheckDeps): HealthCheck {
 
 /** The check as runHealthChecks calls it: the facts, gathered without ever waiting long on the engine. */
 export async function extensionEngineCheck(): Promise<HealthCheck | null> {
-  const desktop = isDesktop();
   const linked = await linkedSeriesCount();
   if (!suwayomiConfigured()) {
     return extensionEngine({
       state: engineOffReason() === 'switch' ? 'switched_off' : 'off',
-      linked, desktop, ourSolver: ourSolverUrl(), solver: null, cloudflare: [],
+      linked, ourSolver: ourSolverUrl(), solver: null, cloudflare: [],
     });
   }
   const [probe, cloudflare] = await Promise.all([engineProbe(), cloudflareEvidence()]);
@@ -328,11 +313,11 @@ export async function extensionEngineCheck(): Promise<HealthCheck | null> {
   // points the engine at FLARESOLVERR_URL alone, so a backup solving for hbook does nothing for the engine.
   // Reintroduce `.ok` (at least one answers): "the engine row reads the main solver" in extensionsEngine.int.test.ts
   // finds it saying the engine can get past Cloudflare while its helper does not answer.
-  const viaOurs = probe.reachable && !!probe.solver && solverWiring(probe.solver, ours, desktop) === 'ok';
+  const viaOurs = probe.reachable && !!probe.solver && solverWiring(probe.solver, ours) === 'ok';
   const solverAnswering = viaOurs ? (await solverPingShared()).main.ok : null;
   return extensionEngine({
     state: !probe.reachable ? 'unreachable' : refused.length ? 'incompatible' : 'up',
-    linked, desktop,
+    linked,
     ourSolver: ours,
     version: probe.version,
     error: probe.error,

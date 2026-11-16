@@ -1,6 +1,6 @@
 // The compact chapter list: an opt-in, per-device, denser chapter list for a computer.
 //
-// From @Squeaks72's #88, which made these rows the DEFAULT on desktop -- no thumbnail, no status dot, the two
+// From @Squeaks72's #88, which made these rows the DEFAULT on a computer -- no thumbnail, no status dot, the two
 // round buttons only on hover. The default look is deliberate and stays everyone's (lib/effects.ts): the thumbnail
 // is each chapter's own first page, and it carries the read dimming, the accent progress bar and the dashed box of
 // a deleted chapter. So the leaner row is a choice a reader makes, under Profile -> Settings, and with it off every

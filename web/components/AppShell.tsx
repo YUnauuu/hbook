@@ -10,7 +10,6 @@ import { Sidebar } from './Sidebar';
 import { HealthBanner } from './HealthAlert';
 import { TrackerAlert } from './TrackerAlert';
 import { LoginScreen } from './LoginScreen';
-import { DesktopReconnect } from './DesktopReconnect';
 import { CinematicFX } from './CinematicFX';
 import { PageTransition } from './PageTransition';
 import { CommandPalette, usePaletteHotkeys } from './CommandPalette';
@@ -18,7 +17,6 @@ import { useWideViewport } from './ui';
 import { Mark } from './Brand';
 import { IcWifiOff } from './icons';
 import { t as tr } from '@/lib/i18n';
-import { desktopShell, isDesktop } from '@/lib/desktop';
 import { useServerDownloads } from '@/lib/useServerDownloads';
 import { IncognitoBanner, useIncognito } from './IncognitoBanner';
 import { AdultBanner } from './AdultToggle';
@@ -111,11 +109,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(PALETTE_EVENT, on);
   }, [status]);
 
-  // smart offline: keep favorites' latest unread chapters downloaded. Never on desktop, where "Save offline"
-  // is hidden: it would copy chapters already on this disk into the window's storage (lib/desktop.ts).
+  // smart offline: keep favorites' latest unread chapters downloaded.
   const so = user?.settings?.smartOffline;
   useEffect(() => {
-    if (status !== 'authed' || !so?.enabled || isDesktop()) return;
+    if (status !== 'authed' || !so?.enabled) return;
     const go = () => runSmartOffline(so.perSeries || 3).catch(() => {});
     const t = setTimeout(go, 2500);
     const onVis = () => { if (document.visibilityState === 'visible') go(); };
@@ -129,9 +126,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // saved session at all -- and either way the reader must not open: `owner()` would be `'anon'`, so it
   // would be a chrome-less black screen with no pages in it. Reintroduce by moving the reader hatch above
   // this line and an unauthenticated visitor gets exactly that.
-  // In the desktop app's own window there is no password to type: DesktopReconnect retries the app's own
-  // sign-in instead. Anywhere else, including a browser tab on the desktop app's port, the sign-in screen.
-  if (status === 'anon') return desktopShell() ? <DesktopReconnect /> : <LoginScreen />;
+  if (status === 'anon') return <LoginScreen />;
 
   // Reachable for `offline` as well as `authed`: a downloaded chapter is the whole point of opening the app
   // with no network, and everything the reader needs is already in IndexedDB.

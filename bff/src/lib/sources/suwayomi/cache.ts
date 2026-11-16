@@ -25,7 +25,7 @@
 // install that has been filling for months) can lose a page to it, which the downloader's resume asks for again.
 //
 // Nothing at all until the engine has answered once (client.ts engineAnswered): a JVM still starting at boot,
-// and a desktop that never downloaded its engine (SUWAYOMI_URL is always set there), get no request and no
+// and an install that never downloaded its engine, get no request and no
 // warning.
 //
 // Only cachedPages. The thumbnail caches hold covers the engine fetches again on demand, and its downloaded
@@ -126,7 +126,7 @@ export function engineCacheKeeper(overrides: Partial<KeeperDeps> = {}) {
   async function tick(): Promise<TickResult> {
     // Asked first and every time: with no engine there is nothing to call, and nothing to log about it.
     if (!d.configured()) return 'off';
-    // Nor with one that has not answered yet: a JVM still starting, or a desktop engine never downloaded.
+    // Nor with one that has not answered yet: a JVM still starting.
     if (!d.answered()) return 'unanswered';
     if (running) return 'running';
     if (d.busy()) return 'busy';

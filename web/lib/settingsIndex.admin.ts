@@ -32,9 +32,8 @@ export const ADMIN_SETTINGS: SettingsIndex = {
       keywords: ['library', 'folders', 'hidden series', 'removed series', 'restore', 'age rating'] },
     { id: 'sources', label: 'Sources', group: 'Library', keywords: ['providers', 'extensions', 'mangadex', 'sites', 'add a site', 'repositories'] },
     { id: 'art', label: 'Art', group: 'Library', keywords: ['covers', 'artwork', 'banners', 'images'] },
-    // hbook Desktop is one person: no other accounts, no other sessions (lib/desktop.ts).
-    { id: 'members', label: 'Members', group: 'People', when: ['web'], keywords: ['users', 'accounts', 'people', 'roles', 'age limit', 'reset password'] },
-    { id: 'sessions', label: 'Sessions', group: 'People', when: ['web'], keywords: ['devices', 'signed in', 'logins'] },
+    { id: 'members', label: 'Members', group: 'People', keywords: ['users', 'accounts', 'people', 'roles', 'age limit', 'reset password'] },
+    { id: 'sessions', label: 'Sessions', group: 'People', keywords: ['devices', 'signed in', 'logins'] },
     { id: 'activity', label: 'Activity', group: 'People', keywords: ['audit', 'log', 'events'] },
     { id: 'server', label: 'Server', group: 'Settings', settings: true, keywords: ['server settings', 'configuration', 'config'] },
     { id: 'series', label: 'Series & chapters', group: 'Settings', settings: true },
@@ -49,19 +48,19 @@ export const ADMIN_SETTINGS: SettingsIndex = {
   entries: [
     // ---- Server ----
     { id: 'server-name', cat: 'server', label: 'Server name', keywords: ['name', 'title'] },
-    { id: 'registration', cat: 'server', label: 'Open registration', when: ['web', 'local-accounts'], keywords: ['sign up', 'signup', 'register', 'new accounts'] },
-    { id: 'local-pick', cat: 'server', label: 'Choose a profile at home', when: ['web'],
+    { id: 'registration', cat: 'server', label: 'Open registration', when: ['local-accounts'], keywords: ['sign up', 'signup', 'register', 'new accounts'] },
+    { id: 'local-pick', cat: 'server', label: 'Choose a profile at home',
       keywords: ['profiles', 'who is reading', 'no password', 'children', 'family', 'home network'] },
-    { id: 'local-networks', cat: 'server', label: 'Home network', when: ['web'],
+    { id: 'local-networks', cat: 'server', label: 'Home network',
       keywords: ['local network', 'lan', 'private networks', 'local addresses', 'LOCAL_NETWORKS', 'at home'] },
-    { id: 'trusted-proxies', cat: 'server', more: 'network-more', label: 'Trusted proxies', when: ['web'],
+    { id: 'trusted-proxies', cat: 'server', more: 'network-more', label: 'Trusted proxies',
       keywords: ['reverse proxy', 'nginx', 'traefik', 'caddy', 'X-Forwarded-For', 'TRUST_PROXY', 'ip address'] },
-    { id: 'member-defaults-link', cat: 'server', label: 'When someone signs up', when: ['web'],
+    { id: 'member-defaults-link', cat: 'server', label: 'When someone signs up',
       keywords: ['new member defaults', 'permissions', 'age limit', 'libraries', 'can download'] },
     { id: 'update-check', cat: 'server', label: 'Check for updates', keywords: ['updates', 'new version', 'release', 'github'] },
-    { id: 'install-count', cat: 'server', label: 'Count this server in the anonymous install count', when: ['web'],
+    { id: 'install-count', cat: 'server', label: 'Count this server in the anonymous install count',
       keywords: ['telemetry', 'analytics', 'install ping', 'privacy', 'statistics'] },
-    { id: 'translate', cat: 'server', label: 'Translate pages', when: ['web'],
+    { id: 'translate', cat: 'server', label: 'Translate pages',
       keywords: ['translation', 'ocr', 'machine translation', 'raw', 'speech bubbles', 'qwen', 'llm'] },
 
     // ---- Series & chapters ----
@@ -75,7 +74,7 @@ export const ADMIN_SETTINGS: SettingsIndex = {
     { id: 'fill-details', cat: 'series', label: 'Fill in missing details', keywords: ['anilist', 'metadata', 'description', 'author', 'cover'] },
     { id: 'borrow-names', cat: 'series', label: 'Borrow chapter names from other sources', keywords: ['chapter titles', 'chapter names'] },
     { id: 'discover-lookups', cat: 'series', label: 'Match Discover titles online', keywords: ['discover', 'anilist', 'mangadex', 'mangaupdates', 'duplicates'] },
-    { id: 'mihon-missing', cat: 'series', more: 'series-more', label: 'Show missing chapters in Mihon', when: ['web'],
+    { id: 'mihon-missing', cat: 'series', more: 'series-more', label: 'Show missing chapters in Mihon',
       keywords: ['komga', 'ghost chapters', 'tachiyomi', 'trackers'] },
 
     // ---- Downloads ----

@@ -25,7 +25,6 @@
 import { q, one } from './db';
 import { logAudit } from './audit';
 import { runtime } from './runtime';
-import { isDesktop } from './desktop';
 import { visibleToAll } from './visibility';
 import { reloadAll, SW_PREFIX } from './sources';
 import { setExtensionState, sourcesOfExtension, listExtensions } from './sources/suwayomi/extensions';
@@ -51,12 +50,12 @@ const envInt = (name: string, fallback: number, min: number, max: number): numbe
 };
 
 /**
- * The limits. `max` is BACKUP_EXTENSIONS_MAX (5, the desktop app 3; 0: hbook never installs a backup): backups
+ * The limits. `max` is BACKUP_EXTENSIONS_MAX (5; 0: hbook never installs a backup): backups
  * installed at once, a series' main not counted. `idleMs`: unneeded this long, a backup is removed. `stuckMs`: a series
  * waiting this long gets a backup back -- never for a cooldown of a few minutes. Tests narrow them (_setBackupLimits).
  */
 const limits = {
-  max: envInt('BACKUP_EXTENSIONS_MAX', isDesktop() ? 3 : 5, 0, 50),
+  max: envInt('BACKUP_EXTENSIONS_MAX', 5, 0, 50),
   idleMs: 3 * DAY,
   stuckMs: HOUR,
   // v0.83.0, trying extensions from the repository (lib/sourceScout.ts storeLook): installs an hour and a day, the

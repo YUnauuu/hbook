@@ -148,7 +148,7 @@ export async function report(dir, o = {}) {
         execFileSync(process.execPath, [join(o.root ?? ROOT, 'scripts', 'engine', 'bump.mjs'), r.tag, '--schema', join(rdir, 'schema.json')], { cwd: o.root ?? ROOT, stdio: 'inherit' });
         git('add', '-A');
         git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
-          'commit', '-m', `Engine ${r.tag}: every pin, its schema and its FlareSolverr DTOs (scripts/engine/bump.mjs)`);
+          'commit', '-m', `Engine ${r.tag}: every pin and its schema (scripts/engine/bump.mjs)`);
         // Only ever this branch: never main, never a tag (bff/test/releasePipeline.test.ts holds it to that).
         git('push', '--force', 'origin', `HEAD:refs/heads/${branch}`);
       } else actions.push(`push ${branch}`);

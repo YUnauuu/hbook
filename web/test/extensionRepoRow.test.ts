@@ -103,7 +103,7 @@ test('with no engine its setup screen stands above your sources, never instead o
   // follows. Reintroduce the old card: "the old one-sentence card" fails; return the setup screen alone: "your sources
   // wait for the engine" does.
   const top = slice(sources, 'export function SourcesPanel(', 'function AttentionRow(');
-  assert.match(top, /\{!status \? <div className="skeleton h-16 rounded-2xl" aria-busy="true" \/>\s*: isDesktop\(\) && !ready \? <EngineInstall \/>\s*: !ready \? <EngineSetup status=\{status\} \/>\s*: <EngineReady status=\{status\} desktop=\{isDesktop\(\)\} \/>\}/,
+  assert.match(top, /\{!status \? <div className="skeleton h-16 rounded-2xl" aria-busy="true" \/>\s*: !ready \? <EngineSetup status=\{status\} \/>\s*: <EngineReady status=\{status\} \/>\}/,
     'the setup screen');
   assert.doesNotMatch(top, /if \(!ready\) return\b|if \(!status\) return\b/, 'your sources wait for the engine');
   assert.match(top, /<YourSources overview=\{overview\}/);
@@ -150,7 +150,6 @@ test('the repository flow is translated in all eight languages', () => {
     ...trKeys(repos),
     ...trKeys(browse),
     ...trKeys(sources),
-    ...trKeys(read('components/EngineInstall.tsx')),
     ...trKeys(read('components/EngineSetup.tsx')),
     ...trKeys(read('lib/engineSetup.ts')),
   ]);

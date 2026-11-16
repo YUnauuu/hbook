@@ -333,7 +333,7 @@ test('a Health row: Find other sources posts the source, and its run has a key g
   assert.match(row, /<ActionStatus state=\{rowNow\} \/>\s*\{finds\.length > 0 && <ActionStatus state=\{findNow\} \/>\}/, 'the run has no status line on its row');
   // The page follows find runs once, for every row and the card, and asks Health again when one ENDS.
   const page = code(read('app/admin/page.tsx'));
-  const health = slice(page, 'function Health()', 'function DesktopUpdateNote(');
+  const health = slice(page, 'function Health()', '');
   assert.match(health, /<FindRunProvider onEnded=\{recheck\}>/, 'no follower of find runs on Health');
   assert.match(health, /<FindRunCard \/>\s*<RepairHistory \/>/, 'Health has no card for the run and its results');
   const hook = code(read('lib/useFindRun.tsx'));

@@ -350,7 +350,7 @@ test('every schedule the tasks route sends is a key the page translates, with it
 test('the Tasks tab says nothing in bare English', () => {
   // Reintroduce `'Already running'` without tr(): the literal scan names it.
   const page = readFileSync(join(__dirname, '../app/admin/page.tsx'), 'utf8');
-  const tasks = page.slice(page.indexOf('function Tasks()'), page.indexOf('function DesktopBackups()'));
+  const tasks = page.slice(page.indexOf('function Tasks()'), page.indexOf('function Activity()'));
   const code = tasks.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
   for (const lit of ['Run now', 'Running…', 'Already running', 'That task is switched off', 'Failed', 'Started', 'not run yet']) {
     const bare = new RegExp(`(?<!tr\\()['\`]${lit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['\`]`);

@@ -9,7 +9,6 @@ import { pipeline } from 'node:stream/promises';
 import { OcrWorker } from './ocr';
 import { TranslationModel } from './llm';
 import { MODELS, PACK_TAG, PACKS, platformKey, type EngineSize, type PinnedFile } from './pin';
-import { isDesktop } from '../desktop';
 
 /**
  * The translation engine: an optional download (Admin -> Settings -> Translate pages), never part of the image. Until
@@ -81,8 +80,8 @@ async function freeBytes(dir: string): Promise<number> {
   }
 }
 
-/** Docker installs only for now: the desktop app's server runs inside Electron, which the engine's processes do not. */
-const supported = () => !isDesktop() && !!PACKS[platformKey()];
+/** The translation engine's processes run beside the server, so a server install is what this is for. */
+const supported = () => !!PACKS[platformKey()];
 
 export async function engineStatus(): Promise<EngineStatus> {
   const pick = pickSize();

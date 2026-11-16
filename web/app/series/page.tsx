@@ -56,7 +56,6 @@ import { CoverPickerSheet } from '@/components/CoverPickerSheet';
 import { CompareCopiesDialog } from '@/components/CompareCopiesDialog';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { supplyLine } from '@/lib/supplyLine';
-import { isDesktop } from '@/lib/desktop';
 import { useContextMenu } from '@/components/ContextMenu';
 import { useLayer, useLayers } from '@/lib/layers';
 import { kickDownloads, useServerDownloads } from '@/lib/useServerDownloads';
@@ -552,8 +551,7 @@ function ChapterRow({ book, downloaded, sourceNames, primarySource, versions, on
       </button>
       {book.metadata?.releaseDate && <RowDate iso={book.metadata.releaseDate} />}
       {!selectable && <ButtonsWrap compact={!!compact} menuOpen={menu.open}>
-      {/* Not on hbook Desktop (lib/desktop.ts): the chapter is already a file on this computer. */}
-      {!isDesktop() && <button
+      <button
         onClick={async () => {
           if (busy) return;
           setBusy(true);
@@ -569,7 +567,7 @@ function ChapterRow({ book, downloaded, sourceNames, primarySource, versions, on
         aria-label={downloaded ? tr('Remove from this device') : tr('Save offline')}
       >
         {busy ? <span className="text-[10px] font-semibold text-accent">…</span> : downloaded ? <IcCheck width={16} height={16} /> : <IcDownload width={16} height={16} />}
-      </button>}
+      </button>
       <div className="relative shrink-0">
         <button onClick={(e) => menu.openFrom(e.currentTarget)} aria-label={tr('Chapter actions')} aria-haspopup="menu" aria-expanded={menu.open}
           className="grid h-9 w-9 place-items-center rounded-lg border border-ink-700 text-fog-500">
@@ -883,13 +881,13 @@ function SeriesInner() {
   useTitleArtPolling(id, series ? [series] : [], refetchTitleArt, authStatus !== 'offline' && wide);
   const { data: books } = useQuery({ ...seriesBooksQuery(id), enabled: !!id });
   // v0.87.0: which chapters have talk, and how much (GET /api/series/:id/comments); nothing while `on` is false, and never
-  // asked on hbook Desktop, where the route does not exist. v0.90.0: nor by an account that switched Comments and
+  // asked where the route does not exist. v0.90.0: nor by an account that switched Comments and
   // reactions off (lib/comments.ts talkWantedOf).
   const talkWanted = talkWantedOf(user?.settings);
   const { data: talkData } = useQuery({
     queryKey: seriesTalkKey(id),
     queryFn: () => api<{ on: boolean; content: ChapterTalkCount[] }>(`/api/series/${id}/comments`),
-    enabled: !!id && !isDesktop() && talkWanted,
+    enabled: !!id && talkWanted,
     staleTime: 60_000,
   });
   const talkOn = !!talkData?.on && talkWanted;
@@ -1809,10 +1807,9 @@ function SeriesInner() {
       {/* Four keys, or three where there is nothing to save offline. Equal widths, whatever their number. */}
       <div data-series-keys className="mt-0.5 grid auto-cols-fr grid-flow-col gap-1.5">
         <FavouriteKey on={fav} pops={favPops} onToggle={toggleFav} />
-        {/* "Save all offline", not "Download all": this copies to THIS DEVICE; the server side is Fetch (☁). Never on
-            hbook Desktop, where this device IS the server (lib/desktop.ts). The key's word is "Offline", its name the
-            whole action. */}
-        {offlineKeyShown({ nothingYet, desktop: isDesktop() }) && (
+        {/* "Save all offline", not "Download all": this copies to THIS DEVICE; the server side is Fetch (☁).
+            The key's word is "Offline", its name the whole action. */}
+        {offlineKeyShown({ nothingYet }) && (
           <SeriesKey icon={downloadingAll ? <ProgressRing progress="spin" size={20} /> : <IcDownload width={20} height={20} aria-hidden />}
             label={tr('Offline')} name={downloadingAll ? tr('Saving…') : tr('Save all offline')} onClick={downloadAll} disabled={downloadingAll} />
         )}
@@ -2035,7 +2032,7 @@ function SeriesInner() {
         <button disabled={acting || !pickedCount} onClick={() => bulkMark(true)} className="btn-key">{tr('Mark read')}</button>
         <button disabled={acting || !pickedCount} onClick={() => bulkMark(false)} className="btn-key">{tr('Mark unread')}</button>
         {/* The two icons say which side each acts on: ⬇ this device, ☁ the server. */}
-        {!isDesktop() && <button disabled={acting || !saveable.length} onClick={bulkSave} className="btn-key"><IcDownload width={14} height={14} />{tr('Save offline')}</button>}
+        <button disabled={acting || !saveable.length} onClick={bulkSave} className="btn-key"><IcDownload width={14} height={14} />{tr('Save offline')}</button>
         {canDownload(user) && <button disabled={acting || !fetchable.length} onClick={bulkFetch} className="btn-key"><IcCloudDownload width={14} height={14} />{tr('Fetch')}</button>}
         {isAdmin && <button disabled={acting || !refetchable.length} onClick={() => setConfirming({ what: 'refetch', books: refetchable })} className="btn-key"><IcCloudDownload width={14} height={14} />{tr('Fetch again')}</button>}
         {/* #240: hidden for everyone, nothing deleted -- beside the server keys, and never the red one, which deletes. */}

@@ -27,11 +27,8 @@ const login = code(read('components/LoginScreen.tsx'));
 test('the sign-in form offers Create an account only while registration is open', () => {
   // Reintroduce the form-less screen by dropping the link, or show it whatever /auth/config says (drop `canRegister &&`):
   // this fails. `!needTotp`: a person half-way through their second step is signing in, not up.
-  assert.match(login, /useState<'checking' \| 'login' \| 'setup' \| 'desktop' \| 'register' \| 'sso'>\('checking'\)/, 'there is no register mode');
+  assert.match(login, /useState<'checking' \| 'login' \| 'setup' \| 'register' \| 'sso'>\('checking'\)/, 'there is no register mode');
   assert.match(login, /^\s*setCanRegister\(c\.allowRegistration === true\);$/m, '/auth/config\'s allowRegistration is not read on a line of its own');
-  // The desktop arm is untouched (web/test/desktopSurfaces.test.ts holds its exact line): a browser tab on the desktop
-  // port gets the "open the app" sentence and no form at all, so no link either.
-  assert.match(login, /if \(c\.desktop === true\) \{ noteServerDesktop\(true\); setMode\('desktop'\); \}/);
   const signIn = slice(login, "{mode === 'login' && (", '</form>');
   assert.match(signIn, /\{canRegister && !needTotp && \(\s*<button type="button" onClick=\{\(\) => toMode\('register'\)\}/,
     'the link is not gated on Open registration and on not being mid-way through a second step');

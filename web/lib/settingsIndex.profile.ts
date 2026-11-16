@@ -21,12 +21,12 @@ export const PROFILE_SETTINGS: SettingsIndex = {
     { id: 'general', label: 'General', group: 'Settings', settings: true },
     { id: 'appearance', label: 'Appearance', group: 'Settings', settings: true },
     { id: 'reading', label: 'Reading', group: 'Settings', settings: true },
-    // hbook Desktop: no offline copies (the chapters are on this disk already), no push service, nothing to install.
-    { id: 'device', label: 'This device', group: 'Settings', settings: true, when: ['web'] },
+    // No offline copies (the chapters are on the server), no push service, nothing to install.
+    { id: 'device', label: 'This device', group: 'Settings', settings: true },
     { id: 'connections', label: 'Connections', group: 'Settings',
       keywords: ['integrations', 'anilist', 'myanimelist', 'kitsu', 'mangaupdates', 'trackers', 'opds', 'api tokens', 'mihon'] },
-    // hbook Desktop has no password, two-factor or other sessions: the app signs itself in.
-    { id: 'account', label: 'Account', group: 'Settings', when: ['web'],
+    // A password, two-factor and other sessions belong to the account, not to this device.
+    { id: 'account', label: 'Account', group: 'Settings',
       keywords: ['security', 'password', '2fa', 'two-factor', 'sessions', 'sign out', 'log out'] },
   ],
   // The profile's tabs before v0.88.0: Settings was the tab the four settings pages sat in.
@@ -57,7 +57,7 @@ export const PROFILE_SETTINGS: SettingsIndex = {
     { id: 'reader-mode', cat: 'reading', label: 'Mode', keywords: ['webtoon', 'paged', 'scroll', 'swipe', 'reading mode', 'reader'] },
     { id: 'auto-mode', cat: 'reading', label: 'Pick the mode for each series', keywords: ['automatic', 'long strip', 'manga'] },
     { id: 'reader-theme', cat: 'reading', label: 'Theme', keywords: ['amoled', 'paper', 'sepia', 'gray', 'grey', 'page colour', 'cream', 'off-white'] },
-    { id: 'comments', cat: 'reading', label: 'Comments and reactions', when: ['web', 'talk'], keywords: ['comments', 'reactions', 'emoji', 'talk', 'discussion', 'household', 'hide comments', 'turn off comments'] },
+    { id: 'comments', cat: 'reading', label: 'Comments and reactions', when: ['talk'], keywords: ['comments', 'reactions', 'emoji', 'talk', 'discussion', 'household', 'hide comments', 'turn off comments'] },
     { id: 'fit', cat: 'reading', label: 'Fit', keywords: ['fit width', 'original size', 'zoom'] },
     { id: 'paged-fit', cat: 'reading', label: 'Page fit', keywords: ['paged', 'whole page', 'fit width', 'vertical scroll'] },
     { id: 'wide-pages', cat: 'reading', label: 'Wide pages', keywords: ['double page', 'spread', 'landscape', 'rotate', 'split'] },
@@ -68,11 +68,11 @@ export const PROFILE_SETTINGS: SettingsIndex = {
     { id: 'crop-borders', cat: 'reading', more: 'reading-more', label: 'Crop page borders', keywords: ['margins', 'trim', 'white borders'] },
 
     // ---- This device ----
-    { id: 'downloads', cat: 'device', label: 'Offline downloads', when: ['web'], keywords: ['offline', 'downloaded chapters'] },
-    { id: 'keep-offline', cat: 'device', label: 'Keep favorites offline', when: ['web'], keywords: ['auto download', 'offline', 'favourites'] },
-    { id: 'storage', cat: 'device', label: 'Storage used', when: ['web'], keywords: ['space', 'quota', 'eviction', 'protect downloads', 'persist'] },
-    { id: 'chapter-alerts', cat: 'device', label: 'New-chapter alerts', when: ['web'], keywords: ['push', 'notifications', 'alerts', 'comments', 'replies'] },
-    { id: 'install', cat: 'device', label: 'Install hbook', when: ['web'], keywords: ['install app', 'pwa', 'home screen', 'add to home screen'] },
+    { id: 'downloads', cat: 'device', label: 'Offline downloads', keywords: ['offline', 'downloaded chapters'] },
+    { id: 'keep-offline', cat: 'device', label: 'Keep favorites offline', keywords: ['auto download', 'offline', 'favourites'] },
+    { id: 'storage', cat: 'device', label: 'Storage used', keywords: ['space', 'quota', 'eviction', 'protect downloads', 'persist'] },
+    { id: 'chapter-alerts', cat: 'device', label: 'New-chapter alerts', keywords: ['push', 'notifications', 'alerts', 'comments', 'replies'] },
+    { id: 'install', cat: 'device', label: 'Install hbook', keywords: ['install app', 'pwa', 'home screen', 'add to home screen'] },
   ],
   legacy: {},
 };

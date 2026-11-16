@@ -20,7 +20,7 @@ const spacing = new Map<string, { at: number; swallowed: number }>();
 
 /**
  * At most one audit row per `everyMs` for this key, counting what the row stands for -- the rule
- * lib/desktop.ts desktopFailAudit applies to the desktop handshake, here for refusals of callers with no signed-in
+ * here for refusals of callers with no signed-in
  * principal (the OIDC callback, v0.69.1). Returns the number of attempts to record, or null to write nothing. Key it
  * on a fixed kind, never on caller text or an address: a rotating X-Forwarded-For would otherwise mint a key per
  * request. `now` is a monotonic clock; one that went backwards counts as due.
@@ -39,7 +39,7 @@ export function auditEvery(key: string, everyMs = 60_000, now: number = performa
  * or series.delete_files row proves it, and lib/numbering.ts replays series.chapters_refetch picks -- so an age or
  * count prune over every row would let the next boot fetch deleted chapters again, and a flood push that proof out.
  */
-const REFUSALS = ['login.fail', 'login.blocked', 'login.totp_fail', 'login.oidc_fail', 'login.desktop_fail'];
+const REFUSALS = ['login.fail', 'login.blocked', 'login.totp_fail', 'login.oidc_fail'];
 
 /** Keep the refusal history bounded: rows older than `days`, then any beyond the newest `keep`. Runs once a day. */
 export async function pruneAudit(days = 180, keep = 50_000): Promise<void> {

@@ -27,8 +27,6 @@ Where it comes from depends on how you run hbook:
 | You run | The engine |
 |---|---|
 | **Docker** (the standard [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), and the development stack) | Already there: the `hbook-suwayomi` container starts with the rest. Nothing to set up. `EXTENSION_ENGINE=0` in `.env` turns it off ([Turning it off](#turning-it-off)). |
-| **hbook Desktop, on this computer** | A download of about 200 MB, once: **Admin → Sources** → **Download the extension engine (about 200 MB)**. Step by step in [the desktop guide](DESKTOP.md#add-your-first-sources). |
-| **hbook Desktop, connected to your server** | Your server's. Nothing runs on the computer; Admin → Sources is the server's own. |
 | **CasaOS** | An add-on beside the listing. Import [`deploy/casaos/hbook-suwayomi.yml`](../deploy/casaos/hbook-suwayomi.yml) as a custom app (its tips give the one folder command to run first), then set `SUWAYOMI_URL` to `http://hbook-suwayomi:4567` in hbook's settings. |
 | **Unraid** | A template of its own: install **hbook-suwayomi** from Apps ([`templates/hbook-suwayomi.xml`](../templates/hbook-suwayomi.xml): pinned, memory-capped, chapter downloads off, Cloudflare helper on, and a password on its port). Choose its password (*AUTH_PASSWORD*) when it asks, and set its *FLARESOLVERR_URL* to the solver hbook uses. Then set hbook's advanced *SUWAYOMI_URL* to `http://YOUR-SERVER-IP:4567`, *SUWAYOMI_USERNAME* to the engine's user name (`hbook` unless you changed it) and *SUWAYOMI_PASSWORD* to its password. An engine installed before v0.73.0 has no password: [A password on the engine](#a-password-on-the-engine) says how to add one. |
 | **Umbrel** | Not available. An Umbrel app cannot offer an optional second container, and putting the engine in the package would cost every Umbrel install about 800 MB whether it uses extensions or not. MangaDex and sites you add by address work there as everywhere. |
@@ -111,7 +109,6 @@ https://example.org/repo/index.min.json
 **Later, the address in the list may change.** Right after the add, the list shows exactly what you pasted. After
 the extension engine restarts, it may show `…/repo.json` (or `index.pb`) instead of the `index.min.json` you
 pasted. It is the same repository. hbook treats both addresses as one repository, so it is never added twice.
-On the desktop app the engine restarts each time the app starts.
 
 **What you can paste:**
 
@@ -203,8 +200,8 @@ this standing choice alone; the sheet marks a language you hid here *Hidden in e
 **Only 25 extension sources can be switched on at once** (`SUWAYOMI_MAX_SOURCES`, 25 by default), because every
 one of them is searched together. The engine's strip counts them (*v2.4.2366 · 12 of 25 sources on*); when more are
 switched on than that, the count turns amber, a line under the strip says how many were left out and how to get under
-the limit, and **Admin → Health** lists them under *Extension source limit*. Hiding languages is the cheap way under it. On a Docker install, raising `SUWAYOMI_MAX_SOURCES` is the other;
-the desktop app has no setting for it. Since v0.55.0 the sources your series read through (as their main source or one
+the limit, and **Admin → Health** lists them under *Extension source limit*. Hiding languages is the cheap way under it. On a Docker install, raising `SUWAYOMI_MAX_SOURCES` is the other.
+Since v0.55.0 the sources your series read through (as their main source or one
 they follow) take their places first, so switching another source on never pushes one your library depends on out.
 
 ## An extension's own settings
@@ -332,11 +329,11 @@ The cost is honest: it is a JVM, and it uses 1 to 1.5 GB of memory once it has r
 is Java's heap. On a server with 45 extensions the engine held 1.4 GB after two days, 630 MB of it heap; the rest
 was Java's own native memory, and the Chromium (the engine's WebView) and Xvfb that its image runs beside it.
 
-**The compose files cap it** (since v0.46.0): a 768 MB Java heap, the desktop app's number, under a 2 GB ceiling for
+**The compose files cap it** (since v0.46.0): a 768 MB Java heap, under a 2 GB ceiling for
 the container. Before v0.46.0 there was no cap at all, and a JVM without one sizes its heap from the host's memory —
 up to a quarter of it, 15.7 GiB on a 62 GB server. The ceiling was 1.5 GB until
-[#275](https://github.com/YUnauuu/hbook/issues/275): the desktop app's engine fits in that, because it runs without
-Chromium, but the one in Docker does not. A long extension list may need more: set `SUWAYOMI_MEM_LIMIT` and
+[#275](https://github.com/YUnauuu/hbook/issues/275): the engine in Docker does not fit in that, because its image runs
+Chromium. A long extension list may need more: set `SUWAYOMI_MEM_LIMIT` and
 `SUWAYOMI_JAVA_OPTS` ([CONFIGURATION.md](CONFIGURATION.md)), keeping the ceiling at least 1.25 GB above the heap.
 ⚠️ **Updating the image does not update your compose file**: see below for the lines to add.
 
@@ -439,8 +436,7 @@ with it the links for every series you added through an extension.
 - An engine you run yourself is not affected by the switch: it only turns off the bundled container.
 
 `docker compose stop` only lasts until the next `docker compose up`, which starts it again. On Unraid and CasaOS,
-stop or remove the engine's container and empty `SUWAYOMI_URL`. The desktop app has no switch for it: an engine
-that was never downloaded costs nothing, and one that was only runs while hbook does. The same steps, per
+stop or remove the engine's container and empty `SUWAYOMI_URL`. The same steps, per
 platform, are under **Admin → Sources** → the engine's **⋯** → **Turning it off**.
 
 ## Your engine's data
@@ -449,7 +445,7 @@ The engine keeps its installed extensions, its repositories and — the part not
 series you added through an extension is routed by. It lives in the engine container's volume on Docker —
 `<project>_hbook_suwayomi` in `docker volume ls`, where `<project>` is your Compose project's name (the folder's,
 by default) — `/mnt/user/appdata/hbook-suwayomi` with the Unraid template, `/DATA/AppData/hbook-suwayomi` with
-the CasaOS add-on, and the `engine` folder of the desktop app's data folder.
+the CasaOS add-on.
 
 **It is not in hbook's nightly backup**, on purpose: it belongs to another container that hbook cannot
 reach, a copy of its database taken while it runs may not be consistent, and Suwayomi's own backup restores
@@ -546,18 +542,6 @@ Going back: stop it, run
 `sudo find /DATA/AppData/hbook-suwayomi -mindepth 1 -delete && sudo tar xzf /DATA/AppData/engine-v2.3.2243.tgz -C /DATA/AppData/hbook-suwayomi`,
 set the image back and **Save**.
 
-### hbook Desktop
-
-Nothing to do. On a computer that had the engine, an app update that moves the pin fetches the new one by itself
-(about 200 MB) the next time hbook starts, and before the new version first opens the engine's data, the app keeps
-a copy of its database in its data folder ([where that is](DESKTOP.md#7-where-your-files-live)):
-`engine-snapshots/before-v2.4.2366/` holds `database.mv.db`, `server.conf` and `snapshot.json`, which says what
-wrote them. The two newest copies are kept. If the copy cannot be made — a full disk — the new engine is not started,
-and the Extensions card says why.
-
-Going back means the older app too: quit hbook, install the older version, copy `database.mv.db` and `server.conf`
-from the snapshot over the ones in the `engine` folder, delete `engine/hbook-engine.json`, start hbook, and
-download the extension engine again when **Admin → Sources** offers it.
 
 ### An engine you run yourself
 
@@ -579,8 +563,7 @@ password, until you add one:
 3. Admin → Sources should say *Ready* again. *The extension engine refused hbook's login* means the two pairs differ.
 
 The Docker Compose files never publish the engine's port: it is reachable only from hbook's own network, and needs no
-password. On CasaOS the add-on is on that network too. The desktop app gives its engine a new random password every time
-it starts, which only the app knows.
+password. On CasaOS the add-on is on that network too.
 
 ## Settings
 

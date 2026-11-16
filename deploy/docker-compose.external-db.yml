@@ -153,9 +153,8 @@ services:
     # The engine is a JVM, and a JVM with no limit sizes its heap from the HOST's memory -- a quarter of it:
     # 15.7 GiB on a 62 GB machine, measured 2026-09-25 against this image -- so without a cap a small NAS is at
     # its mercy (discussion #72). JAVA_TOOL_OPTIONS below caps the heap at 512 MB with the serial collector, as
-    # the desktop app does (desktop/src/engine.js). This ceiling has to hold the rest as well: Java's own native
-    # memory, and the Chromium (the engine's WebView) and Xvfb that this image runs and the desktop app turns
-    # off. Measured for #275, with 45 extensions on 12 cores: 1.4 GB after two days, 630 MB of it heap. Under
+    # a JVM needs. This ceiling has to hold the rest as well: Java's own native
+    # memory, and the Chromium (the engine's WebView) and Xvfb that this image runs. Measured for #275, with 45 extensions on 12 cores: 1.4 GB after two days, 630 MB of it heap. Under
     # the old 1.5 GB ceiling it kept going only by swapping; a host with no swap (Unraid's default) kills it
     # there. The ceiling still turns a runaway into a restart, which the restart policy above handles.
     # SUWAYOMI_MEM_LIMIT and SUWAYOMI_JAVA_OPTS raise both; keep the ceiling at least 1.25 GB above -Xmx.

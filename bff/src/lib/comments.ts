@@ -13,7 +13,7 @@
 // - Incognito reading is read-only here: posting or reacting would tell the household what was read.
 // - One reaction a member a chapter, from REACTIONS. A comment is plain text; its author edits or deletes it, an admin
 //   may remove it.
-// - Off where there is nobody to talk to: hbook Desktop (its routes are hidden, lib/desktop.ts), a server with one
+// - Off where there is nobody to talk to: a server with one
 //   enabled member, and the Komga backend, whose chapters are not rows of this database (talkOn).
 import { q, one } from './db';
 import { viewCtxFor, seriesVisible } from './visibility';
@@ -71,8 +71,7 @@ let onCache: { at: number; on: boolean } | null = null;
 export function resetTalkOn(): void { onCache = null; }
 
 /**
- * Whether this server has a household to talk to: the owned library and two or more enabled members. hbook Desktop
- * never gets this far -- every route that asks answers 404 there (lib/desktop.ts DESKTOP_HIDDEN_ROUTES). Asked on every
+ * Whether this server has a household to talk to: the owned library and two or more enabled members. Asked on every
  * answer the web reads it from, so cached for a minute. Reintroduce by answering true on a one-member server: "a server
  * with one member has nobody to talk to" in chapterComments.int.test.ts reads `on`.
  */

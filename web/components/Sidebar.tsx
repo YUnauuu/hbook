@@ -10,7 +10,6 @@ import { useHealthSummary, HEALTH_HREF } from './HealthAlert';
 import { IcHome, IcGrid, IcBookmark, IcPlus, IcClock, IcMoments, IcDownload, IcShield, IcChevronRight, IcBook } from './icons';
 import { useAuth, canDownload } from '@/lib/auth';
 import { keys, t as tr } from '@/lib/i18n';
-import { isDesktop, DESKTOP_HIDDEN } from '@/lib/desktop';
 import { useLayers } from '@/lib/layers';
 import { useReduceEffects } from '@/lib/effects';
 import { useDownloadsRing } from '@/lib/useServerDownloads';
@@ -55,16 +54,13 @@ const MAIN: Item[] = [
 const MORE: Item[] = [
   { href: '/history', label: LABELS[4], Icon: IcClock, match: (p) => p.startsWith('/history') },
   { href: '/moments', label: LABELS[5], Icon: IcMoments, match: (p) => p.startsWith('/moments') },
-  // hbook Desktop has no Offline: the chapters are already on that disk (lib/desktop.ts DESKTOP_HIDDEN).
   { href: '/downloads', label: LABELS[6], Icon: IcDownload, match: (p) => p.startsWith('/downloads'), only: 'browser' },
 ];
 const ADMIN: Item = { href: '/admin', label: LABELS[7], Icon: IcShield, match: (p) => p.startsWith('/admin'), only: 'admins' };
 
 /** What the rail shows, worked out from who is looking: a pure function, so a test can hold it. */
-export function sidebarItems(o: { downloader: boolean; admin: boolean; desktop: boolean }): { main: Item[]; more: Item[]; admin: Item | null } {
-  const keep = (i: Item) => (i.only === 'downloaders' ? o.downloader : i.only === 'browser'
-    ? !(o.desktop && (DESKTOP_HIDDEN.navHrefs as readonly string[]).includes(i.href))
-    : true);
+export function sidebarItems(o: { downloader: boolean; admin: boolean }): { main: Item[]; more: Item[]; admin: Item | null } {
+  const keep = (i: Item) => (i.only === 'downloaders' ? o.downloader : true);
   return { main: MAIN.filter(keep), more: MORE.filter(keep), admin: o.admin ? ADMIN : null };
 }
 
@@ -102,7 +98,7 @@ export function Sidebar() {
   // and clickable over every scrim.
   const covered = layers.dialog > 0;
 
-  const { main, more, admin } = sidebarItems({ downloader, admin: isAdmin, desktop: isDesktop() });
+  const { main, more, admin } = sidebarItems({ downloader, admin: isAdmin });
   const flagged = admin && tone && health ? `${tr(admin.label)} · ${headlineText(health) ?? tr('Health')}` : null;
 
   const link = (i: Item, extra?: { badge?: ReactNode; icon?: ReactNode; name?: string; mark?: string; sub?: { text: string; href: string } }) => {

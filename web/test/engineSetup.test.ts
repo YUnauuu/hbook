@@ -16,12 +16,12 @@ import { healthLinks } from '../lib/healthLinks';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
-/** The pinned engine, as bff/test/enginePins.test.ts holds every install mode to it (the desktop pin is the reference). */
-const PIN: string = JSON.parse(read('../desktop/src/engine-pin.json')).version;
+/** The pinned engine, as bff/test/enginePins.test.ts holds every install mode to it (the pin file is the reference). */
+const PIN: string = JSON.parse(read('../scripts/engine/pin.json')).version;
 const code = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
-const PLATFORMS: Platform[] = [...PLATFORM_CHIPS, 'desktop'];
+const PLATFORMS: Platform[] = [...PLATFORM_CHIPS];
 const HEADLINES: Headline[] = ['switched_off', 'unset', 'unreachable'];
 const everything = (): Array<{ where: string; step: Step }> => [
   ...PLATFORMS.flatMap((p) => HEADLINES.flatMap((h) => onSteps(p, h).map((step) => ({ where: `${p}/${h}`, step })))),
@@ -121,7 +121,6 @@ test('somewhere else: the shipped protections in one command, and what publishin
 test('the page opens on the platform the server guessed, and says which state it is in', () => {
   assert.equal(defaultPlatform({ platform: 'unraid' }), 'unraid');
   assert.equal(defaultPlatform({ platform: 'casaos' }), 'casaos');
-  assert.equal(defaultPlatform({ platform: 'desktop' }), 'desktop');
   assert.equal(defaultPlatform({ platform: 'unknown' }), 'compose', 'an older compose file passes no clue');
   assert.equal(defaultPlatform({}), 'compose');
   assert.equal(headline({ configured: false, reachable: false, off: 'switch' }), 'switched_off');
@@ -165,11 +164,11 @@ test('the card polls the status while it is looked at, and Check again refetches
   // engine's ⋯ since round 2).
   // v0.54.0: the strip heads Admin → Sources.
   const panel = code(read('components/SourcesPanel.tsx'));
-  assert.match(panel, /<EngineReady status=\{status\} desktop=\{isDesktop\(\)\} \/>/, 'the ready panel lost its helper line and Turning it off');
+  assert.match(panel, /<EngineReady status=\{status\} \/>/, 'the ready panel lost its helper line and Turning it off');
   const ready = src.slice(src.indexOf('export function EngineReady('));
   assert.match(ready, /\{!said\?\.ok && helper\?\.action === 'connect' && \(\s*<button[^>]*data-engine-connect>/, 'the helper has no Connect');
-  assert.match(ready, /useContextMenu\(\(\) => \(desktop \? \[\] : \[\{ label: tr\('Turning it off'\), onSelect: \(\) => setShowOff\(true\) \}\]\)/, 'Turning it off is gone, or shows on desktop');
-  assert.match(ready, /\{!desktop && \(\s*<button type="button" onClick=\{\(e\) => menu\.openFrom\(e\.currentTarget\)\}/, 'the ⋯ that holds Turning it off shows on desktop');
+  assert.match(ready, /useContextMenu\(\(\) => \[\{ label: tr\('Turning it off'\), onSelect: \(\) => setShowOff\(true\) \}\]/, 'Turning it off is gone');
+  assert.match(ready, /<button type="button" onClick=\{\(e\) => menu\.openFrom\(e\.currentTarget\)\}/, 'the ⋯ that holds Turning it off');
   assert.match(ready, /<Steps steps=\{offSteps\(platform\)\} \/>\s*<DataWarning platform=\{platform\} linked=\{status\.linkedSeries \?\? 0\} \/>/, 'turning it off lost its steps or the data warning');
 });
 

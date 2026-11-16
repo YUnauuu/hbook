@@ -8,9 +8,7 @@
 // scheduler reads them again at once -- no restart.
 import { Disclosure, EditorSheet, NumberRow, RowBlock, SummaryRow, SwitchRow, useEditor } from '@/components/settings';
 import { t as tr } from '@/lib/i18n';
-import { isDesktop } from '@/lib/desktop';
 import { ARCHIVE_PACE, archivePaceHelp } from '@/lib/archive';
-import { joinSentences } from '@/lib/jobs';
 
 type Save = (body: Record<string, unknown>) => Promise<unknown>;
 
@@ -24,7 +22,6 @@ export function SlowArchiveRow({ data, save }: { data: any; save: Save }) {
   const to: number | null = data.archive_window_to ?? null;
   const windowOn = from != null && to != null;
   const freeGb: number | null = typeof data.archive_free_gb === 'number' ? data.archive_free_gb : null;
-  const desktop = isDesktop();
   return (
     <>
       <SummaryRow id="slow-archive" ref={editor.row} label={tr('Slow archive')} onClick={editor.show}
@@ -35,9 +32,7 @@ export function SlowArchiveRow({ data, save }: { data: any; save: Save }) {
         </p>
         {/* On is "not paused": the column is archive_paused, and the switch says what an admin wants to know. */}
         <SwitchRow label={tr('Slow archive')}
-          help={desktop
-            ? joinSentences(tr('Off pauses every archive; nothing queued is lost.'), tr('Runs only while hbook is running, even when it is only in the tray or menu bar. If the PC sleeps at night, a night-time window will rarely get anything done.'))
-            : tr('Off pauses every archive; nothing queued is lost.')}
+          help={tr('Off pauses every archive; nothing queued is lost.')}
           on={data.archive_paused !== true} onChange={(next) => save({ archivePaused: !next })} />
         <RowBlock id="archive-per-hour">
           <NumberRow label={tr('Chapters an hour, per source')} min={ARCHIVE_PACE.perHourRange[0]} max={ARCHIVE_PACE.perHourRange[1]} value={perHour}

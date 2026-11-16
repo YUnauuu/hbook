@@ -47,7 +47,6 @@ import { ChapterTalkSheet, TalkKey, TalkStrip } from '@/components/ChapterTalk';
 import { ReaderImg, MissingCaption, ReaderPageRow, SlidePending, SlideRegion, SlideTurned, SlideTurnedPair, DIVIDER_H, measurePage } from '@/components/ReaderPage';
 import { CHAPTER_SAMPLE, LEFT_HALF, RIGHT_HALF, WHOLE, chapterSideCrop, halfCrop, pairCrop, type Region } from '@/lib/readerCrop';
 import { t as tr } from '@/lib/i18n';
-import { serverReachableHint } from '@/lib/desktop';
 import { IncognitoTag, incognitoRef } from '@/components/IncognitoBanner';
 import { useContextMenu, type MenuItem } from '@/components/ContextMenu';
 import { ReaderShortcuts, useHasKeyboard } from '@/components/ReaderShortcuts';
@@ -433,7 +432,7 @@ function ReaderInner() {
       } else {
         // The server wins when it answers: progress is cross-device, and the outbox pushes this device's
         // offline position up to it. The downloaded copy is a fallback, not a peer.
-        const canAsk = !(first.offline && !serverReachableHint());
+        const canAsk = !(first.offline && typeof navigator !== 'undefined' && navigator.onLine === false);
         let resolved = 0;
         if (canAsk) {
           try {
@@ -1363,7 +1362,7 @@ function ReaderInner() {
     staleTime: 5 * 60 * 1000,
   });
   const activeChapter = chapters[flat[current]?.ci ?? 0];
-  const pageActionsOnline = showPages && serverReachableHint();
+  const pageActionsOnline = showPages && (typeof navigator === 'undefined' || navigator.onLine !== false);
   // Paged mode has no strip between chapters: crossing into another one says so, briefly, so a chapter with no title page is still
   // plainly a new chapter. (The webtoon column has its own divider.) Not on the first chapter opened, and not while the chapter's
   // own page is being jumped to.

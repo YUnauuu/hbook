@@ -50,7 +50,7 @@ test('a switch sends queued reading first, clears the caches only once the serve
   assert.match(auth, /const switchProfile = \(profileId: string\) => changeProfile\('\/auth\/switch', profileId\);/);
   assert.match(auth, /const resumeProfile = \(profileId: string\) => changeProfile\('\/auth\/resume', profileId\);/);
   assert.match(auth, /const pickProfile = \(profileId: string\) => changeProfile\('\/auth\/profile-login', profileId\);/);
-  assert.match(auth, /switchProfile, resumeProfile, pickProfile, leave, backToOwner, signedOutWhy, desktop: isDesktop\(\), reconnect \}\}>/);
+  assert.match(auth, /switchProfile, resumeProfile, pickProfile, leave, signedOutWhy, reconnect \}\}>/);
 });
 
 test('a profile switched in another tab starts this one over', () => {
@@ -108,7 +108,7 @@ test('Members makes and converts profiles that open at home, never an admin, and
 
 test('Profile -> Account lists a member\'s own profiles only when an admin let it make them', () => {
   const account = code(read('components/ProfileAccount.tsx'));
-  assert.match(account, /\{\(user\?\.perms\?\.canManageProfiles \|\| \(desktop && user\?\.kind === 'desktop-owner'\)\) && <ProfilesSection \/>\}/);
+  assert.match(account, /\{user\?\.perms\?\.canManageProfiles && <ProfilesSection \/>\}/);
   assert.match(account, /api<\{ content: ManagedProfile\[\] \}>\('\/api\/profiles'\)/);
   assert.match(account, /api\(`\/api\/profiles\/\$\{p\.id\}`, \{ method: 'DELETE' \}\)/);
   assert.match(account, /<ConfirmDialog[\s\S]*?onConfirm=\{\(\) => remove\(removing\)\}/, 'a profile is deleted without asking');
@@ -128,19 +128,6 @@ test('the sign-in screen remembers on request, and offers who this device rememb
   assert.match(login, /api<\{ content: typeof ring \}>\('\/auth\/pick'\)/);
   assert.match(login, /readers\.filter\(\(p\) => !ring\.some\(\(r\) => r\.id === p\.id\)\)/);
   const settings = code(read('components/AdminSettings.tsx'));
-  assert.match(settings, /\{!desktop && \(\s*<SwitchRow id="local-pick"[\s\S]*?save\(\{ localPick: next \}\)/);
+  assert.match(settings, /<SwitchRow id="local-pick"[\s\S]*?save\(\{ localPick: next \}\)/);
 });
 
-test('hbook Desktop: profiles made in Profile -> Account, and back to the owner through the shell', () => {
-  const sw = code(read('components/ProfileSwitcher.tsx'));
-  // No sign-in screen on desktop: from a profile, back to the owner instead of another account.
-  assert.match(sw, /\{desktop \? \(\s*user\?\.kind !== 'desktop-owner' && \(/);
-  assert.match(sw, /await backToOwner\(\)/);
-  const auth = code(read('lib/auth.tsx'));
-  const back = auth.slice(auth.indexOf('const backToOwner = async'), auth.indexOf('const leave = async'));
-  const order = ['await flushOutbox()', "fetch('/auth/desktop'", 'await forgetAccountData()', 'setAdultShown(false)', 'window.location.reload()']
-    .map((s) => { const i = back.indexOf(s); assert.ok(i >= 0, `backToOwner does not ${s}`); return i; });
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'backToOwner does its steps out of order');
-  const account = code(read('components/ProfileAccount.tsx'));
-  assert.match(account, /\(user\?\.perms\?\.canManageProfiles \|\| \(desktop && user\?\.kind === 'desktop-owner'\)\) && <ProfilesSection \/>/);
-});

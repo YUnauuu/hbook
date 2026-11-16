@@ -195,8 +195,8 @@ const SLICES: [string, string, string, string][] = [
   ['app/updates/page.tsx', "Updates: the header's keys", '<h1 className="font-display', '</header>'],
   // Step 8: Health's body -- the verdict marks that replaced the HEALTH_LABEL capsules, Re-check as a key, Open
   // as a text link -- and the Tasks rows' Run now.
-  ['app/admin/page.tsx', 'Health: the cards, their marks and rows', 'function Health()', 'function DesktopUpdateNote('],
-  ['app/admin/page.tsx', 'Tasks: Run now', 'function Tasks()', 'function DesktopBackups()'],
+  ['app/admin/page.tsx', 'Health: the cards, their marks and rows', 'function Health()', ''],
+  ['app/admin/page.tsx', 'Tasks: Run now', 'function Tasks()', 'function Activity()'],
   // Step 14 (#117): where the slow archive is turned on -- keys, never chips, beside chips that stay.
   ['components/AddSeriesDialog.tsx', 'Add dialog: Archive the rest slowly', '{archiveRest > 0 && (', '</>)}'],
   ['app/library/page.tsx', 'Library: the Archive slowly key', 'onClick={archiveSelected}', "{(isAdmin || canDownload(user))"],

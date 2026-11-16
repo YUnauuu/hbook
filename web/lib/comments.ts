@@ -5,13 +5,12 @@
 //
 // The rules are the server's (bff lib/comments.ts): only members who may open the series see its talk; a face is
 // someone who reacted or commented, never someone who read; Incognito reading reads the talk but cannot add to it; and
-// there is none on hbook Desktop or on a server with one member (`on`), nor, since v0.90.0, for an account that
+// there is none on a server with one member (`on`), nor, since v0.90.0, for an account that
 // switched Comments and reactions off.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { useAuth } from './auth';
-import { isDesktop } from './desktop';
 import { keys, t as tr } from './i18n';
 
 /** The six reactions, in the order every surface shows them. The server takes exactly these strings. */
@@ -49,12 +48,12 @@ export const seriesTalkKey = (seriesId: string) => ['series-comments', seriesId]
  */
 export const SEAM_H = 156;
 
-/** A chapter's talk, while `enabled`. Never asked on hbook Desktop, where the routes do not exist. */
+/** A chapter's talk, while `enabled`. Never asked where the routes do not exist. */
 export function useChapterTalk(bookId: string | null | undefined, enabled = true) {
   return useQuery({
     queryKey: talkKey(bookId || ''),
     queryFn: () => api<ChapterTalk>(`/api/books/${bookId}/comments`),
-    enabled: !!bookId && enabled && !isDesktop(),
+    enabled: !!bookId && enabled,
     staleTime: 30_000,
   });
 }
@@ -77,7 +76,7 @@ const ON_KEY = 'hbook.talkOn';
 /**
  * Whether this server has talk to show, as this browser last heard: the reader lays out its strips from the first
  * render with it, and the first answer (`probe`, the chapter on screen) confirms or corrects it. Read after mount -- the
- * static export renders without storage. Off on hbook Desktop whatever was heard, and from the first render for an
+ * static export renders without storage. Off whatever was heard, and from the first render for an
  * account that switched Comments and reactions off, which asks nothing at all. Reintroduce by dropping `wanted`: the
  * "a switched-off account" pin in comments.test.ts fails.
  */
@@ -94,7 +93,7 @@ export function useTalkOn(probe: string | null | undefined): boolean {
     setOn(data.on);
     try { localStorage.setItem(ON_KEY, data.on ? '1' : '0'); } catch { /* nothing to remember it in */ }
   }, [data]);
-  return on && wanted && !isDesktop();
+  return on && wanted;
 }
 
 /** Each of the six with how many chose it and whether you did, in the six's order. */

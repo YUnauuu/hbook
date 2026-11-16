@@ -41,7 +41,6 @@ import { NetworkSettings } from '@/components/NetworkSettings';
 import { SlowArchiveRow } from '@/components/ArchiveSettings';
 import { PolitenessRow } from '@/components/PolitenessSettings';
 import { TranslateRow } from '@/components/TranslateSettings';
-import { isDesktop } from '@/lib/desktop';
 import { ssoOnly, useAuthConfig } from '@/lib/authConfig';
 import { adultShown } from '@/lib/adult';
 import { addable, moveIn, orderRows } from '@/lib/sourceOrder';
@@ -409,9 +408,6 @@ function SwitchWithMore({ id, label, help, on, onChange, more }: {
 function ServerSection({ data, save }: { data: any; save: Save }) {
   const toast = useToast();
   const on = !!data.install_ping;
-  // hbook Desktop has one person and no install count (lib/desktop.ts): no registration switch, and the
-  // count's row is gone with its preview, which the server answers 404 for there and never sends.
-  const desktop = isDesktop();
   // SSO-only mode (v0.63.0, #208) has no sign-up route at all, so Open registration would be a switch that does nothing.
   const { data: authConfig } = useAuthConfig();
   // Fetched whether or not it is on: seeing exactly what WOULD be sent is the point of the preview, and
@@ -420,7 +416,6 @@ function ServerSection({ data, save }: { data: any; save: Save }) {
     queryKey: ['install-ping-preview'],
     queryFn: () => api<{ url: string; payload: Record<string, unknown>; sample: boolean }>('/api/admin/install-ping/preview'),
     staleTime: 60_000,
-    enabled: !desktop,
   });
   // What a member the server makes by itself starts with (#208, item 6) lives on Members, beside the accounts; this
   // row says what it is and goes there.
@@ -435,24 +430,19 @@ function ServerSection({ data, save }: { data: any; save: Save }) {
           <TextRow label={tr('Server name')} value={data.server_name ?? ''} maxLength={64} autoComplete="off" required
             onSave={(v) => save({ serverName: v })} />
         </RowBlock>
-        {!desktop && !ssoOnly(authConfig) && (
+        {!ssoOnly(authConfig) && (
           <SwitchRow id="registration" label={tr('Open registration')} help={tr('Let anyone create their own account')}
             on={!!data.allow_registration} onChange={(next) => save({ allowRegistration: next })} />
         )}
         {/* "Who is reading?" on the sign-in screen (bff /auth/pick): at home only. */}
-        {!desktop && (
-          <SwitchRow id="local-pick" label={tr('Choose a profile at home')} help={tr('At home, the sign-in screen lists the profiles that open without a password.')}
-            on={!!data.local_pick} onChange={(next) => save({ localPick: next })} />
-        )}
-        {!desktop && (
-          <SummaryRow id="member-defaults-link" label={tr('When someone signs up')} href="/admin/?tab=Members&section=member-defaults"
-            value={defaults.perms.canDownload !== false ? tr('Can download') : tr('No downloads')} />
-        )}
+        <SwitchRow id="local-pick" label={tr('Choose a profile at home')} help={tr('At home, the sign-in screen lists the profiles that open without a password.')}
+          on={!!data.local_pick} onChange={(next) => save({ localPick: next })} />
+        <SummaryRow id="member-defaults-link" label={tr('When someone signs up')} href="/admin/?tab=Members&section=member-defaults"
+          value={defaults.perms.canDownload !== false ? tr('Can download') : tr('No downloads')} />
       </RowGroup>
 
-      {/* Where profiles without a password open, and the proxies that may say who is connecting (bff /api/admin/network).
-          Not on desktop: its server is reached from its own computer alone, always at home. */}
-      {!desktop && <NetworkSettings />}
+      {/* Where profiles without a password open, and the proxies that may say who is connecting (bff /api/admin/network). */}
+      <NetworkSettings />
 
       <RowGroup title={tr('Updates and privacy')}>
         <SwitchWithMore id="update-check" label={tr('Check for updates')} help={tr('Asks GitHub once a day; nothing about this server is sent.')}
@@ -464,7 +454,7 @@ function ServerSection({ data, save }: { data: any; save: Save }) {
               </p>
             </Disclosure>
           )} />
-        {!desktop && <SwitchWithMore id="install-count" label={tr('Count this server in the anonymous install count')}
+        <SwitchWithMore id="install-count" label={tr('Count this server in the anonymous install count')}
           help={tr('Off by default. Once a day, sends the few facts below to hbook.com and nothing else.')}
           on={on}
           onChange={async (next) => {
@@ -496,12 +486,12 @@ function ServerSection({ data, save }: { data: any; save: Save }) {
                 <li>{tr('Turning this off deletes the secret and asks for this month to be forgotten. A new id is made if you ever turn it back on.')}</li>
               </ul>
             </Disclosure>
-          )} />}
+          )} />
       </RowGroup>
 
-      {/* v0.85.0: the opt-in translation engine -- a download, then one switch. Not on desktop (the engine's processes do
-          not run inside the app); the row and its group hide themselves where the server says it cannot run. */}
-      {!desktop && <TranslateRow />}
+      {/* v0.85.0: the opt-in translation engine -- a download, then one switch. The row and its group hide
+          themselves where the server says it cannot run. */}
+      <TranslateRow />
     </>
   );
 }
@@ -523,14 +513,12 @@ function SeriesSection({ data, save }: { data: any; save: Save }) {
           onChange={(next) => save({ deletedAsGhosts: next })} />
         {/* The reveal for the cleanup, and for a followed series nobody has fetched: without it Mihon counted a pruned or
             never-downloaded chapter as zero chapters, and told the trackers so. No confirmation — nothing here is
-            deleted or written. Only the Komga-compatible API reads it, and desktop does not serve that API. */}
-        {!isDesktop() && (
-          <MoreOptions id="series-more">
-            <SwitchRow id="mihon-missing" label={tr('Show missing chapters in Mihon')} on={!!data.komga_ghost_chapters}
-              help={tr('List the chapters this server has not downloaded, and those whose files were deleted, alongside the ones it holds — so Mihon and your trackers count the whole series rather than only what is on disk. These rows cannot be opened; they are marked “not downloaded”. Only the Mihon extension sees them.')}
-              onChange={(next) => save({ komgaGhostChapters: next })} />
-          </MoreOptions>
-        )}
+            deleted or written. Only the Komga-compatible API reads it. */}
+        <MoreOptions id="series-more">
+          <SwitchRow id="mihon-missing" label={tr('Show missing chapters in Mihon')} on={!!data.komga_ghost_chapters}
+            help={tr('List the chapters this server has not downloaded, and those whose files were deleted, alongside the ones it holds — so Mihon and your trackers count the whole series rather than only what is on disk. These rows cannot be opened; they are marked “not downloaded”. Only the Mihon extension sees them.')}
+            onChange={(next) => save({ komgaGhostChapters: next })} />
+        </MoreOptions>
       </RowGroup>
 
       <RowGroup title={tr('From the internet')}>
@@ -644,7 +632,7 @@ function MaintenanceSection({ data, save }: { data: any; save: Save }) {
         <SelectRow id="nightly-backup" label={tr('Nightly backup')} value={backup}
           help={joinSentences(
             tr('Save the database and the config folder every night. Turn it off if you back up another way; Run now under Tasks still makes one.'),
-            isDesktop() ? `${nightly} ${tr('If the PC is off then, it runs the next time hbook opens.')}` : nightly,
+            nightly,
           )}
           options={[{ value: 'off', label: tr('Off') }, ...hours.map((h) => ({ value: String(h), label: clockText(h) }))]}
           onChange={(v) => save(v === 'off' ? { backupEnabled: false } : { backupEnabled: true, backupHour: Number(v) })} />

@@ -231,7 +231,7 @@ export const clearBlock = (sourceId: string) =>
 //
 // Everything below writes `stages` and `live_*` and NOTHING else: not status, consecutive, blocked_until,
 // last_error, last_*_at, checked_at or updated_at. Those drive cooldowns (updater blockedNow, autoFollow,
-// sourceHunt, Discover) and the desktop watchdog's schedule (server.ts reads max(checked_at)), and a diagnostic or
+// sourceHunt, Discover) and the watchdog's schedule (server.ts reads max(checked_at)), and a diagnostic or
 // a note must change neither. sourceCheck.int.test.ts pins it.
 
 /**

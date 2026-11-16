@@ -560,7 +560,7 @@ test('the Health page: keys that follow their finding, marks not capsules, the d
   // the header before the disclosure: the walk opens a card by clicking its FIRST button.
   const src = code(read(PAGE));
   const at = src.indexOf('function Health()');
-  const health = src.slice(at, src.indexOf('function DesktopUpdateNote('));
+  const health = src.slice(at, src.length);
   assert.ok(at > 0 && health.length > 0, 'Health() is gone from the admin page -- update this slice');
   assert.doesNotMatch(health, /`\$\{c\.id\}-\$\{i\}`/, 'Health rows are keyed by index');
   assert.match(health, /const rowKeys = keysFor\(c\.id, c\.items\);/);
@@ -655,7 +655,7 @@ test("Health prints the server's words in their own direction: every finding's t
   // sends English. Reintroduce the plain `<p className="text-[11px] text-fog-500">{itemDetail(it)}</p>`: "a
   // finding's detail takes the page's direction" fails.
   const src = code(read(PAGE));
-  const health = src.slice(src.indexOf('function Health()'), src.indexOf('function DesktopUpdateNote('));
+  const health = src.slice(src.indexOf('function Health()'), src.length);
   const printed: [string, string][] = [
     ["a finding's title", 'itemTitle(it)'], ["a finding's detail", 'itemDetail(it)'], ["a card's summary", 'checkSummary(c)'], ["a card's note", 'checkNote(c)'],
   ];

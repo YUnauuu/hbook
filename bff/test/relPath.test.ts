@@ -49,7 +49,7 @@ test('on POSIX a backslash is a filename character, and nothing touches it', () 
 test('chapterFileRel is exactly the SQL form repair.ts and health.ts compare it with', async () => {
   // `s.folder || '/Chapter ' || b.number || '.cbz'` in repair.ts, and the literal equality in health.ts and the
   // refetch route. On Linux this passes whether chapterFileRel uses join or posix.join; the static half (that
-  // it is posix.join) is in desktopSwitchHygiene.test.ts.
+  // it is posix.join) is in the switch-hygiene test.
   const { chapterFileRel } = await import('../src/lib/downloader');
   for (const [folder, n] of [['MangaDex/Solo Leveling', 1], ['Src/T', 12.5], ['Library/Some Title', 100]] as const) {
     assert.equal(chapterFileRel(folder, n), `${folder}/Chapter ${n}.cbz`);
