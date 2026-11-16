@@ -47,6 +47,8 @@ const offlineNotes = [];
 // question a bare `Failed to load resource` cannot: what KIND of request this was. A document, a route
 // prefetch and an image miss read identically in the console and want completely different fixes.
 const failedRequests = [];
+/** Every call the browser made to the server's API or its auth routes, with the answer. */
+const apiCalls = [];
 let step = 0;
 
 const ok = (what) => console.log(`    [ ok ] ${what}`);
@@ -80,6 +82,9 @@ try {
   });
   page.on('requestfailed', (r) => failedRequests.push(`${r.resourceType()} ${r.url()}`));
   page.on('response', (r) => {
+    // What the app asked the server, and what it was told. Printed at the sign-in step, so a run that never
+    // gets past it says WHY: which call answered what, and whether the server ever saw a session.
+    if (/\/(api|auth)\//.test(r.url())) apiCalls.push(`${r.status()} ${r.request().method()} ${r.url().replace(BASE, '')}`);
     if (r.status() < 500) return;
     if (thirdPartyCover(r.url())) thirdPartyNotes.push(`${r.status()} ${r.url()}`);
     else serverErrors.push(`${r.status()} ${r.request().method()} ${r.url()}`);
@@ -114,8 +119,14 @@ try {
     url: location.href,
     app: !!document.querySelector('[data-topbar]'),
     form: !!document.querySelector('input[type=password]'),
+    main: document.querySelectorAll('main').length,
+    inputs: document.querySelectorAll('input').length,
+    text: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 160),
   }));
-  console.log(`    [page] ${opened.url} -- ${opened.app ? 'the app itself' : opened.form ? 'the sign-in form' : 'neither'}`);
+  console.log(`    [page] ${opened.url} -- ${opened.app ? 'the app itself' : opened.form ? 'the sign-in form' : 'neither'}`
+    + ` (main=${opened.main} inputs=${opened.inputs}) :: ${opened.text}`);
+  console.log(`    [calls] ${apiCalls.join(' | ') || 'none'}`);
+  console.log(`    [cookies] ${(await browser.cookies()).map((c) => c.name).join(',') || 'none'}`);
   if (!opened.app) {
     const inputs = await page.$$('input');
     if (!inputs.length) bad('the login page has no form');
